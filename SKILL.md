@@ -20,7 +20,7 @@ argument-hint: "<통계 키워드 또는 명령>"
 
 KOSIS 명령 실행 전 반드시 다음 순서를 따를 것:
 
-0. **바이너리 확인**: 스킬 폴더에 OS에 맞는 `apps/kosis-<os>-<arch>` 바이너리가 없으면 `sh scripts/install-binary.sh`를 실행해 GitHub Release에서 자동 다운로드한다. (별도 런처 없이 SKILL.md가 직접 관리)
+0. **바이너리 확인**: PATH에 `kosis`가 없으면(`command -v kosis` 또는 `where kosis` 실패 시) `scripts/install.sh`(macOS/Linux) 또는 `scripts/install.ps1`(Windows)로 설치한다.
 1. `kosis config key-list` 실행 → 키 존재 여부 확인
 2. 키 0개이고 `KOSIS_API_KEY` 환경변수도 없으면 → **실행 중단 후 안내:**
    - "KOSIS API 키가 필요합니다. https://kosis.kr/openapi/ 에서 발급 후 알려주시면 자동으로 등록합니다."
@@ -34,7 +34,7 @@ KOSIS 명령 실행 전 반드시 다음 순서를 따를 것:
 
 | 방법 | 명령 |
 |------|------|
-| npm | `npm install -g kosis` |
+| npm | `npm install -g @clazic/kosis` |
 | macOS/Linux | `curl -fsSL https://raw.githubusercontent.com/clazic/kosis/master/scripts/install.sh \| sh` |
 | Windows | `irm https://raw.githubusercontent.com/clazic/kosis/master/scripts/install.ps1 \| iex` |
 
@@ -66,15 +66,14 @@ kosis q "서울 미분양 최근 5년"            # 또는 자연어 한 줄
 
 ## 환경
 
-**배포 바이너리 경로 (스킬 루트 기준, 파일명 컨벤션 `kosis-<os>-<arch>`):**
+**배포 바이너리 경로:**
 
 | OS / ARCH | 경로 |
 |-----------|------|
-| macOS arm64 | `apps/kosis-darwin-arm64` |
-| macOS amd64 | `apps/kosis-darwin-amd64` |
-| Linux amd64 | `apps/kosis-linux-amd64` |
-| Linux arm64 | `apps/kosis-linux-arm64` |
-| Windows amd64 | `apps/kosis-windows-amd64.exe` |
+| macOS / Linux | `~/.local/bin/kosis` |
+| Windows amd64 | `%LOCALAPPDATA%\Programs\kosis\kosis.exe` |
+
+> `apps/` 디렉토리는 개발/CI 빌드 전용입니다. 배포 바이너리는 위 경로에 설치됩니다.
 
 **빌드 (개발 시 — 항상 멀티플랫폼):**
 
@@ -91,9 +90,9 @@ make build      # 5개 플랫폼 빌드 후 src/bin/ 과 apps/ 두 곳에 자동
 
 | 순서 | 경로 |
 |------|------|
-| 1. 스킬 apps | `apps/kosis-<os>-<arch>` (없으면 `scripts/install-binary.sh`가 Release에서 다운로드) |
-| 2. 로컬 빌드 | `src/bin/kosis-<os>-<arch>` |
-| 3. 전역 PATH | `kosis` |
+| 1. PATH | `command -v kosis` / `where kosis` (설치 후 기본 경로) |
+| 2. 개발 빌드 | `src/bin/kosis-<os>-<arch>` (로컬 빌드 시) |
+| 3. 안내 | PATH에 없으면 `install.sh` / `install.ps1`로 설치 안내 |
 
 **설정/데이터 경로:**
 

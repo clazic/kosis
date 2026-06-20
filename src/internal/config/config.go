@@ -23,6 +23,7 @@ type Config struct {
 	DefaultFormat string    `mapstructure:"default_format"`
 	CacheTTLHours int       `mapstructure:"cache_ttl_hours"`
 	AI            AIConfig  `mapstructure:"ai"`
+	UpdateCheck   bool      `mapstructure:"update_check"`
 }
 
 // AIConfig는 AI 도구 설정을 나타냅니다.
@@ -49,6 +50,7 @@ func DefaultConfig() *Config {
 		APIKeys:       []string{},
 		DefaultFormat: "table",
 		CacheTTLHours: 24,
+		UpdateCheck:   true,
 		AI: AIConfig{
 			Default: "claude",
 			Tools: map[string]AITool{
@@ -105,6 +107,7 @@ func Load() (*Config, error) {
 	v.SetDefault("api_keys", defaults.APIKeys)
 	v.SetDefault("default_format", defaults.DefaultFormat)
 	v.SetDefault("cache_ttl_hours", defaults.CacheTTLHours)
+	v.SetDefault("update_check", defaults.UpdateCheck)
 	v.SetDefault("ai", defaults.AI)
 
 	// 설정 파일 경로 설정
@@ -145,6 +148,7 @@ func Save(cfg *Config) error {
 	v.Set("api_keys", cfg.APIKeys)
 	v.Set("default_format", cfg.DefaultFormat)
 	v.Set("cache_ttl_hours", cfg.CacheTTLHours)
+	v.Set("update_check", cfg.UpdateCheck)
 	v.Set("ai", cfg.AI)
 
 	if err := v.WriteConfig(); err != nil {

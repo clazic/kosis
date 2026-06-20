@@ -75,11 +75,33 @@ func SetVersion(v string) {
 	appVersion = v
 }
 
+// skipUpdateCheckCmds update/version/config 명령은 자동 업데이트 체크 스킵
+var skipUpdateCheckCmds = map[string]bool{
+	"update":  true,
+	"version": true,
+	"config":  true,
+}
+
 var rootCmd = &cobra.Command{
 	Use:     "kosis",
 	Short:   "KOSIS CLI - 한국 통계 데이터 조회 도구",
 	Long:    rootHelpText,
 	Version: appVersion,
+	PersistentPreRun: func(cmd *cobra.Command, args []string) {
+		// update/version/config 명령 및 비대화형은 스킵
+		name := cmd.Name()
+		if skipUpdateCheckCmds[name] {
+			return
+		}
+		startBackgroundUpdateCheck()
+	},
+	PersistentPostRun: func(cmd *cobra.Command, args []string) {
+		name := cmd.Name()
+		if skipUpdateCheckCmds[name] {
+			return
+		}
+		printUpdateNotice()
+	},
 	Run: func(cmd *cobra.Command, args []string) {
 		runDashboard(cmd)
 	},

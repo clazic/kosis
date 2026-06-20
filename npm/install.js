@@ -35,14 +35,6 @@ function getPlatformInfo() {
   return { platform, goos, goarch, ext, binArtifact, skillArtifact };
 }
 
-function getSkillDirs() {
-  const home = os.homedir();
-  return [
-    path.join(home, ".claude", "skills", "kosis"),
-    path.join(home, ".codex",  "skills", "kosis"),
-  ];
-}
-
 function download(url) {
   return new Promise((resolve, reject) => {
     const client = url.startsWith("https") ? https : http;
@@ -73,72 +65,102 @@ function extractTarGz(tarPath, destDir) {
   }
 }
 
-function createSymlink(target, linkPath) {
-  try {
-    if (fs.existsSync(linkPath)) fs.unlinkSync(linkPath);
-    fs.symlinkSync(target, linkPath);
-  } catch {
-    // symlink 실패 시 무시
+// Windows PATH 등록: 사용자 환경변수에 binDir 추가 (중복 방지)
+function registerWindowsPath(binDir) {
+  const result = spawnSync(
+    "powershell",
+    [
+      "-NoProfile", "-NonInteractive", "-Command",
+      `$p=[Environment]::GetEnvironmentVariable('Path','User');` +
+      `if($p -notlike '*${binDir}*'){` +
+      `[Environment]::SetEnvironmentVariable('Path',\"$p;${binDir}\",'User');` +
+      `Write-Host 'PATH 등록: ${binDir}'` +
+      `}`,
+    ],
+    { shell: true, stdio: "pipe" }
+  );
+  if (result.stdout) {
+    const out = result.stdout.toString().trim();
+    if (out) console.log(`  ${out} (새 터미널부터 적용)`);
   }
 }
 
 async function main() {
   const { platform, goos, goarch, ext, binArtifact, skillArtifact } = getPlatformInfo();
-  const tag      = `v${VERSION}`;
-  const baseUrl  = `https://github.com/${REPO}/releases/download/${tag}`;
-  const skillUrl = `${baseUrl}/${skillArtifact}`;
-  const binUrl   = `${baseUrl}/${binArtifact}`;
-  const skillDirs = getSkillDirs();
-  const tmpDir   = fs.mkdtempSync(path.join(os.tmpdir(), "kosis-install-"));
+  const tag       = `v${VERSION}`;
+  const baseUrl   = `https://github.com/${REPO}/releases/download/${tag}`;
+  const skillUrl  = `${baseUrl}/${skillArtifact}`;
+  const binUrl    = `${baseUrl}/${binArtifact}`;
+  const tmpDir    = fs.mkdtempSync(path.join(os.tmpdir(), "kosis-install-"));
 
   try {
-    // 1. 스킬 tarball 다운로드 및 설치
-    console.log(`kosis v${VERSION} 스킬 파일 설치 중...`);
-    const skillData = await download(skillUrl);
-    const tarPath   = path.join(tmpDir, skillArtifact);
-    fs.writeFileSync(tarPath, skillData);
-
-    for (const dest of skillDirs) {
-      if (fs.existsSync(dest)) fs.rmSync(dest, { recursive: true, force: true });
-      extractTarGz(tarPath, dest);
-      console.log(`  ✓ 스킬 설치: ${dest}`);
-    }
-
-    // 2. OS별 바이너리 다운로드
+    // ── 1. CLI 바이너리 다운로드 및 rename 설치 ──
     console.log(`바이너리 다운로드 중 (${binArtifact})...`);
     const binData = await download(binUrl);
     const tmpBin  = path.join(tmpDir, `kosis${ext}`);
     fs.writeFileSync(tmpBin, binData);
     if (platform !== "win32") fs.chmodSync(tmpBin, 0o755);
 
-    // 3. 각 스킬 폴더 apps/ 에 바이너리 배치 (스킬 탐색용: kosis-<os>-<arch>[.exe])
-    for (const dest of skillDirs) {
-      const appsDir = path.join(dest, "apps");
-      fs.mkdirSync(appsDir, { recursive: true });
-      const skillBinName = `kosis-${goos}-${goarch}${ext}`;
-      const skillBinDest = path.join(appsDir, skillBinName);
-      fs.copyFileSync(tmpBin, skillBinDest);
-      if (platform !== "win32") fs.chmodSync(skillBinDest, 0o755);
+    if (platform === "win32") {
+      // Windows: %LOCALAPPDATA%\Programs\kosis\kosis.exe
+      const binDir  = path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local"), "Programs", "kosis");
+      const binDest = path.join(binDir, "kosis.exe");
+      fs.mkdirSync(binDir, { recursive: true });
+      fs.renameSync(tmpBin, binDest);
+      console.log(`  ✓ CLI: ${binDest}`);
+      registerWindowsPath(binDir);
+    } else {
+      // Unix: ~/.local/bin/kosis
+      const localBin  = path.join(os.homedir(), ".local", "bin");
+      const binDest   = path.join(localBin, "kosis");
+      fs.mkdirSync(localBin, { recursive: true });
+      fs.renameSync(tmpBin, binDest);
+      fs.chmodSync(binDest, 0o755);
+      console.log(`  ✓ CLI: ${binDest}`);
+
+      // PATH 안내 (자동 수정 X)
+      const pathEnv = process.env.PATH || "";
+      if (!pathEnv.split(":").includes(localBin)) {
+        console.log("");
+        console.log("PATH에 ~/.local/bin 추가가 필요합니다:");
+        console.log('  echo \'export PATH="$HOME/.local/bin:$PATH"\' >> ~/.zshrc   # zsh');
+        console.log('  echo \'export PATH="$HOME/.local/bin:$PATH"\' >> ~/.bashrc  # bash');
+        console.log("  새 터미널을 열거나 위 명령 실행 후 source ~/.zshrc");
+      }
     }
 
-    // 4. npm 런처용: bin/kosis[.exe] (패키지 내부)
-    const npmBinDir = path.join(__dirname, "bin");
-    fs.mkdirSync(npmBinDir, { recursive: true });
-    const npmBinDest = path.join(npmBinDir, `kosis${ext}`);
-    fs.copyFileSync(tmpBin, npmBinDest);
-    if (platform !== "win32") fs.chmodSync(npmBinDest, 0o755);
+    // ── 2. 스킬 tarball 다운로드 및 설치 ──
+    console.log(`\nkosis v${VERSION} 스킬 파일 설치 중...`);
+    const skillData = await download(skillUrl);
+    const tarPath   = path.join(tmpDir, skillArtifact);
+    fs.writeFileSync(tarPath, skillData);
 
-    // 5. Unix: ~/.local/bin/kosis → 첫 번째 스킬 폴더 바이너리 symlink
-    if (platform !== "win32") {
-      const localBin  = path.join(os.homedir(), ".local", "bin");
-      fs.mkdirSync(localBin, { recursive: true });
-      const binTarget = path.join(skillDirs[0], "apps", `kosis-${goos}-${goarch}`);
-      createSymlink(binTarget, path.join(localBin, "kosis"));
+    // 대상 결정: env KOSIS_TARGET (기본 claude)
+    const target = (process.env.KOSIS_TARGET || "claude").toLowerCase();
+
+    function installSkill(tool) {
+      // 범위: env KOSIS_<TOOL>_SCOPE (기본 global)
+      const scopeEnv = process.env[`KOSIS_${tool.toUpperCase()}_SCOPE`] || "global";
+      const scope    = scopeEnv === "project" ? "project" : "global";
+      const base     = scope === "project" ? process.cwd() : os.homedir();
+      const dest     = path.join(base, `.${tool}`, "skills", "kosis");
+      if (fs.existsSync(dest)) fs.rmSync(dest, { recursive: true, force: true });
+      extractTarGz(tarPath, dest);
+      console.log(`  ✓ 스킬(${tool}, ${scope}): ${dest}`);
+    }
+
+    if (target === "both") {
+      installSkill("claude");
+      installSkill("codex");
+    } else if (target === "codex") {
+      installSkill("codex");
+    } else {
+      installSkill("claude");
     }
 
     console.log(`\n✓ kosis v${VERSION} 설치 완료!`);
 
-    // 5. API 키 안내
+    // ── 3. API 키 안내 ──
     const cfgPath = path.join(os.homedir(), ".kosis", "config.yaml");
     if (!fs.existsSync(cfgPath) && !process.env.KOSIS_API_KEY) {
       console.log("\n─────────────────────────────────────────────");

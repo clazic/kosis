@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"archive/tar"
+	"bufio"
 	"compress/gzip"
 	"encoding/json"
 	"fmt"
@@ -11,12 +12,15 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/spf13/cobra"
+
+	"github.com/clazic/kosis/internal/config"
 )
 
-const updateRepo = "clazic/kosis-cli"
+const updateRepo = "clazic/kosis"
 
 var (
 	updateCheckOnly bool
@@ -99,59 +103,204 @@ func runUpdate() error {
 		return fmt.Errorf("바이너리 다운로드 실패: %w", err)
 	}
 
-	// 설치 대상: 존재하는 스킬 디렉토리만 (없으면 .claude 기본)
-	var dests []string
-	for _, d := range []string{
-		filepath.Join(home, ".claude", "skills", "kosis"),
-		filepath.Join(home, ".codex", "skills", "kosis"),
-	} {
-		if _, statErr := os.Stat(d); statErr == nil {
-			dests = append(dests, d)
-		}
+	// ── 현재 실행 바이너리 경로로 교체 ──
+	exePath, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("실행 바이너리 경로 확인 실패: %w", err)
 	}
-	if len(dests) == 0 {
-		dests = append(dests, filepath.Join(home, ".claude", "skills", "kosis"))
+	// symlink 해소
+	if resolved, rerr := filepath.EvalSymlinks(exePath); rerr == nil {
+		exePath = resolved
 	}
+	fmt.Printf("  바이너리 교체 중 (%s)...\n", exePath)
+	if err := replaceBinary(binTmp, exePath); err != nil {
+		return fmt.Errorf("바이너리 교체 실패: %w", err)
+	}
+	fmt.Printf("  ✓ 바이너리: %s\n", exePath)
 
-	binName := "kosis"
-	if runtime.GOOS == "windows" {
-		binName = "kosis.exe"
-	}
-
-	for _, dest := range dests {
-		// 스킬 파일 덮어쓰기 (apps/ 바이너리는 tarball에 없으므로 보존)
+	// ── 스킬 갱신: global + cwd project 모두 ──
+	skillDirs := collectSkillDirs(home)
+	for _, dest := range skillDirs {
 		if err := extractTarGz(skillTar, dest); err != nil {
-			return fmt.Errorf("스킬 파일 설치 실패(%s): %w", dest, err)
+			fmt.Fprintf(os.Stderr, "  ⚠ 스킬 갱신 실패(%s): %v\n", dest, err)
+			continue
 		}
-		// 바이너리 교체 (실행 중일 수 있어 rename으로 원자 교체)
-		appsDir := filepath.Join(dest, "apps")
-		if err := os.MkdirAll(appsDir, 0o755); err != nil {
-			return fmt.Errorf("apps 디렉토리 생성 실패: %w", err)
-		}
-		if err := replaceBinary(binTmp, filepath.Join(appsDir, binName)); err != nil {
-			return fmt.Errorf("바이너리 교체 실패(%s): %w", dest, err)
-		}
-		fmt.Printf("  ✓ 설치: %s\n", dest)
-	}
-
-	// ~/.local/bin/kosis symlink 갱신 (Unix 계열)
-	if runtime.GOOS != "windows" {
-		localBin := filepath.Join(home, ".local", "bin")
-		if err := os.MkdirAll(localBin, 0o755); err == nil {
-			link := filepath.Join(localBin, "kosis")
-			target := filepath.Join(home, ".claude", "skills", "kosis", "apps", "kosis")
-			_ = os.Remove(link)
-			if err := os.Symlink(target, link); err != nil {
-				fmt.Fprintf(os.Stderr, "  ⚠ symlink 생성 실패(무시 가능): %v\n", err)
-			}
-		}
+		fmt.Printf("  ✓ 스킬: %s\n", dest)
 	}
 
 	fmt.Printf("✓ kosis %s → %s 업데이트 완료 (바이너리 + 스킬 파일)\n", current, latest)
 	if runtime.GOOS == "windows" {
 		fmt.Println("  (Windows) 새 바이너리는 다음 실행부터 적용됩니다. 이전 버전은 *.old로 보관됩니다.")
 	}
+
+	// 업데이트 완료 후 캐시 갱신
+	_ = saveUpdateCache(latest)
 	return nil
+}
+
+// collectSkillDirs 존재하는 스킬 디렉토리를 수집합니다 (global + cwd project).
+func collectSkillDirs(home string) []string {
+	candidates := []string{
+		filepath.Join(home, ".claude", "skills", "kosis"),
+		filepath.Join(home, ".codex", "skills", "kosis"),
+	}
+	// cwd project 스킬
+	if cwd, err := os.Getwd(); err == nil {
+		candidates = append(candidates,
+			filepath.Join(cwd, ".claude", "skills", "kosis"),
+			filepath.Join(cwd, ".codex", "skills", "kosis"),
+		)
+	}
+	var result []string
+	for _, d := range candidates {
+		if _, err := os.Stat(d); err == nil {
+			result = append(result, d)
+		}
+	}
+	// 존재하는 게 없으면 global claude 기본
+	if len(result) == 0 {
+		result = append(result, filepath.Join(home, ".claude", "skills", "kosis"))
+	}
+	return result
+}
+
+// ── 자동 업데이트 알림 ──
+
+type updateCache struct {
+	LastCheck   time.Time `json:"last_check"`
+	LatestKnown string    `json:"latest_known"`
+}
+
+func updateCachePath() string {
+	return filepath.Join(config.ConfigDir(), "update-check.json")
+}
+
+func loadUpdateCache() (*updateCache, error) {
+	data, err := os.ReadFile(updateCachePath())
+	if err != nil {
+		return &updateCache{}, nil
+	}
+	var c updateCache
+	if err := json.Unmarshal(data, &c); err != nil {
+		return &updateCache{}, nil
+	}
+	return &c, nil
+}
+
+func saveUpdateCache(latestKnown string) error {
+	c := updateCache{LastCheck: time.Now(), LatestKnown: latestKnown}
+	data, err := json.Marshal(c)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(config.ConfigDir(), 0o700); err != nil {
+		return err
+	}
+	return os.WriteFile(updateCachePath(), data, 0o600)
+}
+
+// shouldCheckUpdate 업데이트 알림을 실행해야 할지 결정합니다.
+func shouldCheckUpdate() bool {
+	// 명시적 비활성화
+	if os.Getenv("KOSIS_NO_UPDATE_CHECK") != "" {
+		return false
+	}
+	// config update_check=false
+	cfg, err := config.Load()
+	if err == nil && !cfg.UpdateCheck {
+		return false
+	}
+	// stdout이 TTY가 아니면 스킵 (파이프/리다이렉트)
+	fi, err := os.Stdout.Stat()
+	if err != nil || (fi.Mode()&os.ModeCharDevice) == 0 {
+		return false
+	}
+	// 24h 이내 이미 체크했으면 스킵
+	cache, _ := loadUpdateCache()
+	if time.Since(cache.LastCheck) < 24*time.Hour {
+		return false
+	}
+	return true
+}
+
+// startBackgroundUpdateCheck PersistentPreRun에서 호출 — goroutine+타임아웃으로 비차단.
+// 새 버전 발견 시 cmd 종료 후 stderr 알림을 위해 채널 반환.
+var pendingUpdateNotice string
+var pendingUpdateOnce sync.Once
+
+func startBackgroundUpdateCheck() {
+	if !shouldCheckUpdate() {
+		return
+	}
+	go func() {
+		done := make(chan string, 1)
+		go func() {
+			tag, err := fetchLatestTagWithTimeout(3 * time.Second)
+			if err != nil {
+				done <- ""
+				return
+			}
+			_ = saveUpdateCache(tag)
+			done <- tag
+		}()
+		select {
+		case tag := <-done:
+			if tag != "" && normalizeVer(tag) != normalizeVer(appVersion) {
+				pendingUpdateOnce.Do(func() {
+					pendingUpdateNotice = tag
+				})
+			}
+		case <-time.After(3 * time.Second):
+		}
+	}()
+}
+
+// printUpdateNotice 명령 종료 시점에 stderr로 업데이트 알림을 출력합니다.
+func printUpdateNotice() {
+	if pendingUpdateNotice == "" {
+		return
+	}
+	tag := pendingUpdateNotice
+	fmt.Fprintf(os.Stderr, "\n새 버전 %s 사용 가능 (현재 %s).\n", tag, appVersion)
+	fmt.Fprintf(os.Stderr, "지금 업데이트할까요? (y/N) ")
+	scanner := bufio.NewScanner(os.Stdin)
+	if scanner.Scan() {
+		ans := strings.TrimSpace(scanner.Text())
+		if strings.EqualFold(ans, "y") {
+			if err := runUpdate(); err != nil {
+				fmt.Fprintf(os.Stderr, "업데이트 실패: %v\n", err)
+			}
+			return
+		}
+	}
+	// N 또는 무응답: 24h 침묵
+	fmt.Fprintln(os.Stderr, "24시간 동안 알림을 표시하지 않습니다. (`kosis update`로 수동 업데이트)")
+	_ = saveUpdateCache(tag)
+}
+
+func fetchLatestTagWithTimeout(timeout time.Duration) (string, error) {
+	client := &http.Client{Timeout: timeout}
+	url := fmt.Sprintf("https://api.github.com/repos/%s/releases/latest", updateRepo)
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("GitHub API 응답 코드 %d", resp.StatusCode)
+	}
+	var payload struct {
+		TagName string `json:"tag_name"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return "", err
+	}
+	return payload.TagName, nil
 }
 
 // fetchLatestTag GitHub 릴리스 API에서 최신 태그명을 가져옵니다.
