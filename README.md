@@ -20,7 +20,7 @@ kosis q "서울 미분양 최근 5년"                # 자연어 한 줄 조회
 Node.js 14 이상이 설치된 환경:
 
 ```bash
-npm install -g @clazic/kosis
+npm install -g kosis
 ```
 
 설치 시 자동으로:
