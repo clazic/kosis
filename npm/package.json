@@ -1,6 +1,6 @@
 {
   "name": "@clazic/kosis",
-  "version": "0.1.1",
+  "version": "0.3.4",
   "description": "KOSIS(국가통계포털) OpenAPI CLI - 한국 통계 데이터 검색·조회·내보내기·차트 도구",
   "keywords": [
     "kosis",
