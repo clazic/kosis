@@ -84,9 +84,9 @@ jobs:
           echo "$VERSION" > VERSION
           # 화이트리스트 기반 패키징 (src/, .github/ 등 개발 메타 제외)
           tar -czf "$ASSET" \
-            SKILL.md LEARNINGS.md VERSION references templates scripts apps \
             --exclude=".DS_Store" \
-            --exclude="apps/kosis-*"
+            --exclude="apps/kosis-*" \
+            SKILL.md LEARNINGS.md VERSION references templates scripts apps
           echo "SKILL_ASSET=$ASSET" >> $GITHUB_ENV
 
       - name: Upload skill artifact
