@@ -1,0 +1,28 @@
+# ─────────────────────────────────────────────
+# KOSIS 개발 repo (스킬 + src/CLI 포함)
+# ─────────────────────────────────────────────
+
+# 개발 도구 메타 (커밋하지 않음)
+.idea/
+.omc/
+.omx/
+.claude/
+.playwright/
+.playwright-cli/
+.playwright-mcp/
+.plan/
+.DS_Store
+
+# 빌드 바이너리 (빌드/Release로 생성 — git에 올리지 않음)
+apps/kosis-*
+src/bin/kosis-*
+src/dist/
+
+# 환경 변수 / 시크릿
+.env
+scripts/.env
+src/scripts/.env
+
+# 배포 산출물
+*.tar.gz
+*.zip

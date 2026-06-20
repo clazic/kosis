@@ -1,0 +1,57 @@
+name: Build
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            goos: linux
+            goarch: amd64
+            artifact: kosis-linux-amd64
+          - os: macos-latest
+            goos: darwin
+            goarch: arm64
+            artifact: kosis-darwin-arm64
+          - os: windows-latest
+            goos: windows
+            goarch: amd64
+            artifact: kosis-windows-amd64.exe
+
+    runs-on: ${{ matrix.os }}
+    name: Build (${{ matrix.goos }}/${{ matrix.goarch }})
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: src/go.mod
+
+      - name: Install GCC (Windows)
+        if: matrix.os == 'windows-latest'
+        run: choco install mingw -y
+
+      - name: Build
+        working-directory: src
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "1"
+        run: go build -ldflags "-s -w -X main.version=${{ github.sha }}" -o ${{ matrix.artifact }} .
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.artifact }}

@@ -1,0 +1,22 @@
+#!/usr/bin/env node
+"use strict";
+
+const { execFileSync } = require("child_process");
+const path = require("path");
+const os = require("os");
+const fs = require("fs");
+
+const ext = os.platform() === "win32" ? ".exe" : "";
+const binPath = path.join(__dirname, `kosis${ext}`);
+
+if (!fs.existsSync(binPath)) {
+  console.error("kosis 바이너리를 찾을 수 없습니다. 재설치해 주세요:");
+  console.error("  npm install -g kosis");
+  process.exit(1);
+}
+
+try {
+  execFileSync(binPath, process.argv.slice(2), { stdio: "inherit" });
+} catch (err) {
+  process.exit(err.status || 1);
+}

@@ -1,0 +1,147 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            goos: linux
+            goarch: amd64
+            artifact: kosis-linux-amd64
+          - os: ubuntu-latest
+            goos: linux
+            goarch: arm64
+            artifact: kosis-linux-arm64
+            cc: aarch64-linux-gnu-gcc
+          - os: macos-latest
+            goos: darwin
+            goarch: arm64
+            artifact: kosis-darwin-arm64
+          - os: macos-latest
+            goos: darwin
+            goarch: amd64
+            artifact: kosis-darwin-amd64
+          - os: windows-latest
+            goos: windows
+            goarch: amd64
+            artifact: kosis-windows-amd64.exe
+
+    runs-on: ${{ matrix.os }}
+    name: Build (${{ matrix.goos }}/${{ matrix.goarch }})
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: src/go.mod
+
+      - name: Install cross-compiler (Linux ARM64)
+        if: matrix.goos == 'linux' && matrix.goarch == 'arm64'
+        run: sudo apt-get update && sudo apt-get install -y gcc-aarch64-linux-gnu
+
+      - name: Install GCC (Windows)
+        if: matrix.os == 'windows-latest'
+        run: choco install mingw -y
+
+      - name: Build
+        working-directory: src
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "1"
+          CC: ${{ matrix.cc || '' }}
+        run: go build -ldflags "-s -w -X main.version=${{ github.ref_name }}" -o ${{ matrix.artifact }} .
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: src/${{ matrix.artifact }}
+
+  skill-package:
+    runs-on: ubuntu-latest
+    name: Package skill files
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Package skill tarball
+        run: |
+          VERSION="${{ github.ref_name }}"
+          ASSET="kosis-skill-${VERSION}.tar.gz"
+          # VERSION 파일 갱신
+          echo "$VERSION" > VERSION
+          # 화이트리스트 기반 패키징 (src/, .github/ 등 개발 메타 제외)
+          tar -czf "$ASSET" \
+            SKILL.md LEARNINGS.md VERSION references templates scripts apps \
+            --exclude=".DS_Store" \
+            --exclude="apps/kosis-*"
+          echo "SKILL_ASSET=$ASSET" >> $GITHUB_ENV
+
+      - name: Upload skill artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: skill-package
+          path: kosis-skill-*.tar.gz
+
+  release:
+    needs: [build, skill-package]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Generate SHA256SUMS
+        run: |
+          cd artifacts
+          find . -type f | sort | xargs sha256sum | sed 's|./[^/]*/||' > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/**/*
+            artifacts/SHA256SUMS
+          generate_release_notes: true
+
+  npm-publish:
+    needs: release
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+
+      - name: Update npm package version
+        working-directory: npm
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          npm version "$VERSION" --no-git-tag-version --allow-same-version
+
+      - name: Publish to npm
+        working-directory: npm
+        run: npm publish --access=public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

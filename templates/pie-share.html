@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{TITLE}}</title>
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+  <style>
+    :root {
+      --bg: #f5f1e8; --panel: #fffdf8; --text: #1e2a2f;
+      --muted: #6a747a; --grid: #d8d1c3; --accent: #8f7a52;
+    }
+    * { box-sizing: border-box; margin: 0; }
+    body {
+      font-family: "Pretendard", "Noto Sans KR", -apple-system, sans-serif;
+      color: var(--text);
+      background: radial-gradient(circle at top left, #fff6dd 0, transparent 28%),
+                  linear-gradient(180deg, #f7f2e7 0%, #efe8da 100%);
+    }
+    .wrap { max-width: 1200px; margin: 0 auto; padding: 32px 20px 40px; }
+    h1 { font-size: 28px; line-height: 1.3; letter-spacing: -0.02em; margin-bottom: 8px; text-align: center; }
+    .subtitle { color: var(--muted); line-height: 1.6; text-align: center; margin-bottom: 20px; }
+    .panel {
+      padding: 18px; border: 1px solid #e4dac7; border-radius: 16px;
+      background: var(--panel); box-shadow: 0 8px 24px rgba(81, 65, 27, 0.06);
+      margin-bottom: 20px;
+    }
+    .chart { width: 100%; height: 480px; }
+    .source { font-size: 13px; color: var(--muted); margin-top: 16px; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td {
+      padding: 11px 10px; border-bottom: 1px solid #eee6d7;
+      text-align: right; font-variant-numeric: tabular-nums; font-size: 14px;
+    }
+    th:first-child, td:first-child { text-align: left; }
+    thead th { color: var(--text); background: #faf5eb; font-weight: 600; }
+    tbody tr:hover { background: #faf5eb; }
+    @media (max-width: 720px) {
+      h1 { font-size: 22px; }
+      .chart { height: 380px; }
+      th, td { padding: 9px 7px; font-size: 13px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>{{TITLE}}</h1>
+    <p class="subtitle">{{SUBTITLE}}</p>
+
+    <div class="panel">
+      <div id="chart" class="chart"></div>
+    </div>
+
+    <div class="panel" style="overflow-x:auto;">
+      <table id="dataTable" style="width:100%;border-collapse:collapse;">
+        <thead id="thead"></thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+
+    <p class="source">{{SOURCE}}</p>
+  </div>
+  <script>
+    const DATA = {{DATA}};
+    const items = DATA.labels.map((label, i) => ({
+      name: label,
+      value: DATA.series[0].values[i]
+    })).filter(d => d.value != null && d.value > 0);
+
+    const chart = echarts.init(document.getElementById("chart"));
+    chart.setOption({
+      color: ["#1f77b4","#d95f02","#7570b3","#e7298a","#66a61e","#e6ab02","#a6761d","#666666","#377eb8","#4daf4a","#984ea3","#ff7f00","#a65628","#f781bf","#999999","#17becf","#bcbd22","#e41a1c","#8dd3c7","#fb8072","#80b1d3","#fdb462","#b3de69","#fccde5","#d9d9d9","#bc80bd","#ccebc5","#ffed6f","#1b9e77","#2ca02c","#d62728","#9467bd","#8c564b","#e377c2","#7f7f7f","#aec7e8","#ffbb78","#98df8a","#ff9896","#c5b0d5","#c49c94","#f7b6d2","#dbdb8d","#9edae5","#393b79","#5254a3","#6b6ecf","#9c9ede","#637939","#b5cf6b"],
+      tooltip: {
+        trigger: "item",
+        formatter: p => `${p.name}: ${p.value.toLocaleString()}${DATA.unit ? " " + DATA.unit : ""} (${p.percent}%)`
+      },
+      legend: {
+        orient: "vertical", right: "5%", top: "middle",
+        textStyle: { fontSize: 13 }
+      },
+      series: [{
+        name: DATA.series[0].name || "",
+        type: "pie",
+        radius: ["40%", "70%"],
+        center: ["40%", "50%"],
+        avoidLabelOverlap: true,
+        itemStyle: { borderRadius: 6, borderColor: "#fffdf8", borderWidth: 2 },
+        label: {
+          show: true,
+          formatter: p => `${p.name}\n${p.percent}%`,
+          fontSize: 12
+        },
+        emphasis: {
+          label: { show: true, fontSize: 16, fontWeight: "bold" }
+        },
+        data: items
+      }]
+    });
+    window.addEventListener("resize", () => chart.resize());
+
+    // --- Table ---
+    const total = items.reduce((sum, d) => sum + d.value, 0);
+    const thead = document.getElementById("thead");
+    const tbody = document.getElementById("tbody");
+    thead.innerHTML = `<tr><th>항목</th><th>${DATA.unit || '값'}</th><th>비중</th></tr>`;
+    items.sort((a, b) => b.value - a.value).forEach(d => {
+      const pct = (d.value / total * 100).toFixed(1);
+      tbody.innerHTML += `<tr><td>${d.name}</td><td>${d.value.toLocaleString()}</td><td>${pct}%</td></tr>`;
+    });
+    tbody.innerHTML += `<tr style="font-weight:600;border-top:2px solid #d8d1c3;"><td>합계</td><td>${total.toLocaleString()}</td><td>100%</td></tr>`;
+  </script>
+</body>
+</html>

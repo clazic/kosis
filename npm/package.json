@@ -1,0 +1,42 @@
+{
+  "name": "@clazic/kosis",
+  "version": "0.1.0",
+  "description": "KOSIS(국가통계포털) OpenAPI CLI - 한국 통계 데이터 검색·조회·내보내기·차트 도구",
+  "keywords": [
+    "kosis",
+    "korea",
+    "statistics",
+    "cli",
+    "openapi",
+    "통계",
+    "국가통계포털"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/clazic/kosis"
+  },
+  "homepage": "https://github.com/clazic/kosis#readme",
+  "bin": {
+    "kosis": "bin/kosis"
+  },
+  "scripts": {
+    "postinstall": "node install.js"
+  },
+  "files": [
+    "install.js",
+    "bin/"
+  ],
+  "os": [
+    "darwin",
+    "linux",
+    "win32"
+  ],
+  "cpu": [
+    "x64",
+    "arm64"
+  ],
+  "engines": {
+    "node": ">=14"
+  }
+}
