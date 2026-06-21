@@ -274,7 +274,13 @@ var dataCmd = &cobra.Command{
 		var colMetaFull *api.ColumnMeta // 필터링 전 전체 메타 (--fields 변환용)
 		if orgID != "" && tblID != "" {
 			if summary, err := client.MetaSummary(orgID, tblID); err == nil {
-				colMetaFull = summary.BuildColumnMeta()
+				// JSON 출력, --with-code, --fields 중 하나면 코드 컬럼(C1~C8, ITM_ID)을 포함한다.
+				// (table/csv 기본 출력은 기존대로 이름 컬럼만 — 하위호환 유지)
+				if formatFlag == "json" || withCodeFlag || fieldsFlag != "" {
+					colMetaFull = summary.BuildColumnMetaWithCode()
+				} else {
+					colMetaFull = summary.BuildColumnMeta()
+				}
 				colMeta = colMetaFull
 				if len(results) > 0 {
 					colMeta = colMetaFull.FilterByData(results)
@@ -435,6 +441,7 @@ var (
 	formatFlag       string
 	outputFlag       string
 	fieldsFlag       string
+	withCodeFlag     bool
 	userIDFlag       string
 	noAutoSplitFlag  bool
 	concurrencyFlag  int
@@ -708,6 +715,7 @@ func init() {
 	dataCmd.Flags().StringVarP(&formatFlag, "format", "f", "table", "출력 형식: table(기본), json, csv")
 	dataCmd.Flags().StringVarP(&outputFlag, "output", "o", "", "파일 저장 (.csv/.xlsx/.json/.db/.parquet)")
 	dataCmd.Flags().StringVar(&fieldsFlag, "fields", "", "출력 필드 선택 (\"C1_NM,ITM_NM,PRD_DE,DT\")")
+	dataCmd.Flags().BoolVar(&withCodeFlag, "with-code", false, "지역·분류·항목 코드 컬럼(C1~C8, ITM_ID)을 함께 출력 (지도/DB 결합용)")
 	dataCmd.Flags().StringVar(&userIDFlag, "user-id", "", "자료등록 방식 (userStatsId로 조회)")
 	dataCmd.Flags().BoolVar(&noAutoSplitFlag, "no-auto-split", false, "4만 셀 초과 시 자동 분할 비활성화")
 	dataCmd.Flags().IntVar(&concurrencyFlag, "concurrency", 0, "동시 조회 워커 수 (0=자동: max(키 개수, 2))")

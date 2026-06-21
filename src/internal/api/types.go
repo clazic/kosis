@@ -58,7 +58,20 @@ type ColumnMeta struct {
 }
 
 // BuildColumnMeta는 MetaSummaryResult에서 컬럼 메타정보를 생성합니다.
+// (지역명 등 이름 컬럼만 포함 — 기존 table/csv 기본 출력용)
 func (s *MetaSummaryResult) BuildColumnMeta() *ColumnMeta {
+	return s.buildColumnMeta(false)
+}
+
+// BuildColumnMetaWithCode는 이름 컬럼과 함께 분류·항목 코드 컬럼(C1~C8, ITM_ID)도
+// 포함한 컬럼 메타를 생성합니다. 지도(SGIS/vworld)·DB 결합용 코드 노출에 사용합니다.
+func (s *MetaSummaryResult) BuildColumnMetaWithCode() *ColumnMeta {
+	return s.buildColumnMeta(true)
+}
+
+// buildColumnMeta는 BuildColumnMeta / BuildColumnMetaWithCode의 공통 구현입니다.
+// withCode가 true이면 각 분류축·항목에 코드 컬럼(C%d, ITM_ID)을 이름 컬럼 앞에 함께 넣습니다.
+func (s *MetaSummaryResult) buildColumnMeta(withCode bool) *ColumnMeta {
 	cm := &ColumnMeta{}
 
 	// 분류 그룹: ObjID 등장 순서대로 C1~C8 매핑
@@ -70,6 +83,12 @@ func (s *MetaSummaryResult) BuildColumnMeta() *ColumnMeta {
 			label := c.ObjNM
 			if label == "" {
 				label = fmt.Sprintf("분류%d", classIdx)
+			}
+			if withCode {
+				cm.Columns = append(cm.Columns, ColumnDef{
+					Key:   fmt.Sprintf("C%d", classIdx),
+					Label: label + " 코드",
+				})
 			}
 			cm.Columns = append(cm.Columns, ColumnDef{
 				Key:   fmt.Sprintf("C%d_NM", classIdx),
@@ -87,6 +106,9 @@ func (s *MetaSummaryResult) BuildColumnMeta() *ColumnMeta {
 		label := "항목"
 		if s.Items[0].ObjNM != "" {
 			label = s.Items[0].ObjNM
+		}
+		if withCode {
+			cm.Columns = append(cm.Columns, ColumnDef{Key: "ITM_ID", Label: label + " 코드"})
 		}
 		cm.Columns = append(cm.Columns, ColumnDef{Key: "ITM_NM", Label: label})
 	}
@@ -166,6 +188,24 @@ type DataRow struct {
 // GetField는 키 이름으로 DataRow의 필드 값을 반환합니다.
 func (r DataRow) GetField(key string) string {
 	switch key {
+	case "C1":
+		return r.C1
+	case "C2":
+		return r.C2
+	case "C3":
+		return r.C3
+	case "C4":
+		return r.C4
+	case "C5":
+		return r.C5
+	case "C6":
+		return r.C6
+	case "C7":
+		return r.C7
+	case "C8":
+		return r.C8
+	case "ITM_ID":
+		return r.ItmID
 	case "C1_NM":
 		return r.C1NM
 	case "C2_NM":

@@ -13,19 +13,44 @@
 
 ---
 
-## 16.2 코드를 얻는 3가지 방법 (우선순위 순)
+## 16.2 코드를 얻는 2가지 방법 (우선순위 순)
 
 | 순위 | 방법 | 상태 | 비고 |
 |------|------|------|------|
-| 1 | `meta -f json`의 CLASSIFICATIONS 역매핑 | **현재 표준** | 어떤 CLI 버전에서도 동작. 16.3 |
-| 2 | `-f json`(코드 키 포함) 또는 `--with-code` | **CLI 지원 후** | 이슈 [clazic/kosis#1](https://github.com/clazic/kosis/issues/1) 머지 시 1순위로 승격. 16.4 |
-| 3 | SGIS 행정구역 코드 목록과 이름 매칭 | 최후수단 | 중복 구이름 위험 |
+| 1 | `-f json`(코드 자동 포함) 또는 `--with-code` | **현재 표준 (v0.5.0+)** | 역매핑 불필요. 16.3 |
+| 2 | `meta -f json`의 CLASSIFICATIONS 역매핑 | **구버전 폴백** | v0.5.0 미만 또는 코드가 비는 특수상황. 16.4 |
 
-> ⚠ **현재 CLI 함정**: `-f json` / `--fields "C1"`을 줘도 분류 코드가 `null`로 나온다(이름만 노출). CLI가 코드 키를 출력에서 드롭하기 때문(이슈 #1). 그래서 **지금은 16.3 역매핑이 표준**이다. 이슈가 머지되면 16.4가 표준이 되고 16.3은 불필요해진다.
+> ✅ **v0.5.0부터** `kosis data`가 `-f json`·`--with-code`·`--fields` 사용 시 분류·항목 코드(`C1~C8`, `ITM_ID`)를 자동 출력한다(이슈 [clazic/kosis#1](https://github.com/clazic/kosis/issues/1) 해결). **table/csv 기본 출력은 종전대로 이름만** 나오니 코드가 필요하면 `--with-code`를 쓴다.
 
 ---
 
-## 16.3 표준 레시피 (현재) — meta 역매핑, 실측 검증됨 (2026-06-21)
+## 16.3 표준 레시피 (현재, v0.5.0+) — CLI 코드 출력
+
+```bash
+# 시군구별 제조업 출하액을 코드와 함께 (JSON은 코드 자동 포함)
+kosis d 101 DT_1FS1101 -c1 ALL -c2 C -i T04 -p Y -l 1 -f json
+# table/csv에서 코드가 필요하면 --with-code
+kosis d 101 DT_1FS1101 -c1 ALL -c2 C -i T04 -p Y -l 1 --with-code -o mfg.csv
+```
+
+JSON 각 레코드에 **`"<분류축명> 코드"`** 키가 이름 옆에 함께 나온다(키 이름은 메타 분류축명 기반):
+
+```json
+{ "시도별 코드":"11010", "시도별":"종로구",
+  "산업별 코드":"C", "산업별":"제조업(10~34)",
+  "항목 코드":"T04", "항목":"출하액",
+  "수치값":"1262246", "단위":"백만원", "시점":"2024" }
+```
+
+→ `"시도별 코드"`(시군구 5자리)를 SGIS 경계 GeoJSON `properties.adm_cd`와 join → choropleth. **역매핑 불필요.**
+
+> 특정 코드 컬럼만 뽑으려면 `--fields "C1,C1_NM,DT"`처럼 원시 코드 키를 직접 지정할 수 있다(v0.5.0+에서 정상 동작).
+
+---
+
+## 16.4 폴백 레시피 (구버전 < v0.5.0) — meta 역매핑, 실측 검증됨 (2026-06-21)
+
+> ⚠ v0.5.0 이상에서는 16.3을 쓰면 된다. 아래는 코드가 `null`로 나오는 구버전 또는 특수상황 폴백이다.
 
 데이터는 한글 이름만 오지만, **데이터가 전국→시도→시군구 계층 순서로 정렬**되어 온다는 점을 이용해
 "현재 시도 컨텍스트 + 구 이름"으로 코드를 역매핑한다. 이러면 중복 구이름('중구' 등)도 유니크하게 풀린다.
@@ -75,22 +100,6 @@ json.dump(rows, open('mapped.json','w'), ensure_ascii=False)
 ```
 
 → `mapped.json`의 `code`를 SGIS 경계 GeoJSON `properties.adm_cd`와 join → choropleth.
-
----
-
-## 16.4 표준 레시피 (향후) — CLI 코드 출력, **이슈 #1 머지 후**
-
-> ⏳ [clazic/kosis#1](https://github.com/clazic/kosis/issues/1)이 머지되면 아래가 1순위 표준이 되고, 16.3 역매핑은 불필요해진다. **머지 전에는 동작하지 않으니 16.3을 쓸 것.**
-
-```bash
-# 시군구별 제조업 출하액을 코드와 함께 (머지 후 동작)
-kosis d 101 DT_1FS1101 -c1 ALL -c2 C -i T04 -p Y -l 1 -f json
-# 또는
-kosis d 101 DT_1FS1101 -c1 ALL -c2 C -i T04 -p Y -l 1 --with-code -o mfg.csv
-```
-
-각 레코드에 `C1`(예: 11010), `C1_NM`(종로구), `ITM_ID`(T04), `DT`(수치)가 들어온다.
-→ SGIS 경계 GeoJSON을 `properties.adm_cd == C1`로 join → choropleth. 별도 역매핑 불필요.
 
 ---
 

@@ -196,6 +196,7 @@ kosis d <ORG_ID> <TBL_ID> -c1 <분류> -i <항목> -p <주기> [시점] [옵션]
 | 출력 | `-f` | 형식 (table/json/csv/md) | `-f md` |
 | | `-o` | 파일 (.xlsx/.db/.parquet/.csv/.json) | `-o gdp.xlsx` |
 | | `--fields` | 필드 선택 (API키 또는 한글 라벨) | `--fields "시점,수치값"` |
+| | `--with-code` | 코드 컬럼(C1~C8, ITM_ID) 함께 출력 (지도/DB 결합용, v0.5.0+) | `--with-code` |
 | 기타 | `--user-id` | userStatsId 직접 조회 | |
 | | `--no-auto-split` | 4만 셀 자동 분할 비활성화 | |
 | | `--concurrency` | 동시 조회 워커 수 (0=자동: max(키,2)) | `--concurrency 4` |
