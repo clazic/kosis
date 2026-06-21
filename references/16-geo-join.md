@@ -120,3 +120,39 @@ json.dump(rows, open('mapped.json','w'), ensure_ascii=False)
 
 > ⚠ "제조업 **생산액**"을 찾을 때 검색어 `"제조업 생산액"`은 생산'지수'만 반환한다.
 > 시군구 단위 실액수는 **출하액(T04)**이며 검색어는 **"광업제조업조사"**를 써라. (→ 15-ai-workflow 용어 매핑)
+
+---
+
+## 16.7 행정동(8자리) 레벨 결합 + 통계표 부류별 코드 주의 (실측 2026-06-22)
+
+시군구(5자리)와 **동일한 방식**으로 행정동(8자리)도 결합된다. 단 **KOSIS 통계표 부류에 따라 코드 체계가 갈리므로** 사용 전 반드시 `--with-code`로 C1을 확인한다.
+
+### 통계표 부류 (이게 행정동 레벨의 핵심 함정)
+
+| 부류 | 예시 | C1(행정구역) 코드 | SGIS `adm_cd` 일치 |
+|------|------|-------------------|-------------------|
+| **통계청 인구총조사(읍면동)** | `101 DT_1IN1503` (연령·성별 인구/읍면동) | **통계청 8자리** (`11010530` 사직동 …) | ✅ **완전 일치** — 무가공 join |
+| 지자체 주민등록(읍면동) | `DT_62301_B000017`(남양주) 등 — KOSIS에 **시·군별로 분산** | KOSIS 자체 분류일 수 있음 | ⚠ **확인 필수** (불일치 가능) |
+
+- **실측 확정**: `kosis m 101 DT_1IN1503`의 objL A축(행정구역별 읍면동)이 `11010530 사직동 / 11010540 삼청동 / 11010550 부암동 …`로, SGIS `hadmarea`(서울 종로구 `--low-search 1`)의 `adm_cd`와 **글자 단위로 동일**. → 통계청 인구총조사 읍면동은 SGIS 행정동 경계와 무가공 join.
+- "읍면동별 세대 및 인구(주민등록)"류는 **각 지자체 ORG(당진·여수·천안 …)에 흩어져** 있고, 전국 단일표가 아니며 코드가 통계청 8자리가 아닐 수 있다. 이런 표를 쓸 땐 먼저 C1을 SGIS `adm_cd`와 대조하라.
+
+### 행정동 결합 레시피
+
+```bash
+# 1) SGIS 행정동 경계 (시군구5자리 + low_search → 행정동 8자리, WGS84)
+sgis boundary hadmarea --year 2022 --adm-cd 11010 --low-search 1 --wgs84 -o hjd.geojson
+#    properties.adm_cd = 11010530(사직동) …
+
+# 2) KOSIS 통계청 읍면동 인구 (C1 = 통계청 8자리)
+kosis d 101 DT_1IN1503 --with-code -f json -o pop.json      # objL A=행정구역(읍면동)
+
+# 3) adm_cd 8자리로 조인 → 4) 색칠 지도 (vworld)
+vworld data join --geojson hjd.geojson --table pop.json --on adm_cd --table-value <값> --as population -o joined.geojson
+vworld map choropleth --geojson joined.geojson --value-field population --color-scale blues --legend --open
+```
+
+- **코드 불일치 시 폴백**: `vworld data join --on adm_nm`(행정동 이름 조인). 단 이름은 **같은 시군구 안에서만** 안전(전국엔 동명 행정동 다수) — 가능하면 통계청 인구총조사 표로 바꿔 코드를 일치시키는 게 우선.
+- **검증**: 종로구 17개 행정동 경계 × 인구 → adm_cd join **17/17 매칭, unmatched 0**.
+
+> 지도 시각화(choropleth 명령·옵션·범례) 상세는 **`vworld` 스킬 SKILL.md의 "인구·통계 choropleth 워크플로"** 참조.
