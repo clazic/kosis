@@ -116,6 +116,7 @@ make build      # 5개 플랫폼 빌드 후 src/bin/ 과 apps/ 두 곳에 자동
 - **분류코드는 코드로** — `-c1 ~ -c8`, `-i` 에는 반드시 **코드**를 사용. 한글 이름 사용 시 에러 21
 - **4만 셀 제한** — `ALL` 사용 시 초과 가능 → 자동 분할(기간 축) + 병렬 처리. `--concurrency N`으로 동시성 제어(키 1개여도 병렬). 단일 시점이 4만 셀 초과인 와이드 테이블은 **분류 축 2차 분할**로 자동 조회(느릴 수 있음 → 범위 축소 권장)
 - **HTTPS 전용** — HTTP 미지원. 분당 1,000회 호출 제한
+- **지도 결합엔 코드** — choropleth·DB join 등 기계 결합이 목적이면 `C1`/`ITM_ID` 같은 **코드 키**가 필요하다(이름은 중복). 지역코드 매핑·SGIS 경계 결합은 [16-geo-join.md](references/16-geo-join.md) 참조
 
 ---
 
@@ -435,6 +436,7 @@ kosis m 101 DT_2OENA01
 | [13-reference.md](references/13-reference.md) | 레퍼런스 (API 매핑, 에러 코드, 트러블슈팅) |
 | [14-chart.md](references/14-chart.md) | 차트 시각화 상세 |
 | [15-ai-workflow.md](references/15-ai-workflow.md) | AI 표준 워크플로우 |
+| [16-geo-join.md](references/16-geo-join.md) | **지역코드 매핑 & 지도 결합(Choropleth)** — 코드 확보 3가지 방법, meta 역매핑 워크아라운드, SGIS 경계 결합 체크리스트 |
 | [kosis-table-index.md](references/kosis-table-index.md) | 통계표 인덱스 — 5,128개 통계표 목록 (ORG_ID/TBL_ID/통계표명/분류경로, 주제별 29개 카테고리) |
 | [kosis-table-params.md](references/kosis-table-params.md) | 통계표 파라미터 가이드 — 5,128개 통계표별 분류(-c1~c8 코드/명), 항목(-i 코드/명), 수록주기(-p) |
 | [LEARNINGS.md](LEARNINGS.md) | **학습 로그(오답노트)** — 실패·함정·성공 쿼리 누적. 조회 전 읽고, 작업 후 추가하여 스킬이 진화한다 |
