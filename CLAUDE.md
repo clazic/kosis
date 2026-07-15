@@ -1,35 +1,12 @@
 # KOSIS CLI 프로젝트 규칙
 
-## 프로젝트 팀 구성
+## 작업 규칙 (공통)
 
-- **PM (opus)**: 업무배정 및 관리, 체크리스트 작성, 느슨함 없이 관리
-- **개발자 4명 (haiku)**: 개발 및 자료검색, 병렬 작업 수행
-- **평가자 3명 (haiku)**: 코드리뷰, 평가, 테스트 (100점 만점 기준)
-
-## 작업 규칙
-
-### 공통
 - 작업 시작 전 반드시 아래 파일을 모두 읽고 숙지할 것:
-  - `docs/superpowers/specs/2026-03-31-kosis-cli-design.md` (설계서)
-  - `skills/kosis-cli/SKILL.md` (사용 가이드)
-
-### PM
-- 먼저 작업 업무배정 계획을 세우고, 업무의 체크리스트를 만들어 작업을 분배한다
-- 작업이 느슨함이 없게 관리한다
-- 개발자 3명에게 병렬로 작업을 분배하여 효율을 극대화한다
-
-### 개발자
-- PM의 업무계획에 따라 작업을 진행한다
-- 작업 완료 후 평가자에게 평가를 받는다
-- 평가 점수가 100점일 때까지 반복해서 수정하고 다시 평가를 받는다
-- --help 출력도 설계서 기준에 맞게 정확히 구현한다
-
-### 평가자
-- PM의 업무계획을 잘 보고 개발자들의 업무에 맞는 체크리스트를 만든다
-- 개발자가 평가를 받으려고 하면 높은 기준으로 평가한다
-- 100점이 될 때까지 계속 반복한다
-- --help도 설계서 기준에 맞는지 정확히 확인한다
-- 코드 품질, 에러 처리, 테스트, 설계서 준수 여부를 모두 확인한다
+  - `SKILL.md` (사용 가이드 — 사실상의 설계 계약)
+  - `references/13-reference.md` (명령·플래그 레퍼런스)
+- `--help` 출력은 계약의 일부로 취급하며, `SKILL.md`·`references/` 기준에 맞게 정확히 구현·유지한다.
+- 구현과 문서가 다르면 코드와 문서 중 하나를 반드시 맞춘다.
 
 ## Playwright 사용 규칙 (필수)
 - Playwright(`playwright-cli` / MCP) 산출물은 **프로젝트 루트의 `.playwright/` 폴더 안에만** 저장한다.
@@ -47,10 +24,12 @@
 - CLI(`src/`)를 개발·수정한 뒤에는 **항상 멀티플랫폼 전체를 빌드**한다: `cd src && make build`
 - 빌드 산출물은 `src/bin/` 과 스킬 루트 `apps/` **두 곳 모두**에 자동 배치된다 (Makefile이 처리).
 - 파일명 컨벤션: `kosis-<os>-<arch>` (darwin-arm64 / darwin-amd64 / linux-amd64 / linux-arm64 / windows-amd64.exe)
-- 네이티브(darwin/arm64)는 `CGO=1`(SQLite 포함 완전 기능), 나머지는 `CGO=0`(SQLite 제외). 정식 완전 바이너리는 CI(`src/.github/workflows/release.yml`)가 생성한다.
+- 네이티브(darwin/arm64)는 `CGO=1`(SQLite 포함 완전 기능), 나머지는 `CGO=0`(SQLite 제외). 정식 완전 바이너리는 CI(`.github/workflows/release.yml`)가 생성한다.
 - 현재 플랫폼만 빠르게 필요하면 `make native`.
 
 ## 참조 파일
-- 설계서: `docs/superpowers/specs/2026-03-31-kosis-cli-design.md`
-- 사용 가이드: `skills/kosis-cli/SKILL.md`
-- 프로젝트 소스: `kosis-cli/` 디렉토리
+- 사용 가이드(설계 계약): `SKILL.md`
+- 명령 레퍼런스: `references/13-reference.md`
+- 상세 가이드: `references/` (01~16 넘버링 문서)
+- 학습 노트(오답노트): `LEARNINGS.md`
+- CLI 소스: `src/` (cmd/, internal/)
