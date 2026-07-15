@@ -31,7 +31,7 @@ jobs:
     name: Build (${{ matrix.goos }}/${{ matrix.goarch }})
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -51,7 +51,7 @@ jobs:
         run: go build -ldflags "-s -w -X main.version=${{ github.sha }}" -o ${{ matrix.artifact }} .
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: ${{ matrix.artifact }}
           path: ${{ matrix.artifact }}
