@@ -39,7 +39,7 @@ jobs:
     name: Build (${{ matrix.goos }}/${{ matrix.goarch }})
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -64,7 +64,7 @@ jobs:
         run: go build -ldflags "-s -w -X main.version=${{ github.ref_name }}" -o ${{ matrix.artifact }} .
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: ${{ matrix.artifact }}
           path: src/${{ matrix.artifact }}
@@ -74,7 +74,7 @@ jobs:
     name: Package skill files
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Package skill tarball
         run: |
@@ -90,7 +90,7 @@ jobs:
           echo "SKILL_ASSET=$ASSET" >> $GITHUB_ENV
 
       - name: Upload skill artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: skill-package
           path: kosis-skill-*.tar.gz
@@ -103,7 +103,7 @@ jobs:
 
     steps:
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           path: artifacts
 
@@ -129,10 +129,10 @@ jobs:
       contents: read
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 24
 
