@@ -24,15 +24,14 @@ npm install -g @clazic/kosis
 ```
 
 설치 시 자동으로:
-- `~/.claude/skills/kosis/` 에 스킬 파일 설치 (SKILL.md, references, templates)
-- `~/.codex/skills/kosis/` 에 동일하게 설치
-- 해당 OS 바이너리 다운로드 및 배치
-- macOS/Linux: `~/.local/bin/kosis` symlink 생성
+- `~/.claude/skills/kosis/` 에 스킬 파일 설치 (SKILL.md, references, templates) — 기본 대상은 Claude, `KOSIS_TARGET=codex|both` 환경변수로 변경 가능
+- 해당 OS 바이너리 다운로드 후 `~/.local/bin/kosis` 에 배치
+- PATH에 `~/.local/bin`이 없으면 추가 방법 안내 출력
 
 **Windows 설치 위치:**
-- 스킬 파일: `%USERPROFILE%\.claude\skills\kosis\`, `%USERPROFILE%\.codex\skills\kosis\`
-- 바이너리: `%USERPROFILE%\.claude\skills\kosis\apps\kosis-windows-amd64.exe`
-- `kosis` 명령 실행: npm이 설치한 `bin\kosis` shim 사용 (별도 PATH 불필요)
+- 스킬 파일: `%USERPROFILE%\.claude\skills\kosis\`
+- 바이너리: `%LOCALAPPDATA%\Programs\kosis\kosis.exe`
+- PATH: 사용자 환경변수에 자동 등록 — **새 터미널부터** `kosis` 명령 인식
 
 **Windows 참고:**
 - `tar` 명령이 필요합니다 (Windows 10 1803 이상 기본 내장)
@@ -46,10 +45,11 @@ npm install -g @clazic/kosis
 curl -fsSL https://raw.githubusercontent.com/clazic/kosis/master/scripts/install.sh | sh
 ```
 
+실행 시 설치 대상(Claude/Codex/둘 다)과 범위(전역/프로젝트)를 대화형으로 선택합니다. 비대화형(CI) 환경은 `KOSIS_TARGET`, `KOSIS_CLAUDE_SCOPE`, `KOSIS_CODEX_SCOPE` 환경변수로 지정합니다.
+
 설치 위치:
-- 스킬 파일: `~/.claude/skills/kosis/`, `~/.codex/skills/kosis/`
-- 바이너리: `~/.claude/skills/kosis/apps/kosis-<os>-<arch>`
-- PATH 등록: `~/.local/bin/kosis` symlink
+- 스킬 파일: `~/.claude/skills/kosis/` (선택에 따라 `~/.codex/skills/kosis/`)
+- 바이너리: `~/.local/bin/kosis`
 
 PATH가 등록되지 않은 경우 다음을 `~/.zshrc` 또는 `~/.bashrc`에 추가:
 ```bash
@@ -73,10 +73,12 @@ PowerShell에서:
 irm https://raw.githubusercontent.com/clazic/kosis/master/scripts/install.ps1 | iex
 ```
 
+실행 시 설치 대상(Claude/Codex/둘 다)과 범위(전역/프로젝트)를 대화형으로 선택합니다. 비대화형 환경은 `KOSIS_TARGET`, `KOSIS_CLAUDE_SCOPE`, `KOSIS_CODEX_SCOPE` 환경변수로 지정합니다.
+
 설치 위치:
-- 스킬 파일: `%USERPROFILE%\.claude\skills\kosis\`, `%USERPROFILE%\.codex\skills\kosis\`
-- 바이너리: `%USERPROFILE%\.claude\skills\kosis\apps\kosis-windows-amd64.exe`
-- PATH: 별도 등록 없이 `kosis.cmd` shim이 직접 호출
+- 스킬 파일: `%USERPROFILE%\.claude\skills\kosis\` (선택에 따라 `%USERPROFILE%\.codex\skills\kosis\`)
+- 바이너리: `%LOCALAPPDATA%\Programs\kosis\kosis.exe`
+- PATH: 사용자 환경변수에 자동 등록 — **새 터미널부터** `kosis` 명령 인식
 
 특정 버전 설치:
 ```powershell
@@ -91,7 +93,7 @@ irm https://raw.githubusercontent.com/clazic/kosis/master/scripts/install.ps1 | 
 | 실행 정책 오류 | `Set-ExecutionPolicy RemoteSigned -Scope CurrentUser` |
 | 한글 깨짐 | `chcp 65001` 실행 후 터미널 재시작 |
 | `kosis` 명령 인식 안 됨 | 새 터미널 창 열기 (PATH 갱신 필요) |
-| Windows Defender 경고 | `Add-MpPreference -ExclusionPath "$env:USERPROFILE\.claude\skills\kosis\apps"` |
+| Windows Defender 경고 | `Add-MpPreference -ExclusionPath "$env:LOCALAPPDATA\Programs\kosis"` |
 | `tar` 명령 없음 | Windows 10 1803 미만 — [GitHub Releases](https://github.com/clazic/kosis/releases)에서 직접 다운로드 |
 
 ---
