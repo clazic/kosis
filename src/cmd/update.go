@@ -4,6 +4,8 @@ import (
 	"archive/tar"
 	"bufio"
 	"compress/gzip"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -35,6 +37,9 @@ var updateCmd = &cobra.Command{
 바이너리(OS별)와 스킬 파일(SKILL.md, docs/, LEARNINGS.md, templates 등)을
 함께 내려받아 설치된 스킬 디렉토리(~/.claude/skills/kosis, ~/.codex/skills/kosis)에 반영합니다.
 
+바이너리와 스킬 파일은 각각 y/N 확인을 거치며, 설치 직전에 릴리스의
+SHA256SUMS와 대조하여 체크섬을 검증합니다.
+
 사용법:
   kosis update            최신 버전으로 업데이트 (바이너리 + 스킬)
   kosis update --check    업데이트 확인만 (설치하지 않음)
@@ -48,8 +53,8 @@ var updateCmd = &cobra.Command{
 }
 
 func init() {
-	updateCmd.Flags().BoolVar(&updateCheckOnly, "check", false, "업데이트 확인만 (설치하지 않음)")
-	updateCmd.Flags().BoolVar(&updateForce, "force", false, "같은 버전이어도 강제 재설치")
+	updateCmd.Flags().BoolVar(&updateCheckOnly, "check", false, "최신 버전 존재 여부만 확인하고 설치는 하지 않음")
+	updateCmd.Flags().BoolVar(&updateForce, "force", false, "이미 최신 버전이어도 바이너리·스킬 파일을 다시 내려받아 덮어씀 (설치 손상 복구용)")
 	rootCmd.AddCommand(updateCmd)
 }
 
@@ -64,16 +69,24 @@ func runUpdate() error {
 	}
 	fmt.Printf("최신 버전: %s\n", latest)
 
+	// --check는 설치하지 않으므로 어느 경우든 판정 결과를 알려주고 끝낸다.
 	if updateCheckOnly {
-		if normalizeVer(current) == normalizeVer(latest) {
-			fmt.Println("✓ 이미 최신 버전입니다.")
-		} else {
-			fmt.Printf("→ 새 버전 %s 사용 가능. `kosis update`로 설치하세요.\n", latest)
+		switch {
+		case newerVer(latest, current):
+			fmt.Printf("새 버전 %s 사용 가능. `kosis update`로 설치하세요.\n", latest)
+		case normalizeVer(current) == normalizeVer(latest):
+			fmt.Println("이미 최신 버전입니다.")
+		default:
+			fmt.Printf("설치된 버전(%s)이 최신 릴리스(%s)보다 높습니다.\n", current, latest)
 		}
 		return nil
 	}
-	if !updateForce && normalizeVer(current) == normalizeVer(latest) {
-		fmt.Println("✓ 이미 최신 버전입니다.")
+	if !updateForce && !newerVer(latest, current) {
+		if normalizeVer(current) == normalizeVer(latest) {
+			fmt.Println("이미 최신 버전입니다.")
+		} else {
+			fmt.Printf("설치된 버전(%s)이 최신 릴리스(%s)보다 높습니다. 다운그레이드하려면 --force를 사용하세요.\n", current, latest)
+		}
 		return nil
 	}
 
@@ -89,25 +102,32 @@ func runUpdate() error {
 	skillAsset := fmt.Sprintf("kosis-skill-%s.tar.gz", latest)
 	base := fmt.Sprintf("https://github.com/%s/releases/download/%s", updateRepo, latest)
 
-	tmp, err := os.MkdirTemp("", "kosis-update-*")
+	tmp, err := os.MkdirTemp("", ".kosis-update-*")
 	if err != nil {
 		return fmt.Errorf("임시 디렉토리 생성 실패: %w", err)
 	}
 	defer os.RemoveAll(tmp)
 
+	// ── 체크섬 파일 다운로드 ──
+	sha256SumsPath := filepath.Join(tmp, "SHA256SUMS")
+	fmt.Println("  체크섬 파일 다운로드 중...")
+	if err := downloadFile(base+"/SHA256SUMS", sha256SumsPath); err != nil {
+		return fmt.Errorf("SHA256SUMS 다운로드 실패: %w", err)
+	}
+	checksums, err := parseSHA256Sums(sha256SumsPath)
+	if err != nil {
+		return fmt.Errorf("SHA256SUMS 파싱 실패: %w", err)
+	}
+
 	skillTar := filepath.Join(tmp, "skill.tar.gz")
 	binTmp := filepath.Join(tmp, "kosis-bin")
 
-	fmt.Println("  스킬 파일 다운로드 중...")
-	if err := downloadFile(base+"/"+skillAsset, skillTar); err != nil {
-		return fmt.Errorf("스킬 파일 다운로드 실패: %w", err)
-	}
+	// ── 바이너리 다운로드 + 확인 + 검증 + 교체 ──
 	fmt.Printf("  바이너리 다운로드 중 (%s)...\n", binAsset)
 	if err := downloadFile(base+"/"+binAsset, binTmp); err != nil {
 		return fmt.Errorf("바이너리 다운로드 실패: %w", err)
 	}
 
-	// ── 현재 실행 바이너리 경로로 교체 ──
 	exePath, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("실행 바이너리 경로 확인 실패: %w", err)
@@ -116,30 +136,164 @@ func runUpdate() error {
 	if resolved, rerr := filepath.EvalSymlinks(exePath); rerr == nil {
 		exePath = resolved
 	}
-	fmt.Printf("  바이너리 교체 중 (%s)...\n", exePath)
-	if err := replaceBinary(binTmp, exePath); err != nil {
-		return fmt.Errorf("바이너리 교체 실패: %w", err)
-	}
-	fmt.Printf("  ✓ 바이너리: %s\n", exePath)
 
-	// ── 스킬 갱신: global + cwd project 모두 ──
-	skillDirs := collectSkillDirs(home)
-	for _, dest := range skillDirs {
-		if err := extractTarGz(skillTar, dest); err != nil {
-			fmt.Fprintf(os.Stderr, "  ⚠ 스킬 갱신 실패(%s): %v\n", dest, err)
-			continue
+	var binUpdated, skillUpdated bool
+
+	if !promptYN(fmt.Sprintf("바이너리를 업데이트하겠습니까? (%s → %s) (y/N) ", current, latest)) {
+		fmt.Println("  바이너리 업데이트를 건너뜁니다.")
+	} else {
+		if expected, ok := checksums[binAsset]; ok {
+			fmt.Println("  SHA256 체크섬 검증 중...")
+			if err := verifySHA256(binTmp, expected); err != nil {
+				return fmt.Errorf("바이너리 체크섬 검증 실패: %w", err)
+			}
+			fmt.Println("  체크섬 검증 완료.")
+		} else {
+			fmt.Fprintf(os.Stderr, "  경고: SHA256SUMS에서 %s 항목을 찾지 못했습니다. 검증 생략.\n", binAsset)
 		}
-		fmt.Printf("  ✓ 스킬: %s\n", dest)
+
+		fmt.Printf("  바이너리 교체 중 (%s)...\n", exePath)
+		if err := replaceBinary(binTmp, exePath); err != nil {
+			return fmt.Errorf("바이너리 교체 실패: %w", err)
+		}
+		fmt.Printf("  바이너리: %s\n", exePath)
+		binUpdated = true
 	}
 
-	fmt.Printf("✓ kosis %s → %s 업데이트 완료 (바이너리 + 스킬 파일)\n", current, latest)
-	if runtime.GOOS == "windows" {
+	// ── 스킬 파일: 확인 + 다운로드 + 검증 + 추출 (global + cwd project 모두) ──
+	if !promptYN("스킬 파일(SKILL.md, LEARNINGS.md, templates 등)을 업데이트하겠습니까? (y/N) ") {
+		fmt.Println("  스킬 파일 업데이트를 건너뜁니다.")
+	} else {
+		fmt.Println("  스킬 파일 다운로드 중...")
+		if err := downloadFile(base+"/"+skillAsset, skillTar); err != nil {
+			return fmt.Errorf("스킬 파일 다운로드 실패: %w", err)
+		}
+
+		if expected, ok := checksums[skillAsset]; ok {
+			fmt.Println("  스킬 체크섬 검증 중...")
+			if err := verifySHA256(skillTar, expected); err != nil {
+				return fmt.Errorf("스킬 파일 체크섬 검증 실패: %w", err)
+			}
+			fmt.Println("  스킬 체크섬 검증 완료.")
+		} else {
+			fmt.Fprintf(os.Stderr, "  경고: SHA256SUMS에서 %s 항목을 찾지 못했습니다. 검증 생략.\n", skillAsset)
+		}
+
+		for _, dest := range collectSkillDirs(home) {
+			if err := extractTarGz(skillTar, dest); err != nil {
+				fmt.Fprintf(os.Stderr, "  스킬 갱신 실패(%s): %v\n", dest, err)
+				continue
+			}
+			fmt.Printf("  스킬: %s\n", dest)
+			skillUpdated = true
+		}
+	}
+
+	// 실제로 바꾼 것만 완료로 보고 — 둘 다 건너뛰었으면 "완료"라고 말하지 않는다.
+	switch {
+	case binUpdated && skillUpdated:
+		fmt.Printf("kosis %s → %s 업데이트 완료 (바이너리 + 스킬 파일)\n", current, latest)
+	case binUpdated:
+		fmt.Printf("kosis %s → %s 업데이트 완료 (바이너리)\n", current, latest)
+	case skillUpdated:
+		fmt.Printf("kosis 스킬 파일을 %s 기준으로 갱신했습니다. (바이너리는 %s 유지)\n", latest, current)
+	default:
+		fmt.Println("변경된 항목이 없습니다.")
+		// 사용자가 방금 거절했으므로 재알림이 바로 뜨지 않게 확인 시각만 갱신한다.
+		_ = saveUpdateCache(latest)
+		return nil
+	}
+	if binUpdated && runtime.GOOS == "windows" {
 		fmt.Println("  (Windows) 새 바이너리는 다음 실행부터 적용됩니다. 이전 버전은 *.old로 보관됩니다.")
 	}
 
 	// 업데이트 완료 후 캐시 갱신
 	_ = saveUpdateCache(latest)
 	return nil
+}
+
+// promptYN TTY에서 y/N 프롬프트를 출력하고 사용자 응답을 반환합니다.
+// 입력이 없거나 y가 아니면 false — 기본값은 항상 "아니오"입니다.
+func promptYN(prompt string) bool {
+	fmt.Fprint(os.Stderr, prompt)
+	scanner := bufio.NewScanner(os.Stdin)
+	if scanner.Scan() {
+		return strings.EqualFold(strings.TrimSpace(scanner.Text()), "y")
+	}
+	return false
+}
+
+// parseSHA256Sums SHA256SUMS 파일을 파싱해 filename→hash 맵을 반환합니다.
+// 형식: "<hash>  <filename>" (두 스페이스 또는 한 스페이스 모두 허용)
+func parseSHA256Sums(path string) (map[string]string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	result := make(map[string]string)
+	for _, line := range strings.Split(string(data), "\n") {
+		parts := strings.Fields(strings.TrimSpace(line))
+		if len(parts) < 2 {
+			continue
+		}
+		// sha256sum 출력에서 파일명에 * 접두사(바이너리 모드)가 붙을 수 있음
+		result[strings.TrimPrefix(parts[1], "*")] = parts[0]
+	}
+	return result, nil
+}
+
+// verifySHA256 파일의 SHA256 해시를 계산해 expected와 대조합니다.
+func verifySHA256(path, expected string) error {
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return err
+	}
+	got := hex.EncodeToString(h.Sum(nil))
+	if !strings.EqualFold(got, expected) {
+		return fmt.Errorf("SHA256 불일치: expected=%s got=%s", expected, got)
+	}
+	return nil
+}
+
+// newerVer remote가 local보다 높은 버전인지 숫자 세그먼트 단위로 비교합니다.
+// 숫자가 아닌 세그먼트(예: "dev")는 0으로 취급 — dev 빌드에는 모든 릴리스가 새 버전.
+func newerVer(remote, local string) bool {
+	r := strings.Split(normalizeVer(remote), ".")
+	l := strings.Split(normalizeVer(local), ".")
+	n := len(r)
+	if len(l) > n {
+		n = len(l)
+	}
+	for i := 0; i < n; i++ {
+		var rv, lv int
+		if i < len(r) {
+			rv = verSegInt(r[i])
+		}
+		if i < len(l) {
+			lv = verSegInt(l[i])
+		}
+		if rv != lv {
+			return rv > lv
+		}
+	}
+	return false
+}
+
+// verSegInt 버전 세그먼트 앞부분의 숫자만 정수로 변환합니다 ("3rc1" → 3, "dev" → 0).
+func verSegInt(s string) int {
+	n := 0
+	for _, c := range s {
+		if c < '0' || c > '9' {
+			return n
+		}
+		n = n*10 + int(c-'0')
+	}
+	return n
 }
 
 // collectSkillDirs 존재하는 스킬 디렉토리를 수집합니다 (global + cwd project).
@@ -266,16 +420,11 @@ func printUpdateNotice() {
 	}
 	tag := pendingUpdateNotice
 	fmt.Fprintf(os.Stderr, "\n새 버전 %s 사용 가능 (현재 %s).\n", tag, appVersion)
-	fmt.Fprintf(os.Stderr, "지금 업데이트할까요? (y/N) ")
-	scanner := bufio.NewScanner(os.Stdin)
-	if scanner.Scan() {
-		ans := strings.TrimSpace(scanner.Text())
-		if strings.EqualFold(ans, "y") {
-			if err := runUpdate(); err != nil {
-				fmt.Fprintf(os.Stderr, "업데이트 실패: %v\n", err)
-			}
-			return
+	if promptYN("지금 업데이트할까요? (y/N) ") {
+		if err := runUpdate(); err != nil {
+			fmt.Fprintf(os.Stderr, "업데이트 실패: %v\n", err)
 		}
+		return
 	}
 	// N 또는 무응답: 24h 침묵
 	fmt.Fprintln(os.Stderr, "24시간 동안 알림을 표시하지 않습니다. (`kosis update`로 수동 업데이트)")
