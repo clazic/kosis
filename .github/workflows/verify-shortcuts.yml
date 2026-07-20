@@ -1,0 +1,91 @@
+name: Verify Shortcuts
+
+# quick 바로가기 사전(internal/nlp/Shortcuts)의 코드가 실제 KOSIS API와
+# 여전히 맞는지 주 1회 확인한다. 통계표가 개편되면(항목 코드 변경, 표 폐지)
+# 사전이 조용히 썩어 quick이 엉뚱한 값을 내거나 실패하게 되므로 조기에 잡는다.
+#
+# PR을 차단하지 않는다 — API 장애나 키 만료로 실패할 수 있고,
+# 그것 때문에 무관한 PR이 막히면 안 된다. 대신 이슈를 연다.
+
+on:
+  schedule:
+    - cron: "0 0 * * 1" # 매주 월요일 00:00 UTC
+  workflow_dispatch: # 수동 실행 가능
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: src/go.mod
+
+      - name: Verify shortcuts against live KOSIS API
+        id: verify
+        env:
+          KOSIS_API_KEY: ${{ secrets.KOSIS_API_KEY }}
+        run: |
+          if [ -z "$KOSIS_API_KEY" ]; then
+            echo "::warning::KOSIS_API_KEY 시크릿이 없어 검증을 건너뜁니다."
+            echo "skipped=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          cd src
+          go test -tags=livecheck -v -count=1 -run 'AgainstLiveAPI' ./internal/nlp/ 2>&1 | tee result.txt
+          exit "${PIPESTATUS[0]}"
+
+      - name: Open issue on failure
+        if: failure() && steps.verify.outputs.skipped != 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const title = 'quick 바로가기 사전이 실제 KOSIS와 어긋납니다';
+            const body = [
+              '주간 `verify-shortcuts` 검증이 실패했습니다.',
+              '',
+              `실행 로그: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              '',
+              '통계표가 개편되어 `internal/nlp/matcher.go`의 `Shortcuts` 코드가',
+              '더 이상 유효하지 않을 수 있습니다.',
+              '',
+              '조치 방법:',
+              '1. `kosis meta <ORG_ID> <TBL_ID>` 로 현재 분류·항목·주기 코드 확인',
+              '2. `internal/nlp/matcher.go` 의 해당 항목과 `Verified` 날짜 갱신',
+              '3. `make verify-shortcuts` 로 재확인',
+              '',
+              '_이 이슈는 자동 생성되었습니다._',
+            ].join('\n');
+
+            // 같은 제목의 열린 이슈가 있으면 코멘트만 추가 (이슈 폭증 방지)
+            const existing = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: 'shortcuts-stale',
+            });
+            if (existing.data.length > 0) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existing.data[0].number,
+                body: `또 실패했습니다: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              });
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title,
+                body,
+                labels: ['shortcuts-stale'],
+              });
+            }

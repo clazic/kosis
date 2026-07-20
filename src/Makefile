@@ -10,7 +10,7 @@
 BIN  := bin
 APPS := ../apps
 
-.PHONY: build native clean
+.PHONY: build native clean test verify-shortcuts
 
 build:
 	@echo "▶ 멀티플랫폼 빌드 시작..."
@@ -33,3 +33,14 @@ native:
 clean:
 	rm -f $(BIN)/kosis-* $(APPS)/kosis-*
 	@echo "✅ 산출물 삭제 완료"
+
+test:
+	go test ./...
+
+# verify-shortcuts: quick 바로가기 사전(internal/nlp/Shortcuts)의 코드가
+# 실제 KOSIS API와 여전히 맞는지 실제 호출로 검증한다.
+# 통계표 개편으로 항목 코드가 바뀌거나 표가 폐지되면 여기서 잡힌다.
+# API 키가 필요하므로 CI 기본 경로(make test)에는 포함되지 않는다.
+verify-shortcuts:
+	@echo "▶ 바로가기 사전 실측 검증 (실제 API 호출)"
+	go test -tags=livecheck -v -count=1 -run 'AgainstLiveAPI' ./internal/nlp/
