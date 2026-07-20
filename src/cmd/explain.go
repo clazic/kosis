@@ -65,7 +65,7 @@ var explainFormat string
 func init() {
 	rootCmd.AddCommand(explainCmd)
 
-	explainCmd.Flags().StringVarP(&explainFormat, "format", "f", "table", "출력 형식: table, json")
+	explainCmd.Flags().StringVarP(&explainFormat, "format", "f", "table", "출력 형식: table=정렬표, json=파이프/jq용")
 }
 
 func runExplain(cmd *cobra.Command, args []string) error {

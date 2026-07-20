@@ -77,9 +77,9 @@ var (
 func init() {
 	rootCmd.AddCommand(listCmd)
 
-	listCmd.Flags().StringVar(&listView, "view", "MT_ZTITLE", "서비스뷰 코드")
-	listCmd.Flags().StringVar(&listParent, "parent", "A", "상위 목록 ID")
-	listCmd.Flags().StringVarP(&listFormat, "format", "f", "table", "출력 형식: table, json")
+	listCmd.Flags().StringVar(&listView, "view", "MT_ZTITLE", "탐색할 서비스뷰: MT_ZTITLE=주제별, MT_OTITLE=기관별, MT_RTITLE=국제통계, MT_BUKHAN=북한, MT_GTITLE01/02=e-지방지표, MT_ETITLE=영문 등")
+	listCmd.Flags().StringVar(&listParent, "parent", "A", "펼칠 상위 목록 ID. 출력의 LIST_ID를 넣어 한 단계씩 하위로 내려감 (A=최상위)")
+	listCmd.Flags().StringVarP(&listFormat, "format", "f", "table", "출력 형식: table=정렬표, json=파이프/jq용")
 }
 
 func runList(cmd *cobra.Command, args []string) error {

@@ -217,5 +217,5 @@ func init() {
 	historyCmd.AddCommand(historyClearCmd)
 
 	// historyCmd 플래그
-	historyCmd.Flags().IntP("limit", "n", 10, "표시할 최근 N개 (기본: 10)")
+	historyCmd.Flags().IntP("limit", "n", 10, "표시할 최근 이력 개수. 이력은 최대 100개까지 보관됨")
 }

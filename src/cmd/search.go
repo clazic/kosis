@@ -162,6 +162,6 @@ var searchCmd = &cobra.Command{
 func init() {
 	rootCmd.AddCommand(searchCmd)
 
-	searchCmd.Flags().IntP("limit", "n", 20, "결과 수")
-	searchCmd.Flags().StringP("format", "f", "table", "출력 형식 (table, json)")
+	searchCmd.Flags().IntP("limit", "n", 20, "가져올 검색 결과 개수 (최대 1000). 결과가 너무 많으면 키워드를 더 구체적으로")
+	searchCmd.Flags().StringP("format", "f", "table", "출력 형식: table=정렬표, json=파이프/jq용, csv=쉼표구분, md=Markdown 표")
 }

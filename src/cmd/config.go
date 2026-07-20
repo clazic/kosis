@@ -153,9 +153,22 @@ var removeKeyCmd = &cobra.Command{
 	Short: "API 키 제거",
 	Long: `지정된 인덱스의 API 키를 제거합니다.
 
+사용법:
+  kosis config remove-key <INDEX>
+
+파라미터:
+  <INDEX>   제거할 키의 번호. key-list 출력의 맨 앞 번호를 그대로 사용합니다.
+
 예시:
   kosis config key-list    # 먼저 인덱스 확인
-  kosis config remove-key 1`,
+  kosis config remove-key 1
+
+주의:
+  제거 후 나머지 키의 인덱스가 다시 매겨집니다.
+  여러 개를 지울 때는 매번 key-list로 인덱스를 다시 확인하세요.
+
+다음 단계:
+  kosis config key-list     남은 키 확인`,
 	Args: cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		index, err := strconv.Atoi(args[0])
@@ -177,8 +190,18 @@ var keyListCmd = &cobra.Command{
 	Short: "등록된 API 키 목록",
 	Long: `등록된 API 키 목록을 표시합니다.
 
+보안을 위해 키 전체가 아니라 앞뒤 일부만 마스킹하여 보여줍니다.
+맨 앞 번호(인덱스)는 remove-key에 그대로 사용합니다.
+
+사용법:
+  kosis config key-list
+
 예시:
-  kosis config key-list`,
+  kosis config key-list
+
+관련 명령어:
+  kosis config add-key <KEY>       키 추가 (병렬 조회 속도 향상)
+  kosis config remove-key <INDEX>  키 제거`,
 	Run: func(cmd *cobra.Command, args []string) {
 		cfg, err := config.Load()
 		if err != nil {
@@ -248,11 +271,22 @@ var showCmd = &cobra.Command{
 var setAICmd = &cobra.Command{
 	Use:   "set-ai <TOOL_NAME>",
 	Short: "기본 AI 도구 설정",
-	Long: `기본 AI 도구를 설정합니다.
+	Long: `kosis quick --ai에서 도구명을 생략했을 때 사용할 기본 AI 도구를 설정합니다.
+
+사용법:
+  kosis config set-ai <TOOL_NAME>
+
+파라미터:
+  <TOOL_NAME>   내장 도구(claude, gemini, codex) 또는 ai-add로 등록한 커스텀 도구 이름
 
 예시:
   kosis config set-ai claude
-  kosis config set-ai gemini`,
+  kosis config set-ai gemini
+  kosis config set-ai ollama     # ai-add로 등록해 둔 커스텀 도구
+
+관련 명령어:
+  kosis config ai-list      등록된 도구와 설치 여부 확인
+  kosis config ai-add ...   커스텀 도구 등록`,
 	Args: cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		toolName := args[0]
@@ -267,10 +301,21 @@ var setAICmd = &cobra.Command{
 var aiListCmd = &cobra.Command{
 	Use:   "ai-list",
 	Short: "AI 도구 목록",
-	Long: `등록된 AI 도구 목록을 표시합니다.
+	Long: `등록된 AI 도구 목록과 각 도구의 실제 설치 여부를 표시합니다.
+
+내장 도구(claude, gemini, codex)와 ai-add로 추가한 커스텀 도구를 모두 보여주며,
+PATH에서 실행 파일을 찾을 수 있으면 "설치됨"으로 표시합니다.
+기본 도구로 지정된 항목에는 표시가 붙습니다.
+
+사용법:
+  kosis config ai-list
 
 예시:
-  kosis config ai-list`,
+  kosis config ai-list
+
+관련 명령어:
+  kosis config set-ai <도구>   기본 도구 지정
+  kosis quick "..." --ai <도구> 해당 도구로 자연어 조회`,
 	Run: func(cmd *cobra.Command, args []string) {
 		tools, err := config.ListAITools()
 		if err != nil {
@@ -306,13 +351,30 @@ var aiListCmd = &cobra.Command{
 var aiAddCmd = &cobra.Command{
 	Use:   "ai-add <NAME> <COMMAND>",
 	Short: "커스텀 AI 도구 추가",
-	Long: `커스텀 AI 도구를 추가합니다.
+	Long: `임의의 CLI 실행 명령을 AI 도구로 등록합니다.
 
-명령어는 '{prompt}'를 포함해야 합니다.
+kosis quick --ai <이름> 실행 시, 등록한 명령의 '{prompt}' 자리에
+자연어 요청이 치환되어 셸에서 실행됩니다.
+도구는 kosis data 명령어 문자열을 출력하도록 동작해야 합니다.
+
+사용법:
+  kosis config ai-add <NAME> <COMMAND>
+
+파라미터:
+  <NAME>      quick --ai에서 사용할 도구 이름 (예: ollama)
+  <COMMAND>   실행할 셸 명령. 반드시 '{prompt}' 플레이스홀더를 포함해야 합니다.
 
 예시:
   kosis config ai-add ollama "ollama run llama3 '{prompt}'"
-  kosis config ai-add local "python ai.py '{prompt}'"`,
+  kosis config ai-add local "python ai.py '{prompt}'"
+
+주의:
+  - '{prompt}'가 없으면 등록이 거부됩니다
+  - 프롬프트에 공백이 들어가므로 {prompt}를 따옴표로 감싸세요
+
+다음 단계:
+  kosis config ai-list          등록 확인
+  kosis quick "..." --ai ollama 사용`,
 	Args: cobra.ExactArgs(2),
 	Run: func(cmd *cobra.Command, args []string) {
 		name := args[0]
@@ -334,11 +396,20 @@ var aiAddCmd = &cobra.Command{
 var aiRemoveCmd = &cobra.Command{
 	Use:   "ai-remove <NAME>",
 	Short: "AI 도구 제거",
-	Long: `등록된 AI 도구를 제거합니다.
+	Long: `ai-add로 등록한 AI 도구를 제거합니다.
+
+사용법:
+  kosis config ai-remove <NAME>
+
+파라미터:
+  <NAME>   제거할 도구 이름. ai-list 출력에서 확인합니다.
 
 예시:
   kosis config ai-list     # 먼저 도구명 확인
-  kosis config ai-remove ollama`,
+  kosis config ai-remove ollama
+
+주의:
+  제거한 도구가 기본 도구였다면 kosis config set-ai로 다시 지정하세요.`,
 	Args: cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		name := args[0]
@@ -353,10 +424,21 @@ var aiRemoveCmd = &cobra.Command{
 var cacheClearCmd = &cobra.Command{
 	Use:   "cache-clear",
 	Short: "캐시 전체 삭제",
-	Long: `저장된 모든 캐시를 삭제합니다.
+	Long: `만료 여부와 관계없이 저장된 모든 API 응답 캐시를 삭제합니다.
+
+캐시는 ~/.kosis/cache 에 저장되며, 같은 조회를 반복할 때 API 호출 없이
+즉시 응답하는 데 사용됩니다. KOSIS 원본 데이터가 갱신되었는데도 예전 값이
+계속 나온다면 이 명령으로 비우세요.
+
+사용법:
+  kosis config cache-clear
 
 예시:
-  kosis config cache-clear`,
+  kosis config cache-clear
+
+관련 명령어:
+  kosis config cache-clean   만료된 항목만 정리 (평소 권장)
+  kosis config cache-size    현재 캐시 용량 확인`,
 	Run: func(cmd *cobra.Command, args []string) {
 		cacheDir := filepath.Join(config.ConfigDir(), "cache")
 		c, err := cache.New(cacheDir, 24)
@@ -377,10 +459,18 @@ var cacheClearCmd = &cobra.Command{
 var cacheSizeCmd = &cobra.Command{
 	Use:   "cache-size",
 	Short: "캐시 크기 확인",
-	Long: `현재 캐시가 차지하는 디스크 크기를 표시합니다.
+	Long: `캐시 디렉토리(~/.kosis/cache)가 차지하는 디스크 크기를 사람이 읽기 좋은
+단위(KB/MB/GB)로 표시합니다.
+
+사용법:
+  kosis config cache-size
 
 예시:
-  kosis config cache-size`,
+  kosis config cache-size
+
+관련 명령어:
+  kosis config cache-clean   만료 항목 정리
+  kosis config cache-clear   전체 삭제`,
 	Run: func(cmd *cobra.Command, args []string) {
 		cacheDir := filepath.Join(config.ConfigDir(), "cache")
 		c, err := cache.New(cacheDir, 24)
@@ -404,10 +494,20 @@ var cacheSizeCmd = &cobra.Command{
 var cacheCleanCmd = &cobra.Command{
 	Use:   "cache-clean",
 	Short: "만료된 캐시 정리",
-	Long: `만료된 캐시 항목을 삭제합니다.
+	Long: `TTL이 지난 캐시 항목만 골라 삭제합니다. 유효한 캐시는 그대로 두므로
+평소 정리에는 cache-clear 대신 이 명령을 사용하세요.
+
+TTL은 설정의 cache_ttl_hours 값을 따릅니다 (kosis config show로 확인).
+
+사용법:
+  kosis config cache-clean
 
 예시:
-  kosis config cache-clean`,
+  kosis config cache-clean
+
+관련 명령어:
+  kosis config cache-size    정리 전후 용량 비교
+  kosis config cache-clear   전체 삭제`,
 	Run: func(cmd *cobra.Command, args []string) {
 		cfg, err := config.Load()
 		if err != nil {
@@ -465,12 +565,27 @@ func formatBytes(bytes int64) string {
 var setupCmd = &cobra.Command{
 	Use:   "setup",
 	Short: "대화형 초기 설정 마법사",
-	Long: `KOSIS API 키를 대화형으로 입력하고 검증합니다.
+	Long: `처음 설치했을 때 실행하는 대화형 초기 설정 마법사입니다.
 
-키 발급: https://kosis.kr/openapi/
+진행 단계:
+  1) KOSIS API 키 입력 프롬프트 표시
+  2) 입력한 키로 실제 API를 한 번 호출하여 유효성 검증
+  3) 검증에 성공하면 ~/.kosis/config.yaml 에 저장
+
+키 발급: https://kosis.kr/openapi/ (회원가입 후 즉시 발급)
 
 사용법:
-  kosis config setup`,
+  kosis config setup
+
+예시:
+  kosis config setup
+
+비대화형 환경(스크립트/CI)에서는:
+  kosis config set-key "<API_KEY>"
+
+다음 단계:
+  kosis s "인구"            통계표 검색으로 동작 확인
+  kosis config add-key ...  키를 더 추가해 병렬 조회 속도 향상`,
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Println("KOSIS API 키 설정")
 		fmt.Println("─────────────────────────────────────")

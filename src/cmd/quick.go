@@ -136,9 +136,9 @@ AI 도구 관리:
 func init() {
 	rootCmd.AddCommand(quickCmd)
 
-	quickCmd.Flags().StringP("ai", "a", "", "AI 도구 이름 (claude, gemini, codex, ollama 등)")
-	quickCmd.Flags().StringP("format", "f", "", "출력 형식 (table, json, csv)")
-	quickCmd.Flags().StringP("output", "o", "", "파일 저장 경로")
+	quickCmd.Flags().StringP("ai", "a", "", "자연어 해석에 쓸 외부 AI CLI 도구 (claude, gemini, codex, ollama 등). 미지정 시 오프라인 규칙 기반 매칭. 목록은 kosis config ai-list")
+	quickCmd.Flags().StringP("format", "f", "", "출력 형식: table, json, csv, md. 미지정 시 config의 기본 형식 사용")
+	quickCmd.Flags().StringP("output", "o", "", "파일로 저장. 확장자로 형식 자동 결정: .csv .xlsx .json .db .parquet")
 }
 
 // handleAIGeneration은 AI 도구를 사용하여 명령어를 생성하고 실행합니다.

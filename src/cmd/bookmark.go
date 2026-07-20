@@ -195,5 +195,5 @@ func init() {
 	bookmarkCmd.AddCommand(bookmarkRemoveCmd)
 
 	// bookmarkAddCmd 플래그
-	bookmarkAddCmd.Flags().StringP("name", "", "", "즐겨찾기 이름 (선택사항, 미지정시 ORG_ID_TBL_ID 형식으로 자동 생성)")
+	bookmarkAddCmd.Flags().StringP("name", "", "", "즐겨찾기에 붙일 이름. remove 시 이 이름으로 지정 가능. 미지정 시 \"ORG_ID_TBL_ID\" 형식으로 자동 생성")
 }

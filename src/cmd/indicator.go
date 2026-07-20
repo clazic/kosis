@@ -529,17 +529,17 @@ func init() {
 	indicatorCmd.AddCommand(indicatorListCmd)
 
 	// Flags for indicatorSearchCmd
-	indicatorSearchCmd.Flags().IntP("limit", "n", 10, "결과 수")
-	indicatorSearchCmd.Flags().StringP("format", "f", "table", "출력 형식 (table, json)")
+	indicatorSearchCmd.Flags().IntP("limit", "n", 10, "가져올 지표 검색 결과 개수 (전체 1,473개 중)")
+	indicatorSearchCmd.Flags().StringP("format", "f", "table", "출력 형식: table=정렬표, json=파이프/jq용")
 
 	// Flags for indicatorInfoCmd
-	indicatorInfoCmd.Flags().StringP("format", "f", "table", "출력 형식 (table, json)")
+	indicatorInfoCmd.Flags().StringP("format", "f", "table", "출력 형식: table=정렬표, json=파이프/jq용")
 
 	// Flags for indicatorDataCmd
-	indicatorDataCmd.Flags().IntP("limit", "n", 10, "결과 수")
-	indicatorDataCmd.Flags().StringP("format", "f", "table", "출력 형식 (table, json)")
-	indicatorDataCmd.Flags().StringP("output", "o", "", "파일 저장 (.csv/.xlsx/.json/.db/.sqlite/.parquet)")
+	indicatorDataCmd.Flags().IntP("limit", "n", 10, "조회할 최근 시점 개수 (시계열 길이)")
+	indicatorDataCmd.Flags().StringP("format", "f", "table", "출력 형식: table=정렬표, json=파이프/jq용, csv, md=Markdown 표")
+	indicatorDataCmd.Flags().StringP("output", "o", "", "파일로 저장. 확장자로 형식 자동 결정: .csv .xlsx .json .db/.sqlite .parquet")
 
 	// Flags for indicatorListCmd
-	indicatorListCmd.Flags().StringP("format", "f", "table", "출력 형식 (table, json)")
+	indicatorListCmd.Flags().StringP("format", "f", "table", "출력 형식: table=정렬표, json=파이프/jq용")
 }

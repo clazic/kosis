@@ -166,6 +166,6 @@ func init() {
 	rootCmd.AddCommand(bulkCmd)
 
 	// 플래그 정의
-	bulkCmd.Flags().StringVar(&bulkTypeFlag, "type", "DSD", "SDMX 유형 (기본: DSD)")
-	bulkCmd.Flags().StringVarP(&bulkOutputFlag, "output", "o", "", "출력 파일 (.xls/.sdmx) (필수)")
+	bulkCmd.Flags().StringVar(&bulkTypeFlag, "type", "DSD", "SDMX 유형. DSD=구조정의(Data Structure Definition). .xls 저장 시에는 무시됨")
+	bulkCmd.Flags().StringVarP(&bulkOutputFlag, "output", "o", "", "저장할 파일 경로 (필수). 확장자로 형식 결정: .sdmx=SDMX, .xls=엑셀(4만~20만 셀)")
 }

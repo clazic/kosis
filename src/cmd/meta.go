@@ -248,8 +248,8 @@ var metaCmd = &cobra.Command{
 func init() {
 	rootCmd.AddCommand(metaCmd)
 
-	metaCmd.Flags().String("type", "", "메타 유형 (ITM, PRD, TBL, ORG, CMMT, UNIT, SOURCE, WGT, NCD)")
-	metaCmd.Flags().StringP("format", "f", "table", "출력 형식 (table, json)")
+	metaCmd.Flags().String("type", "", "조회할 메타 유형. 미지정=요약(분류+항목+수록정보). ITM=분류/항목, PRD=수록정보(시점범위·주기), TBL=통계표명, ORG=기관명, CMMT=주석, UNIT=단위, SOURCE=출처, WGT=가중치, NCD=갱신일")
+	metaCmd.Flags().StringP("format", "f", "table", "출력 형식: table=정렬표, json=파이프/jq용")
 }
 
 // displayMetaSummary displays metadata summary in a formatted way
