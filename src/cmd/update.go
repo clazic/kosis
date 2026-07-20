@@ -64,12 +64,16 @@ func runUpdate() error {
 	}
 	fmt.Printf("최신 버전: %s\n", latest)
 
-	if !updateForce && normalizeVer(current) == normalizeVer(latest) {
-		fmt.Println("✓ 이미 최신 버전입니다.")
+	if updateCheckOnly {
+		if normalizeVer(current) == normalizeVer(latest) {
+			fmt.Println("✓ 이미 최신 버전입니다.")
+		} else {
+			fmt.Printf("→ 새 버전 %s 사용 가능. `kosis update`로 설치하세요.\n", latest)
+		}
 		return nil
 	}
-	if updateCheckOnly {
-		fmt.Printf("→ 새 버전 %s 사용 가능. `kosis update`로 설치하세요.\n", latest)
+	if !updateForce && normalizeVer(current) == normalizeVer(latest) {
+		fmt.Println("✓ 이미 최신 버전입니다.")
 		return nil
 	}
 
