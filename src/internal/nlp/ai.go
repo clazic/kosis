@@ -4,6 +4,7 @@ package nlp
 import (
 	"fmt"
 	"os/exec"
+	"sort"
 	"strings"
 )
 
@@ -26,7 +27,7 @@ func DetectAITool() string {
 }
 
 // shellEscape는 문자열을 작은따옴표로 감싸 셸 인젝션을 방지합니다.
-// 작은따옴표 내부의 작은따옴표는 '\'' 패턴으로 이스케이프합니다.
+// 작은따옴표 내부의 작은따옴표는 '\” 패턴으로 이스케이프합니다.
 func shellEscape(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
 }
@@ -87,18 +88,89 @@ func extractKosisCommand(output string) string {
 	return strings.TrimSpace(output)
 }
 
-// GetSKILLContent는 SKILL.md 파일 내용을 반환합니다 (프롬프트에 포함).
-// 실행 파일 위치 기준 또는 내장 문자열로 핵심 사용법만 제공합니다.
+// GetSKILLContent는 AI에게 줄 통계표 치트시트를 Shortcuts 사전에서 생성합니다.
+// 손으로 관리하는 두 번째 사본을 두지 않는 것이 핵심 — 사본을 두면 반드시 어긋난다.
+// 코드 조각 목록이 아니라 "완성된 명령 템플릿"을 주어야 AI가 플래그를 빠뜨리지 않는다.
 func GetSKILLContent() string {
-	return `kosis d <ORG_ID> <TBL_ID> --class1 <코드> --item <코드> --period <Y|M|Q|H> [--start <시작> --end <끝> | --latest <N> | --periods "2020,2022,2025"] [-o 파일]
+	var b strings.Builder
 
-자주 쓰는 통계표:
-  미분양: 116 DT_MLTM_2086 (항목: T10=미분양)
-  소비자물가: 101 DT_1J20001 (항목: T10=지수)
-  GDP: 301 DT_200Y001 (항목: T01=경상가격)
-  인구: 101 DT_1IN1502 (항목: T100=총인구)
-  경제활동: 101 DT_1DA7002S
-  주민등록인구: 101 DT_1YL20651E
+	b.WriteString(`kosis d <ORG_ID> <TBL_ID> --class1 <코드> [--class2 <코드>] --item <코드> --period <Y|M|Q|H> (--latest <N> | --start <시작> --end <끝> | --periods "2020,2022,2025") [-o 파일]
 
-지역코드: 00=전국, 11=서울, 21=부산, 22=대구, 23=인천, 24=광주, 25=대전, 26=울산, 29=세종, 31=경기, 32=강원, 33=충북, 34=충남, 35=전북, 36=전남, 37=경북, 38=경남, 39=제주`
+⚠ 반드시 지킬 규칙
+1. 아래 목록에 있는 통계표만 사용한다. 목록에 없으면 명령 대신 정확히 "SEARCH: <키워드>" 한 줄만 출력한다.
+2. 각 통계표의 템플릿에 있는 플래그를 하나도 빼지 않는다. 값을 모른다고 플래그를 생략하지 않는다.
+3. 분류 코드는 해당 통계표 블록 안의 코드만 쓴다. 통계표끼리 코드를 옮겨 쓰면 반드시 틀린다.
+4. 각 통계표가 지원하는 주기 밖의 --period를 쓰지 않는다.
+
+`)
+
+	for _, sc := range uniqueShortcuts() {
+		fmt.Fprintf(&b, "■ %s (org=%s tbl=%s) 주기: %s\n",
+			sc.Label, sc.OrgID, sc.TblID, strings.Join(sc.Periods, ","))
+
+		// 완성된 템플릿 한 줄
+		tmpl := fmt.Sprintf("  템플릿: kosis d %s %s", sc.OrgID, sc.TblID)
+		for _, flag := range sortedMapKeys(sc.Fixed) {
+			tmpl += fmt.Sprintf(" %s %s", flag, sc.Fixed[flag])
+		}
+		if sc.Region != nil {
+			tmpl += fmt.Sprintf(" %s <지역코드>", sc.Region.Flag)
+		}
+		tmpl += fmt.Sprintf(" --item %s --period %s --latest 5", sc.Item, sc.Periods[0])
+		b.WriteString(tmpl + "\n")
+
+		if sc.Region != nil {
+			b.WriteString(fmt.Sprintf("  지역(%s): ", sc.Region.Flag))
+			for _, name := range regionOrder {
+				if code, ok := sc.Region.Codes[name]; ok {
+					fmt.Fprintf(&b, "%s=%s ", name, code)
+				}
+			}
+			b.WriteString("\n")
+		} else {
+			// 지역이 없는 표에서 AI가 class1을 비우는 것을 막는 결정적 지시.
+			b.WriteString("  ※ 지역별 분류 없음. 요청에 지역명이 있어도 무시하고 위 고정 코드를 그대로 쓴다.\n")
+		}
+	}
+
+	return b.String()
+}
+
+// regionOrder 치트시트 출력 순서 고정용 (맵 순회는 순서가 불확정).
+var regionOrder = []string{"전국", "서울", "부산", "대구", "인천", "광주", "대전", "울산",
+	"세종", "경기", "강원", "충북", "충남", "전북", "전남", "경북", "경남", "제주"}
+
+// uniqueShortcuts Shortcuts에서 통계표별로 1개씩만, 순서를 고정해 반환합니다.
+// ("미분양"과 "미분양주택"처럼 여러 키가 같은 통계표를 가리킨다)
+func uniqueShortcuts() []TableShortcut {
+	seen := make(map[string]bool)
+	var out []TableShortcut
+	for _, key := range sortedShortcutKeys() {
+		sc := Shortcuts[key]
+		id := sc.OrgID + "/" + sc.TblID
+		if seen[id] {
+			continue
+		}
+		seen[id] = true
+		out = append(out, sc)
+	}
+	return out
+}
+
+func sortedShortcutKeys() []string {
+	keys := make([]string, 0, len(Shortcuts))
+	for k := range Shortcuts {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func sortedMapKeys(m map[string]string) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }

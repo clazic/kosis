@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -218,7 +219,11 @@ func handleRuleBasedMatching(userRequest, formatFlag, outputFlag string) {
 
 	// 바로가기 매칭이 되면 data 명령으로 즉시 실행
 	if match.Matched {
-		dataArgs := buildDataArgsFromMatch(match, formatFlag, outputFlag)
+		dataArgs, err := buildDataArgsFromMatch(match, formatFlag, outputFlag)
+		if err != nil {
+			printQuickFailure("규칙 기반", err.Error(), suggestionsForBuildFailure(match))
+			return
+		}
 		displayCmd := "kosis data " + quoteArgs(dataArgs)
 
 		fmt.Printf("🧭 규칙 기반 명령어:\n  %s\n\n", displayCmd)
@@ -319,6 +324,12 @@ func executeGeneratedCommand(command, formatFlag, outputFlag string) error {
 
 	dataArgs := normalizeDataArgs(parts[1:])
 
+	// AI가 만든 명령을 검증한다. 단, 값을 고치지는 않는다 —
+	// 임의 보정은 엉뚱한 데이터를 정답처럼 반환할 수 있어 명시적 실패보다 나쁘다.
+	if err := validateGeneratedArgs(dataArgs); err != nil {
+		return err
+	}
+
 	if formatFlag != "" {
 		dataArgs = append(dataArgs, "-f", formatFlag)
 	}
@@ -337,30 +348,118 @@ func executeGeneratedCommand(command, formatFlag, outputFlag string) error {
 	return nil
 }
 
+// validateGeneratedArgs AI가 생성한 data 인자를 API 호출 전에 검사합니다.
+// "명백히 틀린 것"만 막고, "다를 수 있는 것"(어떤 분류 코드를 골랐는지 등)은 통과시킵니다.
+// 값을 고치는 코드는 넣지 않습니다.
+func validateGeneratedArgs(args []string) error {
+	flags := map[string]string{}
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		if !strings.HasPrefix(a, "--") {
+			continue
+		}
+		name, val, hasEq := strings.Cut(a, "=")
+		if !hasEq {
+			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
+				val = args[i+1]
+				i++
+			}
+		}
+		flags[name] = val
+	}
+
+	hasClass := false
+	for i := 1; i <= 8; i++ {
+		if _, ok := flags[fmt.Sprintf("--class%d", i)]; ok {
+			hasClass = true
+			break
+		}
+	}
+	if _, ok := flags["--user-id"]; ok {
+		hasClass = true // user-id 방식은 분류 지정이 불필요
+	}
+	if !hasClass {
+		return fmt.Errorf("AI가 분류 코드(--class1 등)를 생략했습니다. 통계표의 분류를 확인해 직접 지정하세요")
+	}
+	if _, ok := flags["--item"]; !ok {
+		return fmt.Errorf("AI가 항목 코드(--item)를 생략했습니다")
+	}
+
+	period, ok := flags["--period"]
+	if !ok {
+		return fmt.Errorf("AI가 수록주기(--period)를 생략했습니다")
+	}
+	switch period {
+	case "Y", "M", "Q", "H", "D", "F", "IR":
+	default:
+		return fmt.Errorf("AI가 알 수 없는 수록주기를 지정했습니다: %s (Y/M/Q/H/D/F 중 하나여야 함)", period)
+	}
+
+	// 사전에 있는 통계표라면 주기 지원 여부까지 대조한다.
+	if len(args) >= 2 {
+		if sc, ok := nlp.LookupTable(args[0], args[1]); ok && len(sc.Periods) > 0 {
+			supported := false
+			for _, p := range sc.Periods {
+				if p == period {
+					supported = true
+					break
+				}
+			}
+			if !supported {
+				return fmt.Errorf("%s(%s %s)는 '%s' 주기를 제공하지 않습니다 (지원: %s)",
+					sc.Label, sc.OrgID, sc.TblID, period, strings.Join(sc.Periods, ", "))
+			}
+		}
+	}
+	return nil
+}
+
 // buildDataArgsFromMatch converts rule-based match output into kosis data args.
-func buildDataArgsFromMatch(match *nlp.MatchResult, formatFlag, outputFlag string) []string {
-	class1 := match.Class1
-	if class1 == "" {
-		class1 = "00"
+// 사전에 없는 값을 기본값으로 지어내지 않는다. 모르면 에러를 반환한다 —
+// 틀린 코드로 조회하면 조용한 오답(엉뚱한 분류의 수치)이 나올 수 있기 때문이다.
+func buildDataArgsFromMatch(match *nlp.MatchResult, formatFlag, outputFlag string) ([]string, error) {
+	sc := match.Shortcut
+
+	args := []string{match.OrgID, match.TblID}
+
+	// [1] 고정 축 (미분양의 대분류, GDP의 계정항목 등)
+	for _, flag := range sortedKeys(sc.Fixed) {
+		args = append(args, flag, sc.Fixed[flag])
 	}
 
-	item := match.Item
-	if item == "" {
-		item = "ALL"
+	// [2] 지역 축
+	region := match.RegionName
+	switch {
+	case sc.Region == nil && region != "" && region != "전국":
+		// "전국"은 지역 필터가 아니라 수사이므로 통과시키지만, 그 외 지역명은 적용할 수 없다.
+		return nil, fmt.Errorf("%s(%s %s)는 지역별 분류를 제공하지 않습니다. '%s'을(를) 적용할 수 없습니다",
+			sc.Label, sc.OrgID, sc.TblID, region)
+	case sc.Region != nil:
+		name := region
+		if name == "" {
+			name = "전국"
+		}
+		code, ok := sc.Region.Codes[name]
+		if !ok {
+			return nil, fmt.Errorf("%s(%s %s)의 '%s' 지역 코드가 사전에 없습니다. kosis meta %s %s로 확인하세요",
+				sc.Label, sc.OrgID, sc.TblID, name, sc.OrgID, sc.TblID)
+		}
+		args = append(args, sc.Region.Flag, code)
 	}
 
-	period := match.Period
-	if period == "" {
-		period = "Y"
+	// [3] 항목
+	if sc.Item == "" {
+		return nil, fmt.Errorf("%s(%s %s)의 항목 코드가 사전에 없습니다. kosis meta %s %s로 확인하세요",
+			sc.Label, sc.OrgID, sc.TblID, sc.OrgID, sc.TblID)
 	}
+	args = append(args, "--item", sc.Item)
 
-	args := []string{
-		match.OrgID,
-		match.TblID,
-		"--class1", class1,
-		"--item", item,
-		"--period", period,
+	// [4] 주기 — 통계표가 제공하지 않는 주기는 거부한다.
+	period, err := resolvePeriod(sc, match.Period)
+	if err != nil {
+		return nil, err
 	}
+	args = append(args, "--period", period)
 
 	switch {
 	case strings.TrimSpace(match.Periods) != "":
@@ -380,7 +479,60 @@ func buildDataArgsFromMatch(match *nlp.MatchResult, formatFlag, outputFlag strin
 		args = append(args, "-o", outputFlag)
 	}
 
-	return args
+	return args, nil
+}
+
+// suggestionsForBuildFailure 사전 정보 부족으로 조회를 포기했을 때의 다음 액션.
+func suggestionsForBuildFailure(match *nlp.MatchResult) []string {
+	sc := match.Shortcut
+	actions := make([]string, 0, 3)
+
+	// 지역 미지원 표에 지역을 요청한 경우: 전국 조회로 안내.
+	// 지역·기간 토큰이 모두 소비되어 Keyword가 빌 수 있으므로 매칭 토큰을 기준으로 만든다.
+	if sc.Region == nil && match.RegionName != "" && match.RegionName != "전국" {
+		subject := strings.TrimSpace(match.MatchedToken + " " + match.Keyword)
+		actions = append(actions,
+			fmt.Sprintf("지역 없이 조회: kosis quick %q", subject),
+			fmt.Sprintf("지역별 통계표를 직접 찾기: kosis search %q", match.MatchedToken+" 지역"))
+	}
+	if len(sc.Periods) > 0 {
+		actions = append(actions,
+			fmt.Sprintf("이 통계표가 제공하는 주기: %s", strings.Join(sc.Periods, ", ")))
+	}
+	if sc.OrgID != "" && sc.TblID != "" {
+		actions = append(actions,
+			fmt.Sprintf("분류·항목·주기 확인: kosis meta %s %s", sc.OrgID, sc.TblID))
+	}
+	return actions
+}
+
+// resolvePeriod 통계표가 지원하는 주기인지 확인하고 확정한다.
+// 사용자가 지정하지 않았으면 사전의 첫 번째(대표) 주기를 쓴다.
+func resolvePeriod(sc nlp.TableShortcut, requested string) (string, error) {
+	if len(sc.Periods) == 0 {
+		return "", fmt.Errorf("%s(%s %s)의 수록주기가 사전에 없습니다. kosis meta %s %s --type PRD로 확인하세요",
+			sc.Label, sc.OrgID, sc.TblID, sc.OrgID, sc.TblID)
+	}
+	if requested == "" {
+		return sc.Periods[0], nil
+	}
+	for _, p := range sc.Periods {
+		if p == requested {
+			return requested, nil
+		}
+	}
+	return "", fmt.Errorf("%s(%s %s)는 '%s' 주기를 제공하지 않습니다 (지원: %s)",
+		sc.Label, sc.OrgID, sc.TblID, requested, strings.Join(sc.Periods, ", "))
+}
+
+// sortedKeys 맵 순회 순서를 고정해 생성되는 명령어가 실행마다 달라지지 않게 한다.
+func sortedKeys(m map[string]string) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 // normalizeDataArgs remaps unsupported shorthand flags like -c1 to long flags.
