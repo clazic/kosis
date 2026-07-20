@@ -127,6 +127,7 @@ kosis config add-key <API_KEY_3>
 | `kosis config show` | - | 전체 설정 표시 |
 | `kosis bookmark add` | `bm add` | 즐겨찾기 추가 |
 | `kosis history` | `hi` | 조회 이력 |
+| `kosis update` | - | 최신 버전으로 self-update (바이너리+스킬, `--check`/`--force`) |
 | `kosis` (인자 없음) | - | TUI 대시보드 |
 
 ---

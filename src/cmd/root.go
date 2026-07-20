@@ -41,6 +41,7 @@ KOSIS(국가통계포털) Open API 기반 CLI/TUI 도구입니다.
   bookmark (bm)     즐겨찾기 관리
   history  (hi)     조회 이력 관리
   completion        셸 자동완성 설정
+  update            최신 버전으로 업데이트 (바이너리+스킬)
 
 플래그:
   -v, --version             버전 정보
