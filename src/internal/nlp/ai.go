@@ -36,7 +36,10 @@ type PeriodSpec struct {
 	Start  string   `json:"start"`
 	End    string   `json:"end"`
 	List   []string `json:"list"`
-	Unit   string   `json:"unit"` // Y | M | Q | H | ""(미지정)
+	Unit   string   `json:"unit"` // latest N 의 단위: Y | M | Q | H | ""
+	// Freq 사용자가 원하는 출력 주기("분기별로", "1분기", "월별"). Unit 과 따로 둔다 —
+	// "최근 2년간 분기별로"는 Unit=Y(2년) 이지만 Freq=Q 다. 한 칸에 담으면 둘 중 하나가 사라진다.
+	Freq string `json:"freq"`
 }
 
 // Intent 요청 해석 결과.
@@ -115,10 +118,13 @@ func parsePrompt(today time.Time) string {
 	return `도구를 사용하지 말고 JSON 객체 하나만 출력해. 설명·코드펜스 금지.
 사용자의 한국 통계(KOSIS) 조회 요청을 분석해 아래 형식으로 답해:
 {"english": "요청 전체를 영어로 풀어 쓴 한 문장 (지역·조건은 영어와 한글 병기, 예: Ulsan (울산))",
- "keyword": "KOSIS 통계표 검색어. 지역·기간을 뺀 짧은 통계 용어 (예: 출생아수, 소비자물가지수, 아파트 매매가격지수)",
+ "keyword": "KOSIS 통계표 검색어. 지역·기간을 뺀 짧은 한국어 통계 용어 (예: 출생아수, 소비자물가지수, 아파트 매매가격지수). 요청이 영어여도 반드시 한국어로",
+ (conditions 의 지역명도 한국어로: Ulsan → 울산)
  "conditions": ["지역·성별·연령·산업 등 분류 조건 단어. 없으면 빈 배열"],
- "period": {"kind": "latest|range|list|none", "latest": 정수, "start": "YYYY 또는 YYYYMM", "end": "YYYY 또는 YYYYMM", "list": ["YYYY"...], "unit": "Y|M|Q|H 또는 빈 문자열"}}
-규칙: "최근 N년/개월"은 kind=latest 이고 unit 은 N의 단위(년=Y, 개월=M, 분기=Q)로 반드시 채운다. "작년"·"올해" 같은 상대 표현은 오늘 날짜 기준 절대 연도로 바꿔 range로. 기간 언급이 없으면 kind=none.
+ "period": {"kind": "latest|range|list|none", "latest": 정수, "start": "YYYY 또는 YYYYMM", "end": "YYYY 또는 YYYYMM", "list": ["YYYY"...], "unit": "Y|M|Q|H 또는 빈 문자열", "freq": "Y|M|Q|H 또는 빈 문자열"}}
+규칙: "최근 N년/개월"은 kind=latest 이고 unit 은 N의 단위(년=Y, 개월=M, 분기=Q)로 반드시 채운다.
+freq 는 사용자가 원하는 출력 주기다: "분기별", "1분기" → Q / "월별", "N월" → M / "연간" → Y. 언급이 없으면 빈 문자열.
+특정 분기("2025년 1분기")는 kind=range, start·end 를 그 분기의 첫 달·끝 달 YYYYMM 으로, freq=Q. "작년"·"올해" 같은 상대 표현은 오늘 날짜 기준 절대 연도로 바꿔 range로. 기간 언급이 없으면 kind=none.
 오늘: ` + today.Format("2006-01-02")
 }
 

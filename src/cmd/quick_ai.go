@@ -85,6 +85,13 @@ type aiEnv struct {
 	jev     nlp.Endpoint
 	store   *learn.Store
 	request string
+	quiet   bool // 평가 모드: 진행 로그 생략
+}
+
+func (e *aiEnv) logf(format string, a ...any) {
+	if !e.quiet {
+		fmt.Printf(format, a...)
+	}
 }
 
 // handleAIGeneration quick --ai 진입점. providerName이 비면 기본 글생성 공급자.
@@ -262,6 +269,7 @@ func interpretRequest(providerName, userRequest string) *nlp.Intent {
 		it, perr := nlp.ParseRequest(ep, userRequest, time.Now())
 		if perr == nil {
 			it.Period.Unit = api.NormalizePrdSe(it.Period.Unit)
+			it.Period.Freq = api.NormalizePrdSe(it.Period.Freq)
 			return it
 		}
 		err = perr
@@ -322,14 +330,14 @@ func (e *aiEnv) chooseTable(it *nlp.Intent, force string) (*aiPlan, error) {
 		}
 	}
 
-	fmt.Printf("🔎 통계표 검색: %s\n", it.Keyword)
+	e.logf("🔎 통계표 검색: %s\n", it.Keyword)
 	results, err := e.client.Search(it.Keyword, api.SearchOptions{ResultCount: 30})
 	if err != nil {
 		return nil, fmt.Errorf("검색 실패: %w", err)
 	}
 	if len(results) == 0 && force == "" {
 		if rk := intentFromRules(e.request).Keyword; learn.NormKey(rk) != learn.NormKey(it.Keyword) {
-			fmt.Printf("🔎 결과 없음, 재검색: %s\n", rk)
+			e.logf("🔎 결과 없음, 재검색: %s\n", rk)
 			if results, err = e.client.Search(rk, api.SearchOptions{ResultCount: 30}); err != nil {
 				return nil, fmt.Errorf("검색 실패: %w", err)
 			}
@@ -493,7 +501,7 @@ func buildClassAxes(classifications []api.MetaResult) ([]classAxis, error) {
 // chooseAxes ④⑤ 메타를 받아 축마다 코드를 정한다. 학습된 값은 그대로, 나머지는 Jev 한 번으로 병렬 선택.
 func (e *aiEnv) chooseAxes(plan *aiPlan) error {
 	org, tbl := plan.orgTbl()
-	fmt.Printf("📋 메타 조회: %s %s\n", org, tbl)
+	e.logf("📋 메타 조회: %s %s\n", org, tbl)
 	meta, err := e.client.MetaSummary(org, tbl)
 	if err != nil {
 		return fmt.Errorf("%w: 메타 조회 실패: %v", errTableUnusable, err)
@@ -566,7 +574,7 @@ func (e *aiEnv) chooseAxes(plan *aiPlan) error {
 	}
 	decide(periodAxis, "수록주기", "--period", plan.CondKey,
 		"Which publication frequency (년=yearly, 월=monthly, 분기=quarterly, 반기=half-yearly) best fits the requested period?",
-		prdRows, plan.Intent.Period.Unit)
+		prdRows, requestedFreq(plan.Intent.Period))
 
 	if len(questions) > 0 {
 		ans, err := nlp.Choose(e.jev, jevState(e.request, plan.Intent), questions)
@@ -579,6 +587,14 @@ func (e *aiEnv) chooseAxes(plan *aiPlan) error {
 		}
 	}
 	return nil
+}
+
+// requestedFreq 사용자가 원한 출력 주기. 명시(freq)가 없으면 "최근 N개월"의 단위를 쓴다.
+func requestedFreq(ps nlp.PeriodSpec) string {
+	if ps.Freq != "" {
+		return ps.Freq
+	}
+	return ps.Unit
 }
 
 // perYear 주기별 1년당 시점 수. 환산할 수 없는 주기(5년·일·부정기)는 0.
