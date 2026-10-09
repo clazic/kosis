@@ -331,16 +331,26 @@ func (e *aiEnv) chooseTable(it *nlp.Intent, force string) (*aiPlan, error) {
 	}
 
 	e.logf("🔎 통계표 검색: %s\n", it.Keyword)
-	results, err := e.client.Search(it.Keyword, api.SearchOptions{ResultCount: 30})
-	if err != nil {
-		return nil, fmt.Errorf("검색 실패: %w", err)
-	}
-	if len(results) == 0 && force == "" {
-		if rk := intentFromRules(e.request).Keyword; learn.NormKey(rk) != learn.NormKey(it.Keyword) {
-			e.logf("🔎 결과 없음, 재검색: %s\n", rk)
-			if results, err = e.client.Search(rk, api.SearchOptions{ResultCount: 30}); err != nil {
-				return nil, fmt.Errorf("검색 실패: %w", err)
-			}
+	var results []api.SearchResult
+	tried := map[string]bool{}
+	for i, kw := range keywordCandidates(it.Keyword, intentFromRules(e.request).Keyword) {
+		if tried[learn.NormKey(kw)] {
+			continue
+		}
+		tried[learn.NormKey(kw)] = true
+		if i > 0 {
+			e.logf("🔎 결과 없음, 재검색: %s\n", kw)
+		}
+		res, err := e.client.Search(kw, api.SearchOptions{ResultCount: 30})
+		if err != nil && !strings.Contains(err.Error(), "[30]") { // [30] = 검색 결과 없음
+			return nil, fmt.Errorf("검색 실패: %w", err)
+		}
+		if len(res) > 0 {
+			results = res
+			break
+		}
+		if force != "" {
+			break
 		}
 	}
 
@@ -386,6 +396,34 @@ func (e *aiEnv) chooseTable(it *nlp.Intent, force string) (*aiPlan, error) {
 	plan.Table, plan.TableName, plan.TableSrc = a.Choice, options[a.Choice], srcJev
 	plan.TableConf, plan.TableRank = a.Confidence, a.Ranked()
 	return plan, nil
+}
+
+// searchStopwords 검색어에서 빼는 조사·접속어. "~별"로 끝나는 단어("구군별", "업종별")는 분류 지시라 따로 뺀다.
+var searchStopwords = map[string]bool{"와": true, "과": true, "및": true, "랑": true, "이랑": true, "하고": true, "그리고": true, "또는": true, "의": true}
+
+// keywordCandidates 검색 결과가 없을 때 시도할 검색어를 넓은 것부터 차례로 만든다.
+//  1. 해석된 검색어 그대로  2. 조사·"~별" 단어를 뺀 것  3. 규칙 기반 키워드  4. 남은 단어 하나씩(긴 것부터)
+//
+// 문장 전체가 검색어로 넘어가면 KOSIS 가 [30](결과 없음)을 돌려주므로 점점 좁힌다.
+func keywordCandidates(primary, rule string) []string {
+	out := []string{primary}
+	var core []string
+	for _, w := range strings.Fields(primary) {
+		w = strings.Trim(w, ",.?!")
+		if w == "" || searchStopwords[w] || (strings.HasSuffix(w, "별") && len([]rune(w)) > 1) {
+			continue
+		}
+		core = append(core, w)
+	}
+	if len(core) > 0 {
+		out = append(out, strings.Join(core, " "))
+	}
+	if rule != "" {
+		out = append(out, rule)
+	}
+	sorted := append([]string(nil), core...)
+	sort.SliceStable(sorted, func(i, j int) bool { return len([]rune(sorted[i])) > len([]rune(sorted[j])) })
+	return append(out, sorted...)
 }
 
 // condFirst 조건 단어가 들어간 값을 앞세운 코드 순서 (axisOptions·교정 후보 공통 기준).

@@ -74,3 +74,11 @@ func TestRequestedFreq(t *testing.T) {
 		t.Error("freq 가 있으면 freq, 없으면 unit")
 	}
 }
+
+func TestKeywordCandidates(t *testing.T) {
+	got := keywordCandidates("구군별 업종별 종사자수 와 생산액", "")
+	want := []string{"구군별 업종별 종사자수 와 생산액", "종사자수 생산액", "종사자수", "생산액"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Errorf("got %q", got)
+	}
+}
