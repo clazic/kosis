@@ -1,15 +1,17 @@
 # Module Context
 
-이 패키지는 quick 명령의 규칙 기반 매칭과 OpenAI 호환 AI API 호출을 담당한다. 작은 변경도 사용자 체감에 직접 드러난다.
+이 패키지는 quick 명령의 규칙 기반 매칭과 AI 호출(해석·선택)을 담당한다. 작은 변경도 사용자 체감에 직접 드러난다.
 
 # Tech Stack & Constraints
 
 - token/regex 기반 matcher
-- OpenAI 호환 Chat Completions API 호출 (HTTP)
+- OpenAI 호환 Chat Completions 호출: `ParseRequest` (요청 → 검색어·조건·기간 `Intent`)
+- TypeSafe System One 호출: `Choose` (후보 중 통계표·축별 코드 선택, `ChoiceAnswer`)
+- AI는 명령을 생성하지 않는다. 예전 명령 생성 경로는 제거되었고, 실제 search/meta 목록에서 고르는 파이프라인(오케스트레이션은 `cmd/quick_ai.go`)만 남았다.
 
 Constraints:
 - shortcut 추가나 규칙 변경 시 `matcher_test.go` 기대값과 함께 관리한다.
-- AI 경로는 생성 실패와 실행 실패를 구분해서 다뤄야 한다.
+- AI 경로는 해석 실패(규칙 기반 폴백)·선택 실패·실행 실패를 구분해서 다뤄야 한다.
 - 규칙 기반 fallback은 search/data 어느 쪽으로 가는지 명확해야 한다.
 
 # Implementation Patterns
@@ -17,6 +19,7 @@ Constraints:
 - shortcut은 범용 단어보다 오탐이 적은 표현을 우선한다.
 - 기간 파싱 로직은 연속 범위, 비연속 시점, 주기 추론을 분리한다.
 - AI API 요청 구성(prompt)과 HTTP 실패 메시지를 함께 다룬다.
+- 선택 결과의 출처 표시([Jev 신뢰도]/[학습]/[요청]/[유일]/[교정])와 학습 저장(`internal/learn`)은 호출부와 맞춰 유지한다.
 
 # Testing Strategy
 

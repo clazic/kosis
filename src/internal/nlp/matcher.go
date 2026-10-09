@@ -265,16 +265,6 @@ func Match(input string) *MatchResult {
 	return result
 }
 
-// LookupTable org/tbl로 사전 항목을 찾습니다. AI가 생성한 명령 검증에 씁니다.
-func LookupTable(orgID, tblID string) (TableShortcut, bool) {
-	for _, sc := range Shortcuts {
-		if sc.OrgID == orgID && sc.TblID == tblID {
-			return sc, true
-		}
-	}
-	return TableShortcut{}, false
-}
-
 func resolveShortcutToken(token string) (TableShortcut, bool) {
 	if shortcut, exists := Shortcuts[token]; exists {
 		return shortcut, true

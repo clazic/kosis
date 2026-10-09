@@ -117,7 +117,7 @@ kosis config add-key <API_KEY_3>
 | `kosis list` | `ls` | 통계목록 트리 탐색 |
 | `kosis explain <ORG> <TBL>` | `ex` | 통계 조사 설명 |
 | `kosis bulk <userStatsId>` | - | 대용량 다운로드 (SDMX/XLS) |
-| `kosis quick <요청>` | `q` | 자연어 원스텝 조회 |
+| `kosis quick <요청>` | `q` | 자연어 원스텝 조회 (`--ai`: AI가 실제 목록에서 선택, `--yes`: 확인 생략) |
 | `kosis indicator search` | `ind s` | 주요지표 검색 |
 | `kosis indicator info <ID>` | `ind info` | 지표 상세 정보 |
 | `kosis indicator data <이름>` | `ind d` | 지표 수치 조회 |

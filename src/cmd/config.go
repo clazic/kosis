@@ -311,7 +311,11 @@ var setAICmd = &cobra.Command{
 var aiListCmd = &cobra.Command{
 	Use:   "ai-list",
 	Short: "AI 공급자 목록",
-	Long: `등록된 AI 공급자(OpenAI 호환 API) 목록과 주소·모델·API 키 상태를 표시합니다.
+	Long: `등록된 AI 공급자 목록과 역할·주소·모델·API 키 상태를 표시합니다.
+
+역할:
+  [글생성 (--ai)]  openai 종류. 요청 문장 해석 (기본 hermes, * 표시)
+  [선택 (Jev)]     typesafe 종류. 실제 목록에서 통계표·코드 선택 (jev 고정)
 
 키 상태는 실제로 사용할 키의 출처를 보여줍니다:
   env:<변수>   환경변수에서 읽음
@@ -342,12 +346,16 @@ var aiListCmd = &cobra.Command{
 			if name == cfg.AI.Default {
 				marker = "*"
 			}
-			fmt.Printf("%s %s\n", marker, name)
+			role := "글생성 (--ai)"
+			if p.IsTypeSafe() {
+				role = "선택 (Jev)"
+			}
+			fmt.Printf("%s %s  [%s]\n", marker, name, role)
 			fmt.Printf("  주소: %s\n", p.BaseURL)
 			fmt.Printf("  모델: %s\n", p.Model)
 			fmt.Printf("  키:   %s\n", keySource(p))
 		}
-		fmt.Printf("\n* = 현재 기본 AI 공급자\n")
+		fmt.Printf("\n* = 현재 기본 글생성 공급자. 선택은 항상 '%s' 공급자가 맡습니다.\n", config.SelectorProvider)
 	},
 }
 
@@ -376,21 +384,22 @@ func providerNames(m map[string]config.AIProvider) map[string]string {
 var aiAddCmd = &cobra.Command{
 	Use:   "ai-add <NAME> --url <BASE_URL> --model <MODEL>",
 	Short: "AI 공급자 추가·수정",
-	Long: `OpenAI 호환 Chat Completions API를 AI 공급자로 등록합니다.
-같은 이름이 있으면 덮어씁니다 (내장 hermes의 주소 변경에도 사용).
+	Long: `AI 공급자를 등록합니다. 같은 이름이 있으면 덮어씁니다 (내장 hermes·jev의 주소 변경에도 사용).
 
-kosis quick --ai <이름> 실행 시 {BASE_URL}/chat/completions로
-POST 요청을 보내 kosis data 명령어를 생성합니다.
+quick --ai는 두 종류의 공급자를 함께 씁니다:
+  openai    글생성 — 요청 문장을 검색어·조건·기간으로 해석 ({BASE_URL}/chat/completions)
+  typesafe  선택   — 실제 검색·메타 목록에서 통계표·코드를 고름 ({BASE_URL}/systemone, 이름은 jev 고정)
 
 사용법:
-  kosis config ai-add <NAME> --url <BASE_URL> --model <MODEL> [--key <KEY> | --key-env <ENV>]
+  kosis config ai-add <NAME> --url <BASE_URL> --model <MODEL> [--type openai|typesafe] [--key <KEY> | --key-env <ENV>]
 
 파라미터:
   <NAME>      quick --ai에서 사용할 공급자 이름 (예: openai)
 
 플래그:
   --url <BASE_URL>    API 기본 주소, /v1까지 포함 (예: https://api.openai.com/v1)
-  --model <MODEL>     모델명 (예: gpt-4o-mini, hermes-agent)
+  --model <MODEL>     모델명 (예: gpt-4o-mini, hermes-agent, jev-latest)
+  --type <TYPE>       openai(기본) 또는 typesafe
   --key <KEY>         API 키를 설정 파일에 저장
   --key-env <ENV>     API 키를 읽을 환경변수 이름 (설정 파일 키보다 우선)
 
@@ -408,8 +417,9 @@ POST 요청을 보내 kosis data 명령어를 생성합니다.
 		model, _ := cmd.Flags().GetString("model")
 		key, _ := cmd.Flags().GetString("key")
 		keyEnv, _ := cmd.Flags().GetString("key-env")
+		typ, _ := cmd.Flags().GetString("type")
 
-		p := config.AIProvider{BaseURL: baseURL, Model: model, APIKey: key, KeyEnv: keyEnv}
+		p := config.AIProvider{Type: typ, BaseURL: baseURL, Model: model, APIKey: key, KeyEnv: keyEnv}
 		if err := config.AddAIProvider(args[0], p); err != nil {
 			fmt.Printf("오류: %v\n", err)
 			return
@@ -713,8 +723,9 @@ func init() {
 	configCmd.AddCommand(aiRemoveCmd)
 
 	aiAddCmd.Flags().String("url", "", "API 기본 주소, /v1까지 포함 (예: https://api.openai.com/v1)")
-	aiAddCmd.Flags().String("model", "", "모델명 (예: gpt-4o-mini, hermes-agent)")
+	aiAddCmd.Flags().String("model", "", "모델명 (예: gpt-4o-mini, hermes-agent, jev-latest)")
 	aiAddCmd.Flags().String("key", "", "API 키 (설정 파일에 저장)")
+	aiAddCmd.Flags().String("type", "openai", "공급자 종류: openai(Chat Completions, 글생성) | typesafe(System One, 선택 — 이름 jev)")
 	aiAddCmd.Flags().String("key-env", "", "API 키를 읽을 환경변수 이름 (설정 파일 키보다 우선)")
 	_ = aiAddCmd.MarkFlagRequired("url")
 	_ = aiAddCmd.MarkFlagRequired("model")

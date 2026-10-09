@@ -30,7 +30,7 @@ func (c *Client) DataRegistered(userStatsID string, opts DataOptions) ([]DataRow
 		params["prdInterval"] = opts.PrdInterval
 	}
 	if opts.PrdSe != "" {
-		params["prdSe"] = normalizePrdSe(opts.PrdSe)
+		params["prdSe"] = NormalizePrdSe(opts.PrdSe)
 	}
 	if opts.OutputFields != "" {
 		params["outputFields"] = opts.OutputFields

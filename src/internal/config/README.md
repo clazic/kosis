@@ -25,6 +25,11 @@ ai:
       base_url: http://100.70.244.98:8642/v1
       model: hermes-agent
       key_env: HERMES_API_KEY
+    jev:                       # 선택 전용(TypeSafe System One), 이름 고정
+      type: typesafe
+      base_url: https://api.typesafe.ai/v1
+      model: jev-latest
+      key_env: TYPESAFE_API_KEY
     openai:
       base_url: https://api.openai.com/v1
       model: gpt-4o-mini
@@ -60,7 +65,12 @@ kosis config remove-key 1
 
 ## AI 공급자 관리
 
-`quick --ai`는 OpenAI 호환 Chat Completions API(`POST {base_url}/chat/completions`)를 호출합니다. 환경변수 키가 설정 파일 키보다 우선합니다.
+`AIProvider.Type`은 두 종류입니다 (비면 `openai`).
+
+- `openai`: 글생성. OpenAI 호환 Chat Completions(`POST {base_url}/chat/completions`)로 요청을 검색어·조건·기간으로 해석 (기본 hermes).
+- `typesafe`: 선택. TypeSafe System One(`{base_url}/systemone`)으로 후보 중 통계표·코드를 고름 (jev, 이름 고정, `set-ai` 기본값 불가).
+
+환경변수 키가 설정 파일 키보다 우선합니다.
 
 ```bash
 # 등록된 공급자 목록 (주소·모델·키 출처)
@@ -70,10 +80,11 @@ kosis config ai-list
 kosis config set-ai openai
 
 # 공급자 추가·덮어쓰기
-kosis config ai-add openai --url https://api.openai.com/v1 --model gpt-4o-mini --key-env OPENAI_API_KEY
+kosis config ai-add openai --url https://api.openai.com/v1 --model gpt-4o-mini --key-env OPENAI_API_KEY [--type openai|typesafe]
 
 # API 키 저장
 kosis config ai-key hermes "<HERMES_API_KEY>"
+kosis config ai-key jev "<TYPESAFE_API_KEY>"
 
 # 공급자 제거 (기본 공급자 제거 시 hermes로 복귀)
 kosis config ai-remove openai
@@ -112,6 +123,8 @@ kosis config ai-remove openai
 - `AddAIProvider(name string, p AIProvider) error` - 공급자 추가·덮어쓰기
 - `SetAIProviderKey(name, key string) error` - 공급자 API 키 저장
 - `RemoveAIProvider(name string) error` - 공급자 제거
+- `AIProvider.IsTypeSafe() bool` - typesafe(선택용) 공급자 여부 (Type이 비면 openai)
+- `SelectorProvider` - 후보 중 하나를 고르는 공급자(Jev) 이름 상수
 - `MaskKey(key string) string` - 키 마스킹 표시
 - `AIProvider.ResolveKey() string` - 키 결정 (환경변수 우선, 없으면 설정 파일)
 

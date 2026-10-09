@@ -1,9 +1,13 @@
 package cmd
 
 import (
+	"fmt"
+	"github.com/clazic/kosis/internal/learn"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/clazic/kosis/internal/api"
 	"github.com/clazic/kosis/internal/config"
 	"github.com/clazic/kosis/internal/nlp"
 )
@@ -114,78 +118,6 @@ func TestBuildDataArgsFromMatch(t *testing.T) {
 	}
 }
 
-// TestValidateGeneratedArgs AI가 만든 명령의 검증. 값을 고치지 않고 막기만 한다.
-func TestValidateGeneratedArgs(t *testing.T) {
-	cases := []struct {
-		name    string
-		args    []string
-		wantErr string
-	}{
-		{
-			name: "정상",
-			args: []string{"101", "DT_1IN1502", "--class1", "11", "--item", "T100", "--period", "Y", "--latest", "5"},
-		},
-		{
-			name: "= 형식도 인식",
-			args: []string{"101", "DT_1IN1502", "--class1=11", "--item=T100", "--period=Y"},
-		},
-		{
-			// 사용자가 보고한 실제 실패: AI가 GDP에 class1을 통째로 생략했다
-			name:    "분류 코드 누락 — API 호출 전에 잡아야 함",
-			args:    []string{"301", "DT_200Y001", "--item", "T01", "--period", "Y", "--latest", "5"},
-			wantErr: "분류 코드",
-		},
-		{
-			name:    "항목 누락",
-			args:    []string{"101", "DT_1IN1502", "--class1", "11", "--period", "Y"},
-			wantErr: "항목 코드",
-		},
-		{
-			name:    "주기 누락",
-			args:    []string{"101", "DT_1IN1502", "--class1", "11", "--item", "T100"},
-			wantErr: "수록주기",
-		},
-		{
-			name:    "알 수 없는 주기",
-			args:    []string{"101", "DT_1IN1502", "--class1", "11", "--item", "T100", "--period", "Z"},
-			wantErr: "알 수 없는 수록주기",
-		},
-		{
-			name:    "사전에 있는 표의 미지원 주기는 대조해서 거부",
-			args:    []string{"116", "DT_MLTM_2086", "--class1", "x", "--item", "y", "--period", "M"},
-			wantErr: "주기를 제공하지 않습니다",
-		},
-		{
-			name: "user-id 방식은 분류 없이도 통과",
-			args: []string{"101", "DT_1IN1502", "--user-id", "abc", "--item", "T100", "--period", "Y"},
-		},
-		{
-			name: "사전에 없는 표는 구조 검증만 하고 통과 (AI 자율성 보존)",
-			args: []string{"999", "DT_UNKNOWN", "--class1", "x", "--item", "y", "--period", "Q"},
-		},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			err := validateGeneratedArgs(tc.args)
-			if tc.wantErr == "" {
-				if err != nil {
-					t.Fatalf("통과를 기대했으나 에러: %v", err)
-				}
-				return
-			}
-			if err == nil {
-				t.Fatalf("에러 %q를 기대했으나 통과함", tc.wantErr)
-			}
-			if !strings.Contains(err.Error(), tc.wantErr) {
-				t.Errorf("에러 = %q, %q를 포함해야 함", err.Error(), tc.wantErr)
-			}
-		})
-	}
-}
-
-// TestConfirmExecutionYes --yes 면 표준입력을 읽지 않고 실행을 허용한다.
-// 비대화형(stdin 이 비었거나 닫힘)에서 프롬프트가 "실행 취소됨"으로 끝나던 문제의 회귀 방지.
 func TestConfirmExecutionYes(t *testing.T) {
 	t.Cleanup(func() { quickAssumeYes = false })
 
@@ -205,14 +137,6 @@ func TestConfirmExecutionYes(t *testing.T) {
 	}
 }
 
-func TestSplitCommandLine(t *testing.T) {
-	got := splitCommandLine(`kosis d 301 T --periods "2020,2022"  --x 'a b' --y=""`)
-	want := []string{"kosis", "d", "301", "T", "--periods", "2020,2022", "--x", "a b", "--y="}
-	if strings.Join(got, "|") != strings.Join(want, "|") {
-		t.Errorf("got %q, want %q", got, want)
-	}
-}
-
 func TestNormalizeQuickAIFlag(t *testing.T) {
 	config.SetConfigDirForTesting(t.TempDir())
 	defer config.SetConfigDirForTesting("")
@@ -228,5 +152,137 @@ func TestNormalizeQuickAIFlag(t *testing.T) {
 	got = normalizeQuickAIFlag([]string{"data", "-a", "hermes"})
 	if strings.Join(got, "|") != "data|-a|hermes" {
 		t.Errorf("quick 외 명령은 건드리지 않아야 함: %q", got)
+	}
+}
+
+func TestPeriodArgs(t *testing.T) {
+	now := time.Date(2026, 10, 10, 0, 0, 0, 0, time.UTC)
+	cases := []struct {
+		ps   nlp.PeriodSpec
+		unit string
+		want string
+	}{
+		{nlp.PeriodSpec{Kind: "range", Start: "2021", End: "2025"}, "Y", "--start 2021 --end 2025"},
+		{nlp.PeriodSpec{Kind: "range", Start: "2021", End: "2022"}, "M", "--start 202101 --end 202212"},
+		{nlp.PeriodSpec{Kind: "range", Start: "2021", End: "2022"}, "Q", "--start 20211 --end 20224"},
+		{nlp.PeriodSpec{Kind: "range", Start: "202304", End: "202308"}, "Q", "--start 20232 --end 20233"}, // 월→분기
+		{nlp.PeriodSpec{Kind: "range", Start: "202308", End: "202402"}, "H", "--start 20232 --end 20241"},
+		{nlp.PeriodSpec{Kind: "range", Start: "2020"}, "Y", "--start 2020 --end 2026"}, // "2020년 이후"
+		{nlp.PeriodSpec{Kind: "latest", Latest: 5, Unit: "Y"}, "M", "--latest 60"},
+		{nlp.PeriodSpec{Kind: "latest", Latest: 24, Unit: "M"}, "Y", "--latest 2"},
+		{nlp.PeriodSpec{Kind: "latest", Latest: 18, Unit: "M"}, "Y", "--latest 2"}, // 올림
+		{nlp.PeriodSpec{Kind: "latest", Latest: 6, Unit: "M"}, "M", "--latest 6"},
+		{nlp.PeriodSpec{Kind: "latest", Latest: 3}, "Q", "--latest 3"}, // 단위 모르면 환산하지 않음
+		{nlp.PeriodSpec{Kind: "list", List: []string{"2020", "2022"}}, "Y", "--periods 2020,2022"},
+		{nlp.PeriodSpec{Kind: "none"}, "Y", "--latest 1"},
+	}
+	for _, c := range cases {
+		if got := strings.Join(periodArgs(c.ps, c.unit, now), " "); got != c.want {
+			t.Errorf("periodArgs(%+v, %s) = %q, want %q", c.ps, c.unit, got, c.want)
+		}
+	}
+}
+
+func TestBuildClassAxes(t *testing.T) {
+	rows := []api.MetaResult{
+		{ObjID: "B", ObjNM: "성별", ObjIDSN: "10"}, // 숫자 정렬: 10 > 2
+		{ObjID: "A", ObjNM: "지역", ObjIDSN: "2"},
+		{ObjID: "C", ObjNM: "연령"}, // SN 없음 → 맨 뒤
+		{ObjID: "A", ObjNM: "지역", ObjIDSN: "2"},
+	}
+	axes, err := buildClassAxes(rows)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, a := range axes {
+		got = append(got, a.id+a.flag)
+	}
+	if strings.Join(got, " ") != "A--class1 B--class2 C--class3" {
+		t.Errorf("축 매핑 = %v", got)
+	}
+	if len(axes[0].rows) != 2 {
+		t.Errorf("같은 축 행 묶기 실패: %d", len(axes[0].rows))
+	}
+
+	var many []api.MetaResult
+	for i := 1; i <= 9; i++ {
+		many = append(many, api.MetaResult{ObjID: fmt.Sprintf("X%d", i), ObjIDSN: fmt.Sprint(i)})
+	}
+	if _, err := buildClassAxes(many); err == nil {
+		t.Error("분류축 9개 이상은 --class1~8 한계로 오류여야 함")
+	}
+}
+
+func TestLearnFailureOnlyTableErrors(t *testing.T) {
+	config.SetConfigDirForTesting(t.TempDir())
+	defer config.SetConfigDirForTesting("")
+	store := learn.Load()
+	plan := &aiPlan{Topic: "출생아수|울산", Table: "101/A"}
+
+	for _, msg := range []string{"API 오류 [30]: 데이터 없음", "API 오류 [31]: 4만 셀 초과", "dial tcp: timeout", "파일 저장 실패"} {
+		if learnFailure(store, plan, fmt.Errorf("%s", msg)) {
+			t.Errorf("%q 는 표 탓이 아니므로 학습하면 안 됨", msg)
+		}
+	}
+	if len(store.AvoidTables(plan.Topic)) != 0 {
+		t.Fatal("회피 기록이 생기면 안 됨")
+	}
+	if !learnFailure(store, plan, fmt.Errorf("API 오류 [21]: 잘못된 요청 변수")) {
+		t.Error("[21] 은 학습해야 함")
+	}
+	if _, bad := store.AvoidTables(plan.Topic)["101/A"]; !bad {
+		t.Error("[21] 후 101/A 회피 기록 없음")
+	}
+}
+
+func TestCountDataRows(t *testing.T) {
+	table := "+--+\n│ 지역 │ 값 │\n+--+\n│ 울산 │ 1 │\n│ 서울 │ 2 │\n+--+\n"
+	empty := "+--+\n│ 지역 │ 값 │\n+--+\n+--+\n"
+	cases := []struct {
+		out, format, output string
+		want                int
+	}{
+		{table, "table", "", 2},
+		{empty, "table", "", 0},
+		{"참고: 시점 2031에 데이터가 없어 건너뜁니다.\n[]\n", "json", "", 0},
+		{`[{"a":1},{"a":2},{"a":3}]`, "json", "", 3},
+		{"\ufeff지역,값\n울산,1\n", "csv", "", 1},
+		{"\ufeff지역,값\n", "csv", "", 0},
+		{"| 지역 | 값 |\n|---|---|\n| 울산 | 1 |\n", "md", "", 1},
+		{"✓ 저장되었습니다", "table", "x.xlsx", -1},
+	}
+	for _, c := range cases {
+		if got := countDataRows(strings.ReplaceAll(c.out, "\\n", "\n"), c.format, c.output); got != c.want {
+			t.Errorf("countDataRows(%q, %s) = %d, want %d", c.out, c.format, got, c.want)
+		}
+	}
+}
+
+func TestTrusted(t *testing.T) {
+	if trusted(srcJev, 0.2) || !trusted(srcJev, 0.5) || trusted(srcOnly, 1) || trusted(srcRequested, 1) || !trusted(srcCorrected, 1) {
+		t.Error("학습 대상 판정이 잘못됨")
+	}
+}
+
+func TestAxisOptionsCapsAndPrioritizes(t *testing.T) {
+	var rows []api.MetaResult
+	rows = append(rows, api.MetaResult{ItmID: "00", ItmNM: "전국"})
+	for i := 0; i < 300; i++ {
+		rows = append(rows, api.MetaResult{ItmID: fmt.Sprintf("x%03d", i), ItmNM: fmt.Sprintf("구%03d", i), UpItmID: "00"})
+	}
+	rows = append(rows, api.MetaResult{ItmID: "26", ItmNM: "울산광역시"}, api.MetaResult{ItmID: "26010", ItmNM: "울산광역시 중구", UpItmID: "26"})
+
+	opts := axisOptions(rows, []string{"울산"}, map[string]bool{"x000": true})
+	if len(opts) != nlp.MaxChoiceOptions {
+		t.Fatalf("255개로 줄여야 함: %d", len(opts))
+	}
+	for _, must := range []string{"26", "26010", "00"} {
+		if _, ok := opts[must]; !ok {
+			t.Errorf("조건 포함·최상위 값 %s가 빠짐", must)
+		}
+	}
+	if _, ok := opts["x000"]; ok {
+		t.Error("학습으로 피한 코드는 제외돼야 함")
 	}
 }

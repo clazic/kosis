@@ -33,9 +33,11 @@ type AIConfig struct {
 	Providers map[string]AIProvider `mapstructure:"providers" yaml:"providers"`
 }
 
-// AIProvider는 OpenAI 호환 Chat Completions API 하나를 나타냅니다.
+// AIProvider는 AI API 하나를 나타냅니다.
+// Type: "openai"(기본, Chat Completions — 글생성) | "typesafe"(System One — 선택)
 // 키는 KeyEnv 환경변수 > APIKey(설정 파일) 순으로 찾습니다.
 type AIProvider struct {
+	Type    string `mapstructure:"type" yaml:"type,omitempty"`
 	BaseURL string `mapstructure:"base_url" yaml:"base_url"` // 예: http://host:8642/v1
 	Model   string `mapstructure:"model" yaml:"model"`
 	APIKey  string `mapstructure:"api_key" yaml:"api_key,omitempty"`
@@ -52,8 +54,20 @@ func (p AIProvider) ResolveKey() string {
 	return p.APIKey
 }
 
-// DefaultAIProvider 기본 공급자 이름. o(oc) 머신의 Hermes Agent API 서버를 Tailscale로 호출한다.
+// 공급자 종류.
+const (
+	ProviderOpenAI   = "openai"
+	ProviderTypeSafe = "typesafe"
+)
+
+// DefaultAIProvider 기본 글생성 공급자. o(oc) 머신의 Hermes Agent API 서버를 Tailscale로 호출한다.
 const DefaultAIProvider = "hermes"
+
+// SelectorProvider 후보 중 하나를 고르는 공급자 (TypeSafe Jev). 이름 고정, 주소·키는 ai-add/ai-key로 변경.
+const SelectorProvider = "jev"
+
+// IsTypeSafe Type이 비면 openai로 본다.
+func (p AIProvider) IsTypeSafe() bool { return p.Type == ProviderTypeSafe }
 
 // builtinProviders 설정 파일에 없으면 자동으로 채워지는 공급자.
 // ponytail: 개인 Tailscale 주소가 기본값이다. 다른 환경에선 ai-add로 덮어쓰거나 set-ai로 바꿀 것.
@@ -63,6 +77,12 @@ func builtinProviders() map[string]AIProvider {
 			BaseURL: "http://100.70.244.98:8642/v1",
 			Model:   "hermes-agent",
 			KeyEnv:  "HERMES_API_KEY",
+		},
+		SelectorProvider: {
+			Type:    ProviderTypeSafe,
+			BaseURL: "https://api.typesafe.ai/v1",
+			Model:   "jev-latest",
+			KeyEnv:  "TYPESAFE_API_KEY",
 		},
 	}
 }
@@ -160,8 +180,8 @@ func normalizeAI(ai *AIConfig) {
 			ai.Providers[name] = p
 		}
 	}
-	if _, ok := ai.Providers[ai.Default]; !ok {
-		ai.Default = DefaultAIProvider
+	if p, ok := ai.Providers[ai.Default]; !ok || p.IsTypeSafe() {
+		ai.Default = DefaultAIProvider // 선택 전용 공급자는 글생성 기본값이 될 수 없다
 	}
 }
 
@@ -286,8 +306,12 @@ func SetAIDefault(name string) error {
 		return err
 	}
 
-	if _, exists := cfg.AI.Providers[name]; !exists {
+	p, exists := cfg.AI.Providers[name]
+	if !exists {
 		return fmt.Errorf("등록되지 않은 AI 공급자: %s", name)
+	}
+	if p.IsTypeSafe() {
+		return fmt.Errorf("'%s'는 선택 전용(typesafe) 공급자라 글생성 기본값으로 쓸 수 없습니다", name)
 	}
 
 	cfg.AI.Default = name
@@ -305,6 +329,14 @@ func AddAIProvider(name string, p AIProvider) error {
 	}
 	if p.Model == "" {
 		return errors.New("모델명은 비워둘 수 없습니다")
+	}
+	switch p.Type {
+	case "", ProviderOpenAI, ProviderTypeSafe:
+	default:
+		return fmt.Errorf("알 수 없는 공급자 종류: %s (openai 또는 typesafe)", p.Type)
+	}
+	if name == SelectorProvider && p.Type != ProviderTypeSafe {
+		return fmt.Errorf("'%s'는 선택기 이름이라 --type typesafe 여야 합니다", SelectorProvider)
 	}
 
 	cfg, err := Load()

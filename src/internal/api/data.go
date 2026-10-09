@@ -46,7 +46,7 @@ func buildDataParams(orgID, tblID string, opts DataOptions) map[string]string {
 		params["itmId"] = opts.Item
 	}
 	if opts.PrdSe != "" {
-		params["prdSe"] = normalizePrdSe(opts.PrdSe)
+		params["prdSe"] = NormalizePrdSe(opts.PrdSe)
 	}
 
 	// Add period parameters
@@ -128,9 +128,9 @@ func normalizeDataKeys(s string) string {
 	return replacer.Replace(s)
 }
 
-// normalizePrdSe converts Korean/user-friendly period codes to KOSIS API codes.
+// NormalizePrdSe converts Korean/user-friendly period codes to KOSIS API codes.
 // 메타 API는 한글(년, 월, 분기, 반기, 5년 등)로 반환하지만, 데이터 API는 영문 코드를 요구합니다.
-func normalizePrdSe(prdSe string) string {
+func NormalizePrdSe(prdSe string) string {
 	switch strings.TrimSpace(prdSe) {
 	case "년", "연", "Y", "y":
 		return "Y"

@@ -174,7 +174,7 @@ kosis s "미분양" -n 10
 | `list` | `ls` | `kosis ls --parent A_4` |
 | `explain <ORG> <TBL>` | `ex` | `kosis ex 101 DT_1IN1502` |
 | `bulk <userStatsId>` | | `kosis bulk "myid/..." -o data.xls` |
-| `quick <요청>` | `q` | `kosis q "GDP 최근 5년" --ai` |
+| `quick <요청>` | `q` | `kosis q "GDP 최근 5년" --ai` (AI가 실제 검색·메타 목록에서 통계표·코드를 골라 조회, 사전 밖 통계도 가능) |
 | `chart` | | `kosis d ... -f json \| kosis chart --type line` |
 | `ind search <이름>` | `ind s` | `kosis ind s "GDP"` |
 | `ind info <ID>` | | `kosis ind info 404` |
@@ -349,11 +349,11 @@ kosis chart -i data.json --format excel -o chart.xlsx
 | `remove-key <INDEX>` | 인덱스 기준 제거 |
 | `key-list` | 등록 키 목록 (마스킹 표시) |
 | `show` | 전체 설정 YAML 출력 |
-| `set-ai <PROVIDER>` | 기본 AI 공급자 설정 |
-| `ai-add <NAME> --url <BASE_URL> --model <MODEL> [--key <KEY> \| --key-env <ENV>]` | AI 공급자(OpenAI 호환 API) 추가·덮어쓰기 |
-| `ai-key <PROVIDER> <API_KEY>` | AI 공급자 API 키 저장 (환경변수가 우선) |
+| `set-ai <PROVIDER>` | 기본 AI 글생성 공급자 설정 (jev는 선택 전용이라 불가) |
+| `ai-add <NAME> --url <BASE_URL> --model <MODEL> [--type openai\|typesafe] [--key <KEY> \| --key-env <ENV>]` | AI 공급자 추가·덮어쓰기 (type openai=글생성, typesafe=선택·이름 jev 고정) |
+| `ai-key <PROVIDER> <API_KEY>` | AI 공급자 API 키 저장 (환경변수가 우선; 예: `ai-key jev <KEY>`) |
 | `ai-remove <NAME>` | AI 공급자 제거 (기본 공급자 제거 시 hermes로 복귀) |
-| `ai-list` | AI 공급자 목록 (주소·모델·키 출처 env:<변수>/config/없음) |
+| `ai-list` | AI 공급자 목록 (주소·모델·키 출처 env:<변수>/config/없음, 역할 [글생성 (--ai)] / [선택 (Jev)]) |
 | `cache-clear` | 캐시 디렉토리 전체 삭제 |
 | `cache-size` | 캐시 크기 확인 |
 | `cache-clean` | TTL 초과 항목만 정리 |

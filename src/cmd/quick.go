@@ -36,7 +36,7 @@ var quickCmd = &cobra.Command{
 내부적으로 검색 -> 메타 확인 -> 데이터 조회를 자동 수행합니다.
 
 기본: 규칙 기반 키워드 매칭 (오프라인 동작)
---ai 플래그 사용 시: AI API(OpenAI 호환)로 명령어 생성 — 기본 공급자 hermes
+--ai 플래그 사용 시: AI가 실제 검색·메타 목록에서 통계표와 코드를 골라 조회 (사전 밖 통계도 가능)
 
 사용법:
   kosis quick "<자연어 요청>" [flags]
@@ -44,7 +44,7 @@ var quickCmd = &cobra.Command{
   kosis q                              대화형 모드
 
 플래그:
-  -a, --ai[=<공급자>]      AI API로 명령 생성. 값 생략 시 기본 공급자(hermes)
+  -a, --ai[=<공급자>]      AI 조회. 값 생략 시 기본 글생성 공급자(hermes)
   -f, --format <type>      출력 형식: table(기본), json, csv, md
   -o, --output <파일>      파일 저장
   -y, --yes                확인 프롬프트 없이 바로 실행 (스크립트·AI 에이전트용)
@@ -57,7 +57,7 @@ var quickCmd = &cobra.Command{
   kosis q "전국 인구 최근 5년"
 
   # AI 사용 (기본 공급자 hermes)
-  kosis q "서울과 부산의 미분양 추이 비교" --ai
+  kosis q "작년까지 최근 5년간 울산에서 태어난 아기 수" --ai
   kosis q "실업률 추세" --ai openai        # ai-add로 등록한 공급자
 
   # 확인 없이 바로 실행
@@ -75,15 +75,36 @@ var quickCmd = &cobra.Command{
   통계:    미분양, GDP, 물가, 인구, 실업률 등 주요 키워드
 
 AI 모드 설명:
-  --ai 플래그를 사용하면 등록된 AI API(OpenAI 호환 /v1/chat/completions)에
-  요청을 보내 kosis data 명령어를 생성합니다. 생성된 명령어는 실행 전
-  확인 프롬프트를 표시합니다 (--yes로 생략).
-  기본 공급자 hermes는 Hermes Agent API 서버를 호출하며,
-  API 키는 환경변수 HERMES_API_KEY 또는 kosis config ai-key hermes <KEY>로 지정합니다.
+  AI는 코드를 만들지 않고 실제 KOSIS 목록에서 고르기만 합니다 (지어낸 코드가 나가지 않음).
+    ① 해석  hermes(글생성): 요청 → 검색어·조건·기간 (실패 시 규칙 기반으로 대신 해석)
+    ② 검색  kosis search 로 후보 통계표
+    ③ 선택  Jev(TypeSafe): 후보 중 통계표 1개
+    ④ 메타  kosis meta 로 실제 분류·항목·주기
+    ⑤ 선택  Jev: 축마다 코드 1개
+    ⑥ 실행  확인 후 kosis data (--yes로 생략)
+  각 선택에는 출처가 붙습니다: [Jev 신뢰도] [학습] [요청] [유일] [교정]. 신뢰도 0.3 미만은 ⚠ 표시.
+
+학습 (~/.kosis/learnings.yaml):
+  사람이 y 로 확인하고 결과가 나온 선택만 학습해, 다음 같은 요청(키워드+조건)에 바로 씁니다(검색·Jev 생략).
+  --yes 실행, 신뢰도 0.3 미만 선택, 결과 0행은 학습하지 않습니다.
+  통계표 탓이 분명한 실행 오류([20]·[21])는 그 표를 피합니다. [30](데이터 없음) 등은 학습하지 않습니다.
+  실행 확인에서 n 을 누르면 무엇이 틀렸는지(통계표 / 분류·항목·주기 값) 묻고, 고른 정답을 학습합니다.
+  학습된 표가 폐지되는 등 쓸 수 없게 되면 자동으로 피하고 다시 검색합니다. 초기화는 파일 삭제.
+
+문서 자동 교정:
+  사람이 교정한 통계표가 성공하면, 설치된 스킬 문서(SKILL.md·references)에서 그 키워드와 틀린 표가
+  같은 줄에 있는 곳을 맞는 표로 고치고(원본은 숨김 백업 .<파일>.bak), LEARNINGS.md 오답노트에 기록합니다.
+  kosis update 는 스킬 파일을 덮어쓰므로 영구 반영은 저장소 문서 수정이 필요합니다.
+
+외부 전송:
+  --ai 사용 시 요청 문장이 글생성 공급자(기본 hermes)와 Jev(api.typesafe.ai)로 전송됩니다.
+
+API 키:
+  kosis config ai-key hermes <KEY>    또는 환경변수 HERMES_API_KEY  (글생성)
+  kosis config ai-key jev <KEY>       또는 환경변수 TYPESAFE_API_KEY (선택, https://typesafe.ai)
 
 AI 공급자 관리:
   kosis config ai-list                          등록된 공급자 목록
-  kosis config ai-key hermes <KEY>              API 키 저장
   kosis config ai-add openai --url https://api.openai.com/v1 --model gpt-4o-mini --key-env OPENAI_API_KEY
   kosis config set-ai <공급자>                  기본 공급자 설정
   kosis config ai-remove <공급자>
@@ -145,7 +166,7 @@ AI 공급자 관리:
 func init() {
 	rootCmd.AddCommand(quickCmd)
 
-	quickCmd.Flags().StringP("ai", "a", "", "AI API로 명령 생성. 값 생략(--ai) 시 기본 공급자(hermes), --ai <이름>으로 공급자 지정. 미사용 시 오프라인 규칙 기반 매칭. 목록은 kosis config ai-list")
+	quickCmd.Flags().StringP("ai", "a", "", "AI 조회(hermes 해석 + Jev 선택 + 학습). 값 생략(--ai) 시 기본 글생성 공급자(hermes), --ai <이름>으로 글생성 공급자 지정. 미사용 시 오프라인 규칙 기반 매칭. 목록은 kosis config ai-list")
 	quickCmd.Flags().Lookup("ai").NoOptDefVal = aiDefaultSentinel
 	quickCmd.Flags().StringP("format", "f", "", "출력 형식: table, json, csv, md. 미지정 시 config의 기본 형식 사용")
 	quickCmd.Flags().StringP("output", "o", "", "파일로 저장. 확장자로 형식 자동 결정: .csv .xlsx .json .db .parquet")
@@ -186,68 +207,6 @@ func normalizeQuickAIFlag(args []string) []string {
 		out = append(out, a)
 	}
 	return out
-}
-
-// handleAIGeneration은 AI API로 명령어를 생성하고 실행합니다. providerName이 비면 기본 공급자.
-func handleAIGeneration(providerName, userRequest, formatFlag, outputFlag string) {
-	name, provider, err := config.GetAIProvider(providerName)
-	if err != nil {
-		printQuickFailure("AI 경로", err.Error(), []string{
-			"kosis config ai-list 로 등록된 공급자 확인",
-			"kosis config ai-add <이름> --url <BASE_URL> --model <MODEL> [--key-env <ENV>]",
-		})
-		return
-	}
-
-	// AI 명령어 생성
-	fmt.Printf("🤖 %s(%s)로 명령어 생성 중...\n", name, provider.Model)
-	result, err := nlp.GenerateCommand(name, provider.BaseURL, provider.Model, provider.ResolveKey(), userRequest, nlp.GetSKILLContent())
-	if err != nil {
-		actions := []string{
-			"kosis config ai-list 로 주소·모델·키 상태 확인",
-			"동일 요청을 규칙 기반으로 재시도: kosis quick \"<요청>\"",
-		}
-		if provider.ResolveKey() == "" {
-			actions = append([]string{fmt.Sprintf("API 키 미설정: kosis config ai-key %s <KEY>%s", name, keyEnvHint(provider))}, actions...)
-		}
-		printQuickFailure("AI 경로", fmt.Sprintf("명령어 생성 실패: %v", err), actions)
-		return
-	}
-
-	if result.Command == "" {
-		printQuickFailure("AI 경로", "AI 응답에서 실행 가능한 kosis 명령을 찾지 못했습니다.", []string{
-			"요청을 더 구체적으로 작성",
-			"규칙 기반으로 재시도: kosis quick \"<요청>\"",
-		})
-		return
-	}
-
-	// 생성된 명령어 표시
-	fmt.Printf("\n✨ 생성된 명령어:\n  %s\n\n", result.Command)
-
-	// 사용자 확인
-	if !confirmExecution() {
-		fmt.Println("실행 취소됨")
-		return
-	}
-
-	// 생성된 명령어 실행 (파싱하여 data 명령어로 전달)
-	if err := executeGeneratedCommand(result.Command, formatFlag, outputFlag); err != nil {
-		printQuickFailure("AI 경로", err.Error(), []string{
-			"생성된 명령을 직접 점검",
-			"kosis data/search를 수동 실행",
-		})
-		return
-	}
-
-	fmt.Println("✅ quick 판정: 성공")
-}
-
-func keyEnvHint(p config.AIProvider) string {
-	if p.KeyEnv == "" {
-		return ""
-	}
-	return " 또는 환경변수 " + p.KeyEnv
 }
 
 // handleRuleBasedMatching은 규칙 기반으로 명령어를 매칭하고 실행합니다.
@@ -347,147 +306,6 @@ func confirmExecution() bool {
 		return response == "y" || response == "yes" || response == "예" || response == "ㅇ"
 	}
 	return false
-}
-
-// executeGeneratedCommand는 생성된 명령어를 파싱하여 실행합니다.
-func executeGeneratedCommand(command, formatFlag, outputFlag string) error {
-	parts := splitCommandLine(command)
-	if len(parts) > 0 && parts[0] == "kosis" {
-		parts = parts[1:]
-	}
-
-	if len(parts) == 0 || (parts[0] != "d" && parts[0] != "data") {
-		return fmt.Errorf("지원하지 않는 생성 명령: %s", command)
-	}
-	if len(parts) < 3 {
-		return fmt.Errorf("생성된 명령어 인자가 부족합니다: %s", command)
-	}
-
-	dataArgs := normalizeDataArgs(parts[1:])
-
-	// AI가 만든 명령을 검증한다. 단, 값을 고치지는 않는다 —
-	// 임의 보정은 엉뚱한 데이터를 정답처럼 반환할 수 있어 명시적 실패보다 나쁘다.
-	if err := validateGeneratedArgs(dataArgs); err != nil {
-		return err
-	}
-
-	if formatFlag != "" {
-		dataArgs = append(dataArgs, "-f", formatFlag)
-	}
-	if outputFlag != "" {
-		dataArgs = append(dataArgs, "-o", outputFlag)
-	}
-
-	displayCmd := "kosis data " + quoteArgs(dataArgs)
-	fmt.Printf("실행: %s\n\n", displayCmd)
-
-	if err := runSubcommand("data", dataArgs); err != nil {
-		return err
-	}
-
-	printReusableCommand(displayCmd)
-	return nil
-}
-
-// splitCommandLine AI가 출력한 한 줄 명령을 셸처럼 나눈다 — 따옴표는 묶음 표시일 뿐 값에 남기지 않는다.
-// (AI는 치트시트대로 --periods "2020,2022"처럼 따옴표를 쓴다. strings.Fields면 따옴표가 값에 섞여 API가 거부한다.)
-// ponytail: 따옴표·공백만 처리. 백슬래시 이스케이프는 kosis 인자에 쓰일 일이 없어 생략.
-func splitCommandLine(line string) []string {
-	var out []string
-	var cur strings.Builder
-	var quote rune
-	inToken := false
-	for _, r := range line {
-		switch {
-		case quote != 0:
-			if r == quote {
-				quote = 0
-			} else {
-				cur.WriteRune(r)
-			}
-		case r == '"' || r == '\'':
-			quote, inToken = r, true
-		case r == ' ' || r == '\t':
-			if inToken {
-				out = append(out, cur.String())
-				cur.Reset()
-				inToken = false
-			}
-		default:
-			cur.WriteRune(r)
-			inToken = true
-		}
-	}
-	if inToken {
-		out = append(out, cur.String())
-	}
-	return out
-}
-
-// validateGeneratedArgs AI가 생성한 data 인자를 API 호출 전에 검사합니다.
-// "명백히 틀린 것"만 막고, "다를 수 있는 것"(어떤 분류 코드를 골랐는지 등)은 통과시킵니다.
-// 값을 고치는 코드는 넣지 않습니다.
-func validateGeneratedArgs(args []string) error {
-	flags := map[string]string{}
-	for i := 0; i < len(args); i++ {
-		a := args[i]
-		if !strings.HasPrefix(a, "--") {
-			continue
-		}
-		name, val, hasEq := strings.Cut(a, "=")
-		if !hasEq {
-			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
-				val = args[i+1]
-				i++
-			}
-		}
-		flags[name] = val
-	}
-
-	hasClass := false
-	for i := 1; i <= 8; i++ {
-		if _, ok := flags[fmt.Sprintf("--class%d", i)]; ok {
-			hasClass = true
-			break
-		}
-	}
-	if _, ok := flags["--user-id"]; ok {
-		hasClass = true // user-id 방식은 분류 지정이 불필요
-	}
-	if !hasClass {
-		return fmt.Errorf("AI가 분류 코드(--class1 등)를 생략했습니다. 통계표의 분류를 확인해 직접 지정하세요")
-	}
-	if _, ok := flags["--item"]; !ok {
-		return fmt.Errorf("AI가 항목 코드(--item)를 생략했습니다")
-	}
-
-	period, ok := flags["--period"]
-	if !ok {
-		return fmt.Errorf("AI가 수록주기(--period)를 생략했습니다")
-	}
-	switch period {
-	case "Y", "M", "Q", "H", "D", "F", "IR":
-	default:
-		return fmt.Errorf("AI가 알 수 없는 수록주기를 지정했습니다: %s (Y/M/Q/H/D/F 중 하나여야 함)", period)
-	}
-
-	// 사전에 있는 통계표라면 주기 지원 여부까지 대조한다.
-	if len(args) >= 2 {
-		if sc, ok := nlp.LookupTable(args[0], args[1]); ok && len(sc.Periods) > 0 {
-			supported := false
-			for _, p := range sc.Periods {
-				if p == period {
-					supported = true
-					break
-				}
-			}
-			if !supported {
-				return fmt.Errorf("%s(%s %s)는 '%s' 주기를 제공하지 않습니다 (지원: %s)",
-					sc.Label, sc.OrgID, sc.TblID, period, strings.Join(sc.Periods, ", "))
-			}
-		}
-	}
-	return nil
 }
 
 // buildDataArgsFromMatch converts rule-based match output into kosis data args.
@@ -611,54 +429,16 @@ func sortedKeys(m map[string]string) []string {
 	return keys
 }
 
-// normalizeDataArgs remaps unsupported shorthand flags like -c1 to long flags.
-func normalizeDataArgs(args []string) []string {
-	out := make([]string, 0, len(args))
-	for _, arg := range args {
-		switch {
-		case arg == "-c1":
-			out = append(out, "--class1")
-		case arg == "-c2":
-			out = append(out, "--class2")
-		case arg == "-c3":
-			out = append(out, "--class3")
-		case arg == "-c4":
-			out = append(out, "--class4")
-		case arg == "-c5":
-			out = append(out, "--class5")
-		case arg == "-c6":
-			out = append(out, "--class6")
-		case arg == "-c7":
-			out = append(out, "--class7")
-		case arg == "-c8":
-			out = append(out, "--class8")
-		case strings.HasPrefix(arg, "-c1="):
-			out = append(out, "--class1="+strings.TrimPrefix(arg, "-c1="))
-		case strings.HasPrefix(arg, "-c2="):
-			out = append(out, "--class2="+strings.TrimPrefix(arg, "-c2="))
-		case strings.HasPrefix(arg, "-c3="):
-			out = append(out, "--class3="+strings.TrimPrefix(arg, "-c3="))
-		case strings.HasPrefix(arg, "-c4="):
-			out = append(out, "--class4="+strings.TrimPrefix(arg, "-c4="))
-		case strings.HasPrefix(arg, "-c5="):
-			out = append(out, "--class5="+strings.TrimPrefix(arg, "-c5="))
-		case strings.HasPrefix(arg, "-c6="):
-			out = append(out, "--class6="+strings.TrimPrefix(arg, "-c6="))
-		case strings.HasPrefix(arg, "-c7="):
-			out = append(out, "--class7="+strings.TrimPrefix(arg, "-c7="))
-		case strings.HasPrefix(arg, "-c8="):
-			out = append(out, "--class8="+strings.TrimPrefix(arg, "-c8="))
-		default:
-			out = append(out, arg)
-		}
-	}
-	return out
+func runSubcommand(subcommand string, args []string) error {
+	_, err := runSubcommandOutput(subcommand, args)
+	return err
 }
 
-func runSubcommand(subcommand string, args []string) error {
+// runSubcommandOutput 하위 명령을 실행해 화면에 출력하고, 출력 내용도 돌려준다 (결과 행 판정용).
+func runSubcommandOutput(subcommand string, args []string) (string, error) {
 	exePath, err := os.Executable()
 	if err != nil {
-		return fmt.Errorf("실행 파일 경로 확인 실패: %w", err)
+		return "", fmt.Errorf("실행 파일 경로 확인 실패: %w", err)
 	}
 
 	allArgs := append([]string{subcommand}, args...)
@@ -672,7 +452,7 @@ func runSubcommand(subcommand string, args []string) error {
 		if out.Len() > 0 {
 			fmt.Print(out.String())
 		}
-		return fmt.Errorf("%s 실행 실패(비정상 종료): %w", subcommand, err)
+		return out.String(), fmt.Errorf("%s 실행 실패(비정상 종료): %w", subcommand, err)
 	}
 
 	output := out.String()
@@ -680,9 +460,9 @@ func runSubcommand(subcommand string, args []string) error {
 		fmt.Print(output)
 	}
 	if failLine := firstFailureLine(output); failLine != "" {
-		return fmt.Errorf("%s 실행 실패: %s", subcommand, failLine)
+		return output, fmt.Errorf("%s 실행 실패: %s", subcommand, failLine)
 	}
-	return nil
+	return output, nil
 }
 
 func printReusableCommand(command string) {

@@ -132,6 +132,9 @@ kosis d 116 DT_MLTM_2086 -c1 ALL -c2 ALL -i ALL -p Y -l 5
 # 자연어 조회
 kosis q "서울 미분양 최근 5년"
 
+# 자연어 조회 (AI: 실제 검색·메타 목록에서 통계표·코드를 골라 조회)
+kosis q "작년까지 최근 5년간 울산에서 태어난 아기 수" --ai
+
 # 차트 생성 (HTML, 브라우저에서 열기)
 kosis d 101 DT_1IN1502 -c1 00 -i T100 -p Y -l 10 --chart line --chart-format html --open
 

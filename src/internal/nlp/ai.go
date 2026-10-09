@@ -1,4 +1,10 @@
-// Package nlp는 자연어 처리 및 AI 도구 연동을 담당합니다.
+// Package nlp는 자연어 처리 및 AI 연동을 담당합니다.
+//
+// quick --ai의 역할 분담:
+//   - 글생성(openai 호환, 기본 hermes): 요청 문장 → 검색 키워드·조건·기간 (ParseRequest)
+//   - 선택(TypeSafe Jev): 실제 API가 돌려준 후보 목록 중 하나 고르기 (Choose)
+//
+// KOSIS 코드는 학습으로 알 수 없으므로 AI가 코드를 "만들지" 않고 실제 목록에서 "고르게" 한다.
 package nlp
 
 import (
@@ -12,46 +18,56 @@ import (
 	"time"
 )
 
-// AIResult는 AI가 생성한 명령어를 나타냅니다.
-type AIResult struct {
-	Command string // 생성된 kosis 명령어 (예: "kosis d 116 DT_MLTM_2086 ...")
-	Tool    string // 사용된 공급자 이름
-}
-
 // aiHTTPClient 에이전트형 서버(Hermes 등)는 수십 초 걸릴 수 있어 넉넉히 잡는다.
 var aiHTTPClient = &http.Client{Timeout: 180 * time.Second}
 
-// GenerateCommand는 OpenAI 호환 Chat Completions API로 자연어를 kosis 명령어로 변환합니다.
-// baseURL 예: http://host:8642/v1 → POST {baseURL}/chat/completions
-func GenerateCommand(name, baseURL, model, apiKey, userRequest, skillContent string) (*AIResult, error) {
-	body, err := json.Marshal(map[string]any{
-		"model": model,
-		"messages": []map[string]string{
-			{"role": "system", "content": systemPrompt(skillContent)},
-			{"role": "user", "content": userRequest},
-		},
-		"temperature": 0,
-	})
-	if err != nil {
-		return nil, err
-	}
+// Endpoint AI API 접속 정보.
+type Endpoint struct {
+	Name    string // 표시용 공급자 이름
+	BaseURL string // .../v1
+	Model   string
+	APIKey  string
+}
 
-	endpoint := strings.TrimRight(baseURL, "/") + "/chat/completions"
+// PeriodSpec 요청에서 해석한 기간.
+type PeriodSpec struct {
+	Kind   string   `json:"kind"` // latest | range | list | none
+	Latest int      `json:"latest"`
+	Start  string   `json:"start"`
+	End    string   `json:"end"`
+	List   []string `json:"list"`
+	Unit   string   `json:"unit"` // Y | M | Q | H | ""(미지정)
+}
+
+// Intent 요청 해석 결과.
+type Intent struct {
+	English    string     `json:"english"` // Jev는 영어 질문만 이해하므로 요청의 영어 풀이를 받아 둔다
+	Keyword    string     `json:"keyword"`
+	Conditions []string   `json:"conditions"`
+	Period     PeriodSpec `json:"period"`
+}
+
+func postJSON(ep Endpoint, path string, payload any, out any) error {
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	endpoint := strings.TrimRight(ep.BaseURL, "/") + path
 	req, err := http.NewRequest(http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
-		return nil, fmt.Errorf("요청 생성 실패: %w", err)
+		return fmt.Errorf("요청 생성 실패: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	if apiKey != "" {
-		req.Header.Set("Authorization", "Bearer "+apiKey)
+	if ep.APIKey != "" {
+		req.Header.Set("Authorization", "Bearer "+ep.APIKey)
 	}
 
 	resp, err := aiHTTPClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("%s 연결 실패 (%s): %w", name, endpoint, err)
+		return fmt.Errorf("%s 연결 실패 (%s): %w", ep.Name, endpoint, err)
 	}
 	defer resp.Body.Close()
-	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
 
 	if resp.StatusCode != http.StatusOK {
 		msg := strings.TrimSpace(string(raw))
@@ -59,101 +75,138 @@ func GenerateCommand(name, baseURL, model, apiKey, userRequest, skillContent str
 			msg = msg[:300] + "..."
 		}
 		if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
-			return nil, fmt.Errorf("%s 인증 실패 (HTTP %d): API 키를 확인하세요 — %s", name, resp.StatusCode, msg)
+			return fmt.Errorf("%s 인증 실패 (HTTP %d): API 키를 확인하세요 — %s", ep.Name, resp.StatusCode, msg)
 		}
-		return nil, fmt.Errorf("%s 응답 오류 (HTTP %d): %s", name, resp.StatusCode, msg)
+		return fmt.Errorf("%s 응답 오류 (HTTP %d): %s", ep.Name, resp.StatusCode, msg)
 	}
+	if err := json.Unmarshal(raw, out); err != nil {
+		return fmt.Errorf("%s 응답 형식을 해석하지 못했습니다: %w", ep.Name, err)
+	}
+	return nil
+}
 
-	var parsed struct {
+// ParseRequest 글생성 공급자(OpenAI 호환 /chat/completions)로 요청을 해석한다.
+func ParseRequest(ep Endpoint, userRequest string, today time.Time) (*Intent, error) {
+	var resp struct {
 		Choices []struct {
 			Message struct {
 				Content string `json:"content"`
 			} `json:"message"`
 		} `json:"choices"`
 	}
-	if err := json.Unmarshal(raw, &parsed); err != nil || len(parsed.Choices) == 0 {
-		return nil, fmt.Errorf("%s 응답 형식을 해석하지 못했습니다 (OpenAI 호환 API인지 확인)", name)
+	err := postJSON(ep, "/chat/completions", map[string]any{
+		"model":       ep.Model,
+		"temperature": 0,
+		"messages": []map[string]string{
+			{"role": "system", "content": parsePrompt(today)},
+			{"role": "user", "content": userRequest},
+		},
+	}, &resp)
+	if err != nil {
+		return nil, err
 	}
-
-	return &AIResult{Command: extractKosisCommand(parsed.Choices[0].Message.Content), Tool: name}, nil
+	if len(resp.Choices) == 0 {
+		return nil, fmt.Errorf("%s 응답에 choices가 없습니다", ep.Name)
+	}
+	return parseIntentJSON(resp.Choices[0].Message.Content)
 }
 
-// systemPrompt는 AI에게 보낼 지시문을 구성합니다.
-func systemPrompt(skillContent string) string {
-	return fmt.Sprintf(`사용자 요청을 kosis CLI 명령어로 변환해줘.
-도구를 사용하지 말고, 명령어만 한 줄로 출력해. 설명은 불필요.
-
-[사용법]
-%s`, skillContent)
+func parsePrompt(today time.Time) string {
+	return `도구를 사용하지 말고 JSON 객체 하나만 출력해. 설명·코드펜스 금지.
+사용자의 한국 통계(KOSIS) 조회 요청을 분석해 아래 형식으로 답해:
+{"english": "요청 전체를 영어로 풀어 쓴 한 문장 (지역·조건은 영어와 한글 병기, 예: Ulsan (울산))",
+ "keyword": "KOSIS 통계표 검색어. 지역·기간을 뺀 짧은 통계 용어 (예: 출생아수, 소비자물가지수, 아파트 매매가격지수)",
+ "conditions": ["지역·성별·연령·산업 등 분류 조건 단어. 없으면 빈 배열"],
+ "period": {"kind": "latest|range|list|none", "latest": 정수, "start": "YYYY 또는 YYYYMM", "end": "YYYY 또는 YYYYMM", "list": ["YYYY"...], "unit": "Y|M|Q|H 또는 빈 문자열"}}
+규칙: "최근 N년/개월"은 kind=latest 이고 unit 은 N의 단위(년=Y, 개월=M, 분기=Q)로 반드시 채운다. "작년"·"올해" 같은 상대 표현은 오늘 날짜 기준 절대 연도로 바꿔 range로. 기간 언급이 없으면 kind=none.
+오늘: ` + today.Format("2006-01-02")
 }
 
-// extractKosisCommand는 출력에서 kosis 명령어를 추출합니다.
-func extractKosisCommand(output string) string {
-	lines := strings.Split(strings.TrimSpace(output), "\n")
-	for i := range lines {
-		lines[i] = strings.Trim(lines[i], "`")
+// parseIntentJSON 코드펜스나 앞뒤 잡문이 섞여도 첫 '{' ~ 마지막 '}'를 해석한다.
+func parseIntentJSON(text string) (*Intent, error) {
+	i, j := strings.Index(text, "{"), strings.LastIndex(text, "}")
+	if i < 0 || j <= i {
+		return nil, fmt.Errorf("해석 결과에 JSON이 없습니다: %.120s", text)
 	}
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "kosis ") {
-			return line
-		}
+	var it Intent
+	if err := json.Unmarshal([]byte(text[i:j+1]), &it); err != nil {
+		return nil, fmt.Errorf("해석 결과 JSON 오류: %w", err)
 	}
-	// kosis로 시작하는 줄이 없으면 전체 출력을 명령어로 간주
-	return strings.TrimSpace(output)
+	it.Keyword = strings.TrimSpace(it.Keyword)
+	if it.Keyword == "" {
+		return nil, fmt.Errorf("해석 결과에 검색 키워드가 없습니다")
+	}
+	return &it, nil
 }
 
-// GetSKILLContent는 AI에게 줄 통계표 치트시트를 Shortcuts 사전에서 생성합니다.
-// 손으로 관리하는 두 번째 사본을 두지 않는 것이 핵심 — 사본을 두면 반드시 어긋난다.
-// 코드 조각 목록이 아니라 "완성된 명령 템플릿"을 주어야 AI가 플래그를 빠뜨리지 않는다.
-func GetSKILLContent() string {
-	var b strings.Builder
+// ChoiceQuestion Jev Choice 질문 하나. Options: 키(코드) → 설명.
+type ChoiceQuestion struct {
+	Instructions string
+	Options      map[string]string
+}
 
-	b.WriteString(`kosis d <ORG_ID> <TBL_ID> --class1 <코드> [--class2 <코드>] --item <코드> --period <Y|M|Q|H> (--latest <N> | --start <시작> --end <끝> | --periods "2020,2022,2025") [-o 파일]
+// ChoiceAnswer Jev 답.
+type ChoiceAnswer struct {
+	Choice        string             `json:"choice"`
+	Confidence    float64            `json:"confidence"`
+	Probabilities map[string]float64 `json:"probabilities"`
+}
 
-⚠ 반드시 지킬 규칙
-1. 아래 목록에 있는 통계표만 사용한다. 목록에 없으면 명령 대신 정확히 "SEARCH: <키워드>" 한 줄만 출력한다.
-2. 각 통계표의 템플릿에 있는 플래그를 하나도 빼지 않는다. 값을 모른다고 플래그를 생략하지 않는다.
-3. 분류 코드는 해당 통계표 블록 안의 코드만 쓴다. 통계표끼리 코드를 옮겨 쓰면 반드시 틀린다.
-4. 각 통계표가 지원하는 주기 밖의 --period를 쓰지 않는다.
-
-`)
-
-	for _, sc := range uniqueShortcuts() {
-		fmt.Fprintf(&b, "■ %s (org=%s tbl=%s) 주기: %s\n",
-			sc.Label, sc.OrgID, sc.TblID, strings.Join(sc.Periods, ","))
-
-		// 완성된 템플릿 한 줄
-		tmpl := fmt.Sprintf("  템플릿: kosis d %s %s", sc.OrgID, sc.TblID)
-		for _, flag := range sortedMapKeys(sc.Fixed) {
-			tmpl += fmt.Sprintf(" %s %s", flag, sc.Fixed[flag])
+// Ranked 확률 높은 순 옵션 키.
+func (a ChoiceAnswer) Ranked() []string {
+	keys := make([]string, 0, len(a.Probabilities))
+	for k := range a.Probabilities {
+		keys = append(keys, k)
+	}
+	sort.SliceStable(keys, func(i, j int) bool {
+		if a.Probabilities[keys[i]] != a.Probabilities[keys[j]] {
+			return a.Probabilities[keys[i]] > a.Probabilities[keys[j]]
 		}
-		if sc.Region != nil {
-			tmpl += fmt.Sprintf(" %s <지역코드>", sc.Region.Flag)
-		}
-		tmpl += fmt.Sprintf(" --item %s --period %s --latest 5", sc.Item, sc.Periods[0])
-		b.WriteString(tmpl + "\n")
+		return keys[i] < keys[j]
+	})
+	return keys
+}
 
-		if sc.Region != nil {
-			b.WriteString(fmt.Sprintf("  지역(%s): ", sc.Region.Flag))
-			for _, name := range regionOrder {
-				if code, ok := sc.Region.Codes[name]; ok {
-					fmt.Fprintf(&b, "%s=%s ", name, code)
-				}
+// MaxChoiceOptions Jev Choice 한 질문의 최대 옵션 수.
+const MaxChoiceOptions = 255
+
+// Choose TypeSafe System One(Jev)에 여러 Choice 질문을 한 번에 보낸다 (서버가 병렬 평가).
+func Choose(ep Endpoint, state string, questions map[string]ChoiceQuestion) (map[string]ChoiceAnswer, error) {
+	qs := make(map[string]any, len(questions))
+	for id, q := range questions {
+		if len(q.Options) == 0 || len(q.Options) > MaxChoiceOptions {
+			return nil, fmt.Errorf("질문 %s의 옵션 수가 잘못됐습니다: %d (1~%d)", id, len(q.Options), MaxChoiceOptions)
+		}
+		crit := make(map[string]any, len(q.Options))
+		for k, desc := range q.Options {
+			if desc == "" {
+				crit[k] = nil
+			} else {
+				crit[k] = desc
 			}
-			b.WriteString("\n")
-		} else {
-			// 지역이 없는 표에서 AI가 class1을 비우는 것을 막는 결정적 지시.
-			b.WriteString("  ※ 지역별 분류 없음. 요청에 지역명이 있어도 무시하고 위 고정 코드를 그대로 쓴다.\n")
 		}
+		qs[id] = map[string]any{"type": "choice", "instructions": q.Instructions, "criteria": crit}
 	}
 
-	return b.String()
+	var resp struct {
+		Answers map[string]ChoiceAnswer `json:"answers"`
+	}
+	if err := postJSON(ep, "/systemone", map[string]any{
+		"model": ep.Model, "state": state, "questions": qs,
+	}, &resp); err != nil {
+		return nil, err
+	}
+	for id := range questions {
+		a, ok := resp.Answers[id]
+		if !ok || a.Choice == "" {
+			return nil, fmt.Errorf("%s 응답에 질문 %s의 답이 없습니다", ep.Name, id)
+		}
+		if _, valid := questions[id].Options[a.Choice]; !valid {
+			return nil, fmt.Errorf("%s가 목록 밖의 값을 골랐습니다: %s", ep.Name, a.Choice)
+		}
+	}
+	return resp.Answers, nil
 }
-
-// regionOrder 치트시트 출력 순서 고정용 (맵 순회는 순서가 불확정).
-var regionOrder = []string{"전국", "서울", "부산", "대구", "인천", "광주", "대전", "울산",
-	"세종", "경기", "강원", "충북", "충남", "전북", "전남", "경북", "경남", "제주"}
 
 // uniqueShortcuts Shortcuts에서 통계표별로 1개씩만, 순서를 고정해 반환합니다.
 // ("미분양"과 "미분양주택"처럼 여러 키가 같은 통계표를 가리킨다)
@@ -175,15 +228,6 @@ func uniqueShortcuts() []TableShortcut {
 func sortedShortcutKeys() []string {
 	keys := make([]string, 0, len(Shortcuts))
 	for k := range Shortcuts {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
-}
-
-func sortedMapKeys(m map[string]string) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)

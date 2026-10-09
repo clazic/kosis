@@ -9,7 +9,8 @@ kosis q "GDP 2020~2024"
 kosis q "인구 2015,2020,2025"
 
 # AI 사용
-kosis q "GDP 최근 5년" --ai                 # 기본 공급자(hermes)
+kosis q "GDP 최근 5년" --ai                 # 기본 글생성 공급자(hermes) + 선택 Jev
+kosis q "작년까지 최근 5년간 울산에서 태어난 아기 수" --ai   # 사전 밖 통계도 조회
 kosis q "서울 노원구 인구" --ai openai      # ai-add로 등록한 공급자 (--ai=openai 도 가능)
 
 # 확인 프롬프트 없이 실행 (스크립트·AI 에이전트 등 입력을 받을 수 없는 환경 — 없으면 "실행 취소됨"으로 끝남)
@@ -32,18 +33,84 @@ kosis q "서울 미분양" -o 미분양.xlsx
 | | 경제활동인구 | 101/DT_1DA7002S |
 | 기간 패턴 | "최근 N개월/년", "2020~2024", "2020,2022,2025" | 자동 인식 |
 
-## AI 모드 지원 공급자
+## AI 모드 — 실제 목록에서 고르는 6단계 파이프라인
 
-`--ai`는 OpenAI 호환 Chat Completions API(`POST {base_url}/chat/completions`)를 호출해 `kosis data` 명령을 생성합니다. 값을 생략하면 기본 공급자를 씁니다.
+`--ai`는 AI가 명령을 "지어내지" 않습니다. 실제 KOSIS 검색·메타 목록을 보여주고 그중에서 **고르게만** 하므로 존재하지 않는 코드가 나가지 않습니다. 사전(위 바로가기 표) 밖의 통계도 조회할 수 있습니다.
 
-| 공급자 | 플래그 | 비고 |
-|------|--------|------|
-| hermes | `--ai` / `--ai hermes` | 기본·내장 (제거 불가, `ai-add`로 덮어쓰기 가능). base_url `http://100.70.244.98:8642/v1`, model `hermes-agent` (o 머신 Hermes Agent API, Tailscale) |
-| 커스텀 | `--ai <이름>` / `--ai=<이름>` | `kosis config ai-add`로 사전 등록 필요 (OpenAI 호환 API) |
+| 단계 | 담당 | 내용 |
+|------|------|------|
+| ① 해석 | hermes (글생성, OpenAI 호환) | 요청 → 검색어·조건·기간(+영어 풀이). 실패 시 규칙 기반으로 대신 해석 |
+| ② 검색 | `kosis search` | 후보 통계표 목록 |
+| ③ 선택 | Jev (TypeSafe System One, Choice) | 후보 중 통계표 1개 선택 |
+| ④ 메타 | `kosis meta` | 실제 분류·항목·주기 목록 |
+| ⑤ 선택 | Jev | 축(분류·항목·주기)마다 코드 1개 선택 (한 요청에 병렬) |
+| ⑥ 실행 | `kosis data` | 확인 후 실행 (`--yes`로 확인 생략) |
 
-API 키는 환경변수(`HERMES_API_KEY` 등)가 우선이며, 없으면 `kosis config ai-key <공급자> <KEY>`로 저장한 값을 씁니다.
+실측 예 (각 5초 내외):
 
 ```bash
-kosis config ai-key hermes "<HERMES_API_KEY>"
-kosis config ai-add openai --url https://api.openai.com/v1 --model gpt-4o-mini --key-env OPENAI_API_KEY
+kosis q "작년까지 최근 5년간 울산에서 태어난 아기 수" --ai
+# -> 101 INH_1B81A01 --class1 26 --item T1 --period Y --start 2021 --end 2025
+kosis q "서울 아파트 매매가격지수 최근 6개월" --ai
+# -> 101 DT_1YL20162E --class1 a7 --class2 01 --item sales --period M --latest 6
 ```
+
+### 선택 출처 표시
+
+선택마다 출처가 붙고, 신뢰도 0.3 미만은 `⚠`로 표시됩니다.
+
+| 표시 | 의미 |
+|------|------|
+| `[Jev 0.xx]` | Jev가 고른 값과 신뢰도 |
+| `[학습]` | 학습 저장소에 기억된 이전 성공 선택을 그대로 사용 |
+| `[요청]` | 요청문에 명시된 값(코드 등)을 사용 |
+| `[유일]` | 후보가 하나뿐이라 그대로 사용 |
+| `[교정]` | 사용자가 확인 단계에서 직접 고른 정답 |
+
+### 학습 (`~/.kosis/learnings.yaml`)
+
+- 학습 단위는 **키워드+조건**입니다. "출생아수"(전국)와 "울산 출생아수"는 따로 학습합니다 — 전국 표가 지역 요청에 조용히 쓰이지 않게 하기 위해서입니다. 항목(`--item`)은 같은 표라도 키워드별로 따로 학습합니다.
+- **사람이 `y`로 확인하고 결과가 1행 이상 나온 선택만** 학습해, 다음 같은 요청에 바로 사용합니다 (검색·Jev 호출 생략).
+  - `--yes` 실행, 신뢰도 0.3 미만 Jev 선택, 결과 0행은 학습하지 않습니다 (틀린 선택이 `[학습]`으로 굳는 것을 막음).
+- 실행 오류는 **통계표 탓이 분명할 때만** 회피합니다: `[20]`(분류 누락)·`[21]`(잘못된 요청 변수). `[30]`(데이터 없음, 대개 기간 문제)·`[31]`(셀 초과)·네트워크·파일 저장 오류는 학습하지 않습니다.
+- 실행 확인에서 `n`을 누르면 "통계표 틀림 / 분류·항목·주기 값 틀림 / 취소"를 묻고, 사용자가 고른 정답을 학습합니다 (터미널일 때만, 모든 메뉴에 취소 있음).
+- 학습된 표가 폐지되는 등 메타를 받을 수 없으면 자동으로 회피하고 다시 검색합니다. 과거 학습이 한 축의 모든 값을 피하게 만들면 학습을 무시하고 전체 후보로 고릅니다 (학습이 조회를 영구히 막지 않음).
+- 사용자 로컬 파일이라 `kosis update`로 덮어써지지 않습니다. 초기화는 파일 삭제.
+- 스킬의 `LEARNINGS.md`(사람·AI가 읽는 오답노트)와는 역할이 다릅니다. `learnings.yaml`은 CLI가 자동으로 읽고 쓰는 기계용 저장소입니다.
+
+### 문서 자동 교정
+
+사람이 교정한 통계표로 조회가 성공하면, 설치된 스킬 문서도 고칩니다.
+
+- `SKILL.md`·`references/*.md`에서 **그 키워드와 틀린 표 ID가 같은 줄에 있는 곳만** 맞는 표로 바꿉니다 (같은 표를 다른 용도로 언급한 줄은 그대로). 기관이 다르면 "기관 표" 쌍이 붙어 있는 줄만 고칩니다.
+- 파일을 처음 고치기 전에 같은 폴더에 숨김 백업(`.SKILL.md.bak` 등)을 남기고, 바뀐 줄을 화면에 출력합니다.
+- `LEARNINGS.md`의 "테이블별 함정" 표에 오답 행을 추가합니다 (같은 내용은 중복 추가하지 않음). 값(분류·항목) 교정도 여기에 기록합니다.
+- `kosis update`는 스킬 파일을 덮어쓰므로 영구 반영은 저장소 문서를 고쳐 릴리스해야 합니다.
+
+### 외부 전송
+
+`--ai`를 쓰면 요청 문장이 글생성 공급자(기본 hermes)와 Jev(`api.typesafe.ai`)로 전송됩니다.
+
+### 공급자와 API 키
+
+공급자는 역할이 둘입니다 (`kosis config ai-list`에 `[글생성 (--ai)]` / `[선택 (Jev)]`로 표시).
+
+| 공급자 | type | 역할 | 기본 설정 |
+|------|------|------|-----------|
+| hermes | openai | 글생성 (`--ai` 기본, `set-ai` 가능) | base_url `http://100.70.244.98:8642/v1`, model `hermes-agent`, key_env `HERMES_API_KEY` |
+| jev | typesafe | 선택 전용 (`set-ai` 기본값 불가, 이름 `jev` 고정) | base_url `https://api.typesafe.ai/v1`, model `jev-latest`, key_env `TYPESAFE_API_KEY` |
+| 커스텀 | openai | 글생성 (`--ai <이름>` / `--ai=<이름>`) | `kosis config ai-add`로 사전 등록 필요 (OpenAI 호환 API) |
+
+두 내장 공급자는 제거할 수 없고 `ai-add`로 주소·모델을 덮어쓸 수 있습니다. API 키는 환경변수가 우선이며, 없으면 `ai-key`로 저장한 값을 씁니다.
+
+```bash
+kosis config ai-key hermes "<HERMES_API_KEY>"     # 또는 환경변수 HERMES_API_KEY (글생성)
+kosis config ai-key jev "<TYPESAFE_API_KEY>"      # 또는 환경변수 TYPESAFE_API_KEY (선택, https://typesafe.ai)
+kosis config ai-add openai --url https://api.openai.com/v1 --model gpt-4o-mini --key-env OPENAI_API_KEY
+kosis q "실업률 추세" --ai openai                   # 글생성만 openai로 교체, 선택은 계속 Jev
+```
+
+### 한계
+
+- 축마다 코드를 **1개만** 선택합니다. "서울과 부산 비교"처럼 한 축에서 여러 값을 고르는 요청은 지원하지 않습니다 (여러 값이 필요하면 `kosis data`로 직접 지정).
+- 선택 결과는 항상 확인 단계에서 점검하세요. 틀렸다면 `n`으로 교정하면 다음부터 반영됩니다.

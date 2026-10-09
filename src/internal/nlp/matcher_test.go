@@ -216,65 +216,59 @@ func TestShortcutIntegrity(t *testing.T) {
 	}
 }
 
-// TestGetSKILLContentReflectsShortcuts AI 프롬프트가 사전에서 생성되는지 확인한다.
-// 손으로 쓴 두 번째 사본이 생기면 반드시 어긋나므로, 사전 값이 그대로 나타나야 한다.
-func TestGetSKILLContentReflectsShortcuts(t *testing.T) {
-	content := GetSKILLContent()
-
-	// 실제 항목 코드가 프롬프트에 있어야 한다 (예전엔 존재하지 않는 T01이 박혀 있었다)
-	for _, must := range []string{
-		"13103134474999",    // GDP 항목
-		"DT_1J22003",        // 소비자물가 (구 DT_1J20001은 존재하지 않는 표)
-		"13102871014B.0006", // 미분양 서울
-		"지역별 분류 없음",         // GDP·경제활동에 붙는 경고
-		"SEARCH:",           // 모르는 표를 지어내지 않게 하는 탈출구
-	} {
-		if !strings.Contains(content, must) {
-			t.Errorf("AI 프롬프트에 %q가 없습니다", must)
-		}
-	}
-
-	// 폐기된 잘못된 코드가 남아 있으면 안 된다
-	for _, forbidden := range []string{"DT_1J20001", "T01=경상가격"} {
-		if strings.Contains(content, forbidden) {
-			t.Errorf("AI 프롬프트에 폐기된 값 %q가 남아 있습니다", forbidden)
-		}
-	}
-}
-
-func TestGenerateCommandOpenAICompatible(t *testing.T) {
-	var gotAuth, gotModel string
+func TestParseRequestAndChoose(t *testing.T) {
+	var gotAuth string
+	var gotBody map[string]any
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/v1/chat/completions" {
-			http.NotFound(w, r)
-			return
-		}
 		gotAuth = r.Header.Get("Authorization")
-		var req struct {
-			Model string `json:"model"`
+		gotBody = map[string]any{}
+		_ = json.NewDecoder(r.Body).Decode(&gotBody)
+		switch r.URL.Path {
+		case "/v1/chat/completions":
+			// 코드펜스·잡문이 섞여도 JSON만 뽑아야 한다
+			_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"결과:\n` + "```json" + `\n{\"english\":\"births in Ulsan\",\"keyword\":\"출생아수\",\"conditions\":[\"울산\"],\"period\":{\"kind\":\"latest\",\"latest\":5,\"unit\":\"Y\"}}\n` + "```" + `"}}]}`))
+		case "/v1/systemone":
+			_, _ = w.Write([]byte(`{"answers":{"t":{"type":"choice","choice":"B","confidence":0.8,"probabilities":{"A":0.1,"B":0.85,"C":0.05}}}}`))
+		default:
+			http.NotFound(w, r)
 		}
-		_ = json.NewDecoder(r.Body).Decode(&req)
-		gotModel = req.Model
-		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"` + "```" + `\nkosis d 301 DT_200Y001 --period Y\n` + "```" + `"}}]}`))
 	}))
 	defer srv.Close()
+	ep := Endpoint{Name: "t", BaseURL: srv.URL + "/v1/", Model: "m1", APIKey: "k1"}
 
-	res, err := GenerateCommand("t", srv.URL+"/v1/", "m1", "k1", "GDP", "")
+	it, err := ParseRequest(ep, "울산 출생아수 최근 5년", time.Now())
 	if err != nil {
-		t.Fatalf("GenerateCommand: %v", err)
+		t.Fatalf("ParseRequest: %v", err)
 	}
-	if res.Command != "kosis d 301 DT_200Y001 --period Y" {
-		t.Errorf("command = %q", res.Command)
+	if it.Keyword != "출생아수" || len(it.Conditions) != 1 || it.Period.Latest != 5 || it.English == "" {
+		t.Errorf("intent = %+v", it)
 	}
-	if gotAuth != "Bearer k1" || gotModel != "m1" {
-		t.Errorf("auth=%q model=%q", gotAuth, gotModel)
+	if gotAuth != "Bearer k1" || gotBody["model"] != "m1" {
+		t.Errorf("auth=%q body=%v", gotAuth, gotBody)
+	}
+
+	ans, err := Choose(ep, "state", map[string]ChoiceQuestion{"t": {Instructions: "pick", Options: map[string]string{"A": "a", "B": "", "C": "c"}}})
+	if err != nil {
+		t.Fatalf("Choose: %v", err)
+	}
+	if ans["t"].Choice != "B" || strings.Join(ans["t"].Ranked(), "") != "BAC" {
+		t.Errorf("answer = %+v ranked=%v", ans["t"], ans["t"].Ranked())
+	}
+	qs := gotBody["questions"].(map[string]any)["t"].(map[string]any)
+	if qs["type"] != "choice" || qs["criteria"].(map[string]any)["B"] != nil {
+		t.Errorf("빈 설명은 null로 보내야 함: %v", qs)
+	}
+
+	// 목록 밖 답은 거부
+	if _, err := Choose(ep, "s", map[string]ChoiceQuestion{"t": {Instructions: "x", Options: map[string]string{"A": "a"}}}); err == nil {
+		t.Error("목록 밖 답(B)은 오류여야 함")
 	}
 
 	srv401 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"bad key"}`, http.StatusUnauthorized)
 	}))
 	defer srv401.Close()
-	if _, err := GenerateCommand("t", srv401.URL+"/v1", "m1", "", "GDP", ""); err == nil || !strings.Contains(err.Error(), "인증 실패") {
+	if _, err := ParseRequest(Endpoint{Name: "t", BaseURL: srv401.URL}, "x", time.Now()); err == nil || !strings.Contains(err.Error(), "인증 실패") {
 		t.Errorf("401은 인증 실패 오류여야 함: %v", err)
 	}
 }
