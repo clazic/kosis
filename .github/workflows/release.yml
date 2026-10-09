@@ -110,15 +110,16 @@ jobs:
       - name: Generate SHA256SUMS
         run: |
           cd artifacts
-          find . -type f | sort | xargs sha256sum | sed 's|./[^/]*/||' > SHA256SUMS
+          # 리다이렉트가 먼저 빈 SHA256SUMS를 만들므로 자기 자신은 목록에서 뺀다
+          find . -type f ! -name SHA256SUMS | sort | xargs sha256sum | sed 's|./[^/]*/||' > SHA256SUMS
           cat SHA256SUMS
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
+          # artifacts/**/* 가 SHA256SUMS도 포함한다. 따로 한 번 더 적으면 같은 자산을 동시에 올리다 충돌한다(v0.5.6 실패 원인)
           files: |
             artifacts/**/*
-            artifacts/SHA256SUMS
           generate_release_notes: true
 
   npm-publish:
