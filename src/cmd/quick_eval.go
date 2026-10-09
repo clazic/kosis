@@ -223,10 +223,11 @@ func scoreEval(c evalCase, plan *aiPlan, now time.Time) evalResult {
 // simulateCorrection 사람이 결과를 보고 교정하는 것을 정답으로 흉내 내 학습시킨다.
 func simulateCorrection(store *learn.Store, c evalCase, plan *aiPlan, r *evalResult) {
 	if r.Table == 0 {
-		store.TableBad(plan.Topic, plan.Table, "평가 교정: 통계표 틀림")
+		tableBad(store, plan, plan.Table, "평가 교정: 통계표 틀림")
 		for _, g := range c.Tables {
-			if _, ok := plan.TableNames[g]; ok {
-				store.TableOK(plan.Topic, g)
+			if name, ok := plan.TableNames[g]; ok {
+				tableOK(store, plan, g)
+				store.SetTableName(g, name)
 				r.Learned = append(r.Learned, "표→"+g)
 				return
 			}
@@ -234,7 +235,8 @@ func simulateCorrection(store *learn.Store, c evalCase, plan *aiPlan, r *evalRes
 		r.Learned = append(r.Learned, "표 회피(정답 후보 없음)")
 		return
 	}
-	store.TableOK(plan.Topic, plan.Table)
+	tableOK(store, plan, plan.Table)
+	store.SetTableName(plan.Table, plan.TableName)
 
 	// satisfies 이 축의 현재 값이 다른 정답 조건을 이미 만족하는가.
 	// 다중 항목 질문("출생아 수와 사망자 수")에서 맞힌 축을 다른 조건으로 덮어써 라운드마다 뒤집히는 것을 막는다.
@@ -256,8 +258,8 @@ func simulateCorrection(store *learn.Store, c evalCase, plan *aiPlan, r *evalRes
 				continue
 			}
 			if code, ok := optionMatching(v, pk); ok && code != pk.Code {
-				store.AxisBad(plan.Table, pk.Axis, pk.Cond, pk.Code, "평가 교정: 값 틀림")
-				store.AxisOK(plan.Table, pk.Axis, pk.Cond, code)
+				axisBad(store, plan.Table, pk, pk.Code, "평가 교정: 값 틀림")
+				axisOK(store, plan.Table, pk, code)
 				r.Learned = append(r.Learned, fmt.Sprintf("%s→%s", pk.Label, pk.Options[code]))
 				fixed[pk] = true
 				break
@@ -266,7 +268,7 @@ func simulateCorrection(store *learn.Store, c evalCase, plan *aiPlan, r *evalRes
 	}
 	for _, pk := range plan.Picks {
 		if !fixed[pk] && pk.Source == srcJev {
-			store.AxisOK(plan.Table, pk.Axis, pk.Cond, pk.Code)
+			axisOK(store, plan.Table, pk, pk.Code)
 		}
 	}
 }
@@ -347,7 +349,7 @@ func evalOne(env *aiEnv, c evalCase, intent *nlp.Intent, now time.Time) evalResu
 	if err == nil {
 		err = env.chooseAxes(plan)
 		if err != nil && plan.TableSrc == srcLearned {
-			env.store.TableBad(plan.Topic, plan.Table, "학습된 표 사용 불가")
+			tableBad(env.store, plan, plan.Table, "학습된 표 사용 불가")
 			if plan, err = env.chooseTable(intent, ""); err == nil {
 				err = env.chooseAxes(plan)
 			}
@@ -357,7 +359,7 @@ func evalOne(env *aiEnv, c evalCase, intent *nlp.Intent, now time.Time) evalResu
 		r := evalResult{Src: "-", Missed: []string{"오류: " + learn.Truncate(err.Error(), 50)}}
 		if plan != nil {
 			r.Chosen = plan.Table
-			env.store.TableBad(plan.Topic, plan.Table, "평가: 조회 불가")
+			tableBad(env.store, plan, plan.Table, "평가: 조회 불가")
 		}
 		return r
 	}
@@ -409,7 +411,7 @@ func printEvalSummary(cases []evalCase, results [][]evalResult) {
 	fmt.Println(avg)
 	fmt.Printf("\n학습으로 점수가 오른 질문 %d개 / 마지막 라운드 만점 %d개 / 전체 %d개\n", improved, perfect, len(cases))
 	fmt.Println("채점: 통계표 40 + 값 40 + 주기 10 + 기간 10. 기간은 문장 해석 문제라 학습으로 바뀌지 않습니다.")
-	fmt.Println("다중 지역·다중 항목 질문은 축당 1개만 고르는 구조라 만점이 나올 수 없습니다 (의도된 한계 측정).")
+	fmt.Println("다중 지역·다중 항목 질문은 대상별로 따로 물어 값을 묶습니다(a+b). 묶음 신뢰도가 낮으면 하나만 고릅니다.")
 }
 
 // runeWidth 터미널 표시 폭. 한글·전각은 2칸.

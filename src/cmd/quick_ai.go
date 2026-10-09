@@ -52,6 +52,7 @@ var errTableUnusable = errors.New("통계표를 사용할 수 없음")
 type aiPick struct {
 	Axis     string // 학습 키: 분류 OBJ_ID | @ITEM | @PRD
 	Cond     string // 학습 조건 키 (@ITEM 은 키워드까지 포함)
+	ReqCond  string // 학습 조건 키 (질문 원문)
 	Flag     string // --class1 … | --item | --period
 	Label    string
 	Code     string
@@ -66,7 +67,8 @@ type aiPick struct {
 // aiPlan 실행 직전의 전체 계획.
 type aiPlan struct {
 	Intent     *nlp.Intent
-	Topic      string // 학습 주제 키 (키워드+조건)
+	Topic      string // 학습 주제 키 (해석된 키워드+조건) — 표현이 달라도 같은 뜻이면 공유
+	ReqTopic   string // 학습 주제 키 (질문 원문) — 해석이 실행마다 조금 달라도 같은 질문은 반드시 찾는다
 	CondKey    string
 	Table      string // ORG/TBL
 	TableName  string
@@ -179,7 +181,7 @@ func (e *aiEnv) runQuestion(providerName, userRequest, formatFlag, outputFlag st
 				// 학습된 표가 더는 쓸 수 없으면(폐지·이관 등) 회피로 기록하고 한 번 새로 검색한다.
 				if errors.Is(err, errTableUnusable) && plan.TableSrc == srcLearned {
 					fmt.Printf("⚠ 학습된 통계표 %s를 쓸 수 없어 다시 검색합니다: %v\n", plan.Table, err)
-					e.store.TableBad(plan.Topic, plan.Table, "학습된 표 사용 불가: "+learn.Truncate(err.Error(), learnReasonLen))
+					tableBad(e.store, plan, plan.Table, "학습된 표 사용 불가: "+learn.Truncate(err.Error(), learnReasonLen))
 					saveLearn(e.store)
 					if plan, err = e.chooseTable(intent, ""); err == nil {
 						continue
@@ -438,11 +440,15 @@ func jevState(userRequest string, it *nlp.Intent) string {
 
 // chooseTable ②③ 학습 → 검색 → Jev 순으로 통계표를 정한다. force가 있으면 그 표를 쓴다.
 func (e *aiEnv) chooseTable(it *nlp.Intent, force string) (*aiPlan, error) {
-	plan := &aiPlan{Intent: it, CondKey: learn.CondKey(it.Conditions), Topic: learn.TopicKey(it.Keyword, it.Conditions)}
+	plan := &aiPlan{Intent: it, CondKey: learn.CondKey(it.Conditions), Topic: learn.TopicKey(it.Keyword, it.Conditions), ReqTopic: requestKey(e.request)}
 
 	if force == "" {
-		if pref := e.store.PreferTable(plan.Topic); pref != "" {
-			plan.Table, plan.TableName, plan.TableSrc, plan.TableConf = pref, pref, srcLearned, 1
+		if pref := preferTable(e.store, plan); pref != "" {
+			name := e.store.TableName(pref)
+			if name == "" {
+				name = pref // 이름을 저장하기 전(v0.5.9 이하)의 학습 기록
+			}
+			plan.Table, plan.TableName, plan.TableSrc, plan.TableConf = pref, name, srcLearned, 1
 			return plan, nil
 		}
 	}
@@ -471,7 +477,7 @@ func (e *aiEnv) chooseTable(it *nlp.Intent, force string) (*aiPlan, error) {
 		}
 	}
 
-	avoid := e.store.AvoidTables(plan.Topic)
+	avoid := avoidTables(e.store, plan)
 	options := map[string]string{}
 	for _, r := range results {
 		key := r.OrgID + "/" + r.TblID
@@ -684,18 +690,25 @@ func (e *aiEnv) chooseAxes(plan *aiPlan) error {
 	plan.Picks = nil
 	questions := map[string]nlp.ChoiceQuestion{}
 	qPick := map[string]*aiPick{}
+	// 비교·나열 대상이 2개 이상이면("부산과 대구", "종사자수와 생산액") 축마다 대상별로 따로 물어 여러 값을 고른다.
+	terms := multiTerms(plan.Intent)
+	type termQ struct {
+		pk   *aiPick
+		term string
+	}
+	termQs := map[string]termQ{}
 	conds := plan.Intent.Conditions
 	itemCond := plan.CondKey + "#" + learn.NormKey(plan.Intent.Keyword) // 같은 표라도 측정 대상(키워드)이 다르면 항목이 다르다
 
 	decide := func(id, label, flag, cond, instructions string, rows []api.MetaResult, requested string) {
-		pk := &aiPick{Axis: id, Cond: cond, Flag: flag, Label: label, Children: map[string][]string{}}
+		pk := &aiPick{Axis: id, Cond: cond, ReqCond: requestKey(e.request), Flag: flag, Label: label, Children: map[string][]string{}}
 		for _, r := range rows {
 			if r.UpItmID != "" {
 				pk.Children[r.UpItmID] = append(pk.Children[r.UpItmID], r.ItmID)
 			}
 		}
 		plan.Picks = append(plan.Picks, pk)
-		opts := axisOptions(rows, conds, e.store.AvoidCodes(plan.Table, id, cond))
+		opts := axisOptions(rows, conds, avoidCodes(e.store, plan.Table, pk))
 		if len(opts) == 0 {
 			// 과거 학습이 모든 값을 피하게 만들었으면 학습을 무시한다 — 학습이 축을 영구히 잠그면 안 된다.
 			opts = axisOptions(rows, conds, nil)
@@ -707,10 +720,13 @@ func (e *aiEnv) chooseAxes(plan *aiPlan) error {
 				return
 			}
 		}
-		if code, ok := e.store.AxisPick(plan.Table, id, cond); ok {
-			if name, exists := learnedName(opts, code); exists {
-				pk.Code, pk.Name, pk.Source, pk.Conf = code, name, srcLearned, 1
-				return
+		allOpts := axisOptions(rows, conds, nil) // 학습된 값은 회피 목록과 무관하게 실제 메타에 있는지로 판단
+		for _, c := range pk.conds() {           // 원문 키 먼저
+			if code, ok := e.store.AxisPick(plan.Table, id, c); ok {
+				if name, exists := learnedName(allOpts, code); exists {
+					pk.Code, pk.Name, pk.Source, pk.Conf = code, name, srcLearned, 1
+					return
+				}
 			}
 		}
 		if len(opts) == 1 {
@@ -722,6 +738,22 @@ func (e *aiEnv) chooseAxes(plan *aiPlan) error {
 		qid := fmt.Sprintf("q%d", len(questions))
 		questions[qid] = nlp.ChoiceQuestion{Instructions: instructions, Options: opts}
 		qPick[qid] = pk
+		if id == periodAxis || len(opts) >= nlp.MaxChoiceOptions {
+			return // 주기는 하나만, 옵션이 꽉 찬 축은 '해당 없음'을 넣을 자리가 없다
+		}
+		for i, t := range terms {
+			withNone := make(map[string]string, len(opts)+1)
+			for k, v := range opts {
+				withNone[k] = v
+			}
+			withNone[noneOption] = "none of these / 해당 없음"
+			tq := fmt.Sprintf("%s_t%d", qid, i)
+			questions[tq] = nlp.ChoiceQuestion{
+				Instructions: fmt.Sprintf("In the classification '%s', which value corresponds to '%s'? If no value of this classification corresponds to '%s', choose %s.", label, t, t, noneOption),
+				Options:      withNone,
+			}
+			termQs[tq] = termQ{pk, t}
+		}
 	}
 
 	for _, a := range axes {
@@ -745,8 +777,138 @@ func (e *aiEnv) chooseAxes(plan *aiPlan) error {
 			a := ans[qid]
 			pk.Code, pk.Name, pk.Source, pk.Conf, pk.Ranked = a.Choice, pk.Options[a.Choice], srcJev, a.Confidence, a.Ranked()
 		}
+		// 대상별 답에서 서로 다른 값이 2개 이상 나온 축은 묶음 코드(a+b)로 바꾼다.
+		byPick := map[*aiPick][]termAnswer{}
+		for tq, q := range termQs {
+			a := ans[tq]
+			byPick[q.pk] = append(byPick[q.pk], termAnswer{term: q.term, code: a.Choice, conf: a.Confidence})
+		}
+		for pk, tas := range byPick {
+			if code, name, conf, ok := mergeTermAnswers(pk.Options, terms, tas); ok {
+				pk.Code, pk.Name, pk.Conf = code, name, conf
+			}
+		}
 	}
 	return nil
+}
+
+// ── 학습 키 ──
+// 학습은 두 키에 함께 기록하고 찾을 때는 원문 키를 먼저 본다.
+//   원문 키(q:…): 같은 질문이면 해석(hermes)이 실행마다 조금 달라도 반드시 찾는다
+//   해석 키: 표현이 달라도 해석이 같으면 공유한다 ("울산 출생아수" ≈ "울산에서 태어난 아기 수")
+
+// requestKey 질문 원문을 학습 키로. 공백·대소문자 차이는 무시한다.
+func requestKey(request string) string { return "q:" + learn.NormKey(request) }
+
+func (p *aiPlan) topics() []string { return []string{p.ReqTopic, p.Topic} }
+
+func (pk *aiPick) conds() []string { return []string{pk.ReqCond, pk.Cond} }
+
+func preferTable(s *learn.Store, p *aiPlan) string {
+	for _, t := range p.topics() {
+		if pref := s.PreferTable(t); pref != "" {
+			return pref
+		}
+	}
+	return ""
+}
+
+func avoidTables(s *learn.Store, p *aiPlan) map[string]string {
+	out := map[string]string{}
+	for _, t := range p.topics() {
+		for k, v := range s.AvoidTables(t) {
+			out[k] = v
+		}
+	}
+	return out
+}
+
+func tableOK(s *learn.Store, p *aiPlan, table string) {
+	for _, t := range p.topics() {
+		s.TableOK(t, table)
+	}
+}
+
+func tableBad(s *learn.Store, p *aiPlan, table, reason string) {
+	for _, t := range p.topics() {
+		s.TableBad(t, table, reason)
+	}
+}
+
+func avoidCodes(s *learn.Store, table string, pk *aiPick) map[string]bool {
+	out := map[string]bool{}
+	for _, c := range pk.conds() {
+		for k := range s.AvoidCodes(table, pk.Axis, c) {
+			out[k] = true
+		}
+	}
+	return out
+}
+
+func axisOK(s *learn.Store, table string, pk *aiPick, code string) {
+	for _, c := range pk.conds() {
+		s.AxisOK(table, pk.Axis, c, code)
+	}
+}
+
+func axisBad(s *learn.Store, table string, pk *aiPick, code, reason string) {
+	for _, c := range pk.conds() {
+		s.AxisBad(table, pk.Axis, c, code, reason)
+	}
+}
+
+// noneOption 대상별 질문에서 "이 축에는 해당 값 없음".
+const noneOption = "__none__"
+
+// multiConfidence 대상별 답을 묶음에 넣는 최소 신뢰도. 낮은 답까지 넣으면 엉뚱한 값이 섞인다.
+const multiConfidence = 0.5
+
+type termAnswer struct {
+	term, code string
+	conf       float64
+}
+
+// multiTerms 대상별로 따로 물을 단어들. 조건이나 측정 대상이 2개 이상일 때만 (하나면 기존 단일 선택으로 충분).
+func multiTerms(it *nlp.Intent) []string {
+	var terms []string
+	if len(it.Conditions) >= 2 {
+		terms = append(terms, it.Conditions...)
+	}
+	if len(it.Measures) >= 2 {
+		terms = append(terms, it.Measures...)
+	}
+	return terms
+}
+
+// mergeTermAnswers 대상별 답 중 '해당 없음'이 아니고 신뢰도가 충분한 서로 다른 값이 2개 이상이면 묶는다.
+// 대상 순서(요청 순서)를 지키고, 묶음 신뢰도는 가장 낮은 값으로 한다.
+func mergeTermAnswers(opts map[string]string, terms []string, tas []termAnswer) (string, string, float64, bool) {
+	order := map[string]int{}
+	for i, t := range terms {
+		order[t] = i
+	}
+	sort.SliceStable(tas, func(i, j int) bool { return order[tas[i].term] < order[tas[j].term] })
+	var codes, names []string
+	seen := map[string]bool{}
+	minConf := 1.0
+	for _, ta := range tas {
+		if ta.code == noneOption || ta.conf < multiConfidence || seen[ta.code] {
+			continue
+		}
+		if _, ok := opts[ta.code]; !ok {
+			continue
+		}
+		seen[ta.code] = true
+		codes = append(codes, ta.code)
+		names = append(names, opts[ta.code])
+		if ta.conf < minConf {
+			minConf = ta.conf
+		}
+	}
+	if len(codes) < 2 || len(codes) > maxListedCodes {
+		return "", "", 0, false
+	}
+	return strings.Join(codes, "+"), strings.Join(names, "·"), minConf, true
 }
 
 // requestedFreq 사용자가 원한 출력 주기. 명시(freq)가 없으면 "최근 N개월"의 단위를 쓴다.
@@ -964,8 +1126,9 @@ func (e *aiEnv) learnSuccess(plan *aiPlan, verified bool) {
 		return trusted(src, conf)
 	}
 	if verified || trusted(plan.TableSrc, plan.TableConf) {
-		corrected := e.store.AvoidTables(plan.Topic) // TableOK 가 지우기 전에 받아 둔다
-		e.store.TableOK(plan.Topic, plan.Table)
+		corrected := avoidTables(e.store, plan) // TableOK 가 지우기 전에 받아 둔다
+		tableOK(e.store, plan, plan.Table)
+		e.store.SetTableName(plan.Table, plan.TableName)
 		good := learn.ParseTableRef(plan.Table)
 		for bad, reason := range corrected {
 			if !strings.HasPrefix(reason, "사용자") {
@@ -980,7 +1143,7 @@ func (e *aiEnv) learnSuccess(plan *aiPlan, verified bool) {
 		if !ok(pk.Source, pk.Conf) {
 			continue
 		}
-		e.store.AxisOK(plan.Table, pk.Axis, pk.Cond, pk.Code)
+		axisOK(e.store, plan.Table, pk, pk.Code)
 		if pk.Source == srcCorrected {
 			org, tbl := plan.orgTbl()
 			e.fixSkillDocs("", learn.TableRef{}, learn.TableRef{},
@@ -1027,7 +1190,7 @@ func learnFailure(store *learn.Store, plan *aiPlan, err error) bool {
 	if !strings.Contains(msg, "[20]") && !strings.Contains(msg, "[21]") {
 		return false
 	}
-	store.TableBad(plan.Topic, plan.Table, "실행 오류: "+learn.Truncate(msg, learnReasonLen))
+	tableBad(store, plan, plan.Table, "실행 오류: "+learn.Truncate(msg, learnReasonLen))
 	return true
 }
 
@@ -1072,6 +1235,50 @@ func (e *aiEnv) searchTable() (string, string) {
 	}
 }
 
+// containsCode 묶음 코드("a+b", "접두*", ALL)가 코드 하나를 포함하는가.
+func containsCode(combo, code string) bool {
+	switch {
+	case combo == code || combo == allCode:
+		return true
+	case strings.HasSuffix(combo, "*"):
+		return strings.HasPrefix(code, strings.TrimSuffix(combo, "*"))
+	}
+	for _, c := range strings.Split(combo, "+") {
+		if c == code {
+			return true
+		}
+	}
+	return false
+}
+
+// multiPickOption 값 교정 메뉴의 "여러 값 고르기" 표시.
+const multiPickOption = "__multi__"
+
+// pickMultiple 축의 값을 여러 개 골라 묶음 코드("a+b")로. 조건 단어가 든 값을 앞에 보여준다.
+func pickMultiple(pk *aiPick, conds []string) (string, bool) {
+	cands := condFirst(pk.Options, conds)
+	if len(cands) > 60 {
+		cands = cands[:60] // 화면이 넘치지 않게. 필요한 값이 없으면 취소 후 kosis meta 로 확인
+	}
+	var labels []string
+	for _, c := range cands {
+		labels = append(labels, fmt.Sprintf("%s (%s)", pk.Options[c], c))
+	}
+	idx := interactive.MultiSelect(fmt.Sprintf("'%s' 에서 함께 조회할 값들을 고르세요 (최대 %d개)", pk.Label, maxListedCodes), labels)
+	switch {
+	case len(idx) == 0:
+		return "", false
+	case len(idx) > maxListedCodes:
+		fmt.Printf("한 번에 %d개까지 고를 수 있습니다. 더 많으면 전체(ALL) 또는 하위 전체를 쓰세요.\n", maxListedCodes)
+		return "", false
+	}
+	var picked []string
+	for _, i := range idx {
+		picked = append(picked, cands[i])
+	}
+	return strings.Join(picked, "+"), true
+}
+
 // collectCorrection 사용자가 실행을 거부했을 때 무엇이 틀렸는지 묻고 학습한다.
 // 터미널이 아니면 물을 수 없으므로 학습 없이 취소한다.
 func (e *aiEnv) collectCorrection(plan *aiPlan) (*aiPlan, bool) {
@@ -1080,7 +1287,7 @@ func (e *aiEnv) collectCorrection(plan *aiPlan) (*aiPlan, bool) {
 	}
 	switch selectOrCancel("무엇이 틀렸나요? (학습해서 다음엔 반복하지 않습니다)", []string{"통계표가 틀림", "분류·항목·주기 값이 틀림"}) {
 	case 0:
-		e.store.TableBad(plan.Topic, plan.Table, "사용자: 통계표 틀림")
+		tableBad(e.store, plan, plan.Table, "사용자: 통계표 틀림")
 		var alts, labels []string
 		for _, k := range plan.TableRank {
 			if k != plan.Table && len(alts) < 8 {
@@ -1156,11 +1363,26 @@ func (e *aiEnv) collectCorrection(plan *aiPlan) (*aiPlan, bool) {
 				names = append([]string{fmt.Sprintf("%s 의 하위 전체 (%d개: %s)", pk.Name, len(kidNames), learn.Truncate(strings.Join(kidNames, ", "), 40))}, names...)
 			}
 		}
+		if pk.Axis != periodAxis && len(pk.Options) > 1 {
+			// "종사자수와 출하액", "부산과 대구"처럼 같은 축에서 특정 값 몇 개를 함께 원할 때
+			codes = append([]string{multiPickOption}, codes...)
+			names = append([]string{"여러 값 고르기 (예: 종사자수 + 출하액)"}, names...)
+		}
 		j := selectOrCancel("맞는 값을 고르세요 (목록에 없으면 취소 후 kosis meta 로 확인)", names)
 		if j < 0 {
 			return nil, false
 		}
-		e.store.AxisBad(plan.Table, pk.Axis, pk.Cond, pk.Code, "사용자: 값 틀림")
+		if codes[j] == multiPickOption {
+			code, ok := pickMultiple(pk, plan.Intent.Conditions)
+			if !ok {
+				return nil, false
+			}
+			codes[j] = code
+		}
+		if !containsCode(codes[j], pk.Code) {
+			// "종사자수 → 종사자수+출하액"처럼 기존 값을 포함해 넓힌 교정이면 기존 값은 틀린 게 아니다
+			axisBad(e.store, plan.Table, pk, pk.Code, "사용자: 값 틀림")
+		}
 		name, _ := learnedName(pk.Options, codes[j])
 		pk.Code, pk.Name, pk.Source, pk.Conf = codes[j], name, srcCorrected, 1
 		return plan, true

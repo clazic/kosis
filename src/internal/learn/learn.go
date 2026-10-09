@@ -45,6 +45,7 @@ type KeywordMemo struct {
 
 // TableMemo 통계표별 축 선택 학습. 키는 "축ID|조건키".
 type TableMemo struct {
+	Name  string            `yaml:"name,omitempty"` // 통계표 이름 (학습된 표를 다시 쓸 때 표시용)
 	Picks map[string]string `yaml:"picks,omitempty"`
 	Avoid map[string][]Mark `yaml:"avoid,omitempty"` // Target = 코드
 }
@@ -201,6 +202,22 @@ func (s *Store) TableBad(keyword, table, reason string) {
 }
 
 func axisKey(axis, cond string) string { return axis + "|" + cond }
+
+// SetTableName 통계표 이름을 기억한다. 이름이 없거나 ID와 같으면 무시.
+func (s *Store) SetTableName(table, name string) {
+	if name == "" || name == table {
+		return
+	}
+	s.tbl(table).Name = name
+}
+
+// TableName 기억한 통계표 이름. 모르면 "".
+func (s *Store) TableName(table string) string {
+	if t := s.Tables[table]; t != nil {
+		return t.Name
+	}
+	return ""
+}
 
 // AxisPick 학습된 축 선택 코드.
 func (s *Store) AxisPick(table, axis, cond string) (string, bool) {

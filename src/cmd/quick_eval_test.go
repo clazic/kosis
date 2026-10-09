@@ -122,3 +122,89 @@ func TestKeywordCandidates(t *testing.T) {
 		t.Errorf("got %q", got)
 	}
 }
+
+func TestMergeTermAnswers(t *testing.T) {
+	opts := map[string]string{"21": "부산광역시", "22": "대구광역시", "00": "계"}
+	terms := []string{"부산", "대구"}
+
+	code, name, conf, ok := mergeTermAnswers(opts, terms, []termAnswer{
+		{term: "대구", code: "22", conf: 0.9}, {term: "부산", code: "21", conf: 0.8},
+	})
+	if !ok || code != "21+22" || name != "부산광역시·대구광역시" || conf != 0.8 {
+		t.Errorf("요청 순서로 묶고 최소 신뢰도: %q %q %v %v", code, name, conf, ok)
+	}
+	// 같은 값으로 수렴하거나, 해당 없음·낮은 신뢰도는 묶지 않는다
+	for _, tas := range [][]termAnswer{
+		{{term: "부산", code: "21", conf: 0.9}, {term: "대구", code: "21", conf: 0.9}},
+		{{term: "부산", code: "21", conf: 0.9}, {term: "대구", code: noneOption, conf: 0.9}},
+		{{term: "부산", code: "21", conf: 0.9}, {term: "대구", code: "22", conf: 0.3}},
+	} {
+		if _, _, _, ok := mergeTermAnswers(opts, terms, tas); ok {
+			t.Errorf("묶으면 안 됨: %+v", tas)
+		}
+	}
+}
+
+func TestMultiTerms(t *testing.T) {
+	if got := multiTerms(&nlp.Intent{Conditions: []string{"울산"}, Measures: []string{"종사자수"}}); len(got) != 0 {
+		t.Errorf("대상이 하나씩이면 대상별 질문 없음: %v", got)
+	}
+	got := multiTerms(&nlp.Intent{Conditions: []string{"부산", "대구"}, Measures: []string{"종사자수", "생산액"}})
+	if strings.Join(got, ",") != "부산,대구,종사자수,생산액" {
+		t.Errorf("got %v", got)
+	}
+}
+
+func TestTableNameRemembered(t *testing.T) {
+	path := t.TempDir() + "/l.yaml"
+	s := learn.LoadFrom(path)
+	s.TableOK("출생아수|", "101/A")
+	s.SetTableName("101/A", "출생아수(시도/시/군/구)")
+	s.SetTableName("101/B", "101/B") // ID와 같으면 저장 안 함
+	if err := s.Save(); err != nil {
+		t.Fatal(err)
+	}
+	s = learn.LoadFrom(path)
+	if s.TableName("101/A") != "출생아수(시도/시/군/구)" || s.TableName("101/B") != "" {
+		t.Errorf("이름 저장 실패: %q %q", s.TableName("101/A"), s.TableName("101/B"))
+	}
+}
+
+// 해석(hermes)이 실행마다 달라도 같은 질문이면 학습을 찾아야 한다.
+func TestRequestKeySurvivesInterpretationDrift(t *testing.T) {
+	s := learn.LoadFrom(t.TempDir() + "/l.yaml")
+	first := &aiPlan{Topic: learn.TopicKey("종사자수 생산액", []string{"울산"}), ReqTopic: requestKey("울산 종사자수와 생산액 2023년")}
+	tableOK(s, first, "101/DT_1FS1101")
+	pk := &aiPick{Axis: itemAxis, Cond: "울산#종사자수생산액", ReqCond: requestKey("울산 종사자수와 생산액 2023년")}
+	axisOK(s, "101/DT_1FS1101", pk, "T02+T04")
+
+	second := &aiPlan{Topic: learn.TopicKey("종사자수와 생산액", []string{"울산광역시"}), ReqTopic: requestKey("울산  종사자수와 생산액 2023년")}
+	if got := preferTable(s, second); got != "101/DT_1FS1101" {
+		t.Errorf("원문 키로 표를 찾아야 함: %q", got)
+	}
+	pk2 := &aiPick{Axis: itemAxis, Cond: "울산광역시#종사자수와생산액", ReqCond: second.ReqTopic}
+	found := false
+	for _, c := range pk2.conds() {
+		if code, ok := s.AxisPick("101/DT_1FS1101", itemAxis, c); ok && code == "T02+T04" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("원문 키로 항목 학습을 찾아야 함")
+	}
+}
+
+func TestContainsCode(t *testing.T) {
+	cases := []struct {
+		combo, code string
+		want        bool
+	}{
+		{"T02+T04", "T02", true}, {"T02+T04", "T01", false}, {"ALL", "x", true},
+		{"Z_26*", "Z_2601", true}, {"Z_26*", "Z_21", false}, {"T02", "T02", true},
+	}
+	for _, c := range cases {
+		if got := containsCode(c.combo, c.code); got != c.want {
+			t.Errorf("containsCode(%q,%q)=%v", c.combo, c.code, got)
+		}
+	}
+}

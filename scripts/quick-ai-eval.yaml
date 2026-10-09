@@ -117,14 +117,14 @@
   values: ["출생", "사망"]
   unit: Y
   period: "--start {Y-1} --end {Y-1}"
-  hard: "항목 2개 동시 요청 — 축당 1개만 고르는 구조라 만점 불가 (한계 측정)"
+  hard: "항목 2개 동시 요청 — 대상별로 따로 물어 같은 축에서 값 2개를 묶어야 함(11+12)"
 
 - q: "부산과 대구 고용률 비교 2025년"
   tables: [101/INH_1DA7014S_03, 101/DT_1DA7004S]
   values: ["부산광역시", "대구광역시", "고용률"]
   unit: Y
   period: "--start 2025 --end 2025"
-  hard: "지역 2개 동시 요청 — 만점 불가 (한계 측정)"
+  hard: "지역 2개 동시 요청 — 같은 축에서 부산·대구를 묶어야 함(21+22)"
 
 - q: "Ulsan unemployment rate for the last 3 years"
   tables: [101/INH_1DA7104S, 101/DT_1DA7104S, 101/DT_1DA7004S]
