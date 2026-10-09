@@ -47,7 +47,8 @@ var quickCmd = &cobra.Command{
   -a, --ai[=<공급자>]      AI 조회. 값 생략 시 기본 글생성 공급자(hermes)
   -f, --format <type>      출력 형식: table(기본), json, csv, md
   -o, --output <파일>      파일 저장
-  -y, --yes                확인 프롬프트 없이 바로 실행 (스크립트·AI 에이전트용)
+  -y, --yes                확인 프롬프트 없이 바로 실행 (스크립트·AI 에이전트용, 학습 안 함)
+  -l, --learn              학습 모드: 결과를 보고 맞는지 답하며 계속 질문 (틀리면 교정해 학습)
 
 예제:
   # 규칙 기반 (기본)
@@ -59,6 +60,10 @@ var quickCmd = &cobra.Command{
   # AI 사용 (기본 공급자 hermes)
   kosis q "작년까지 최근 5년간 울산에서 태어난 아기 수" --ai
   kosis q "실업률 추세" --ai openai        # ai-add로 등록한 공급자
+
+  # 학습 모드: 질문을 계속 받으며 틀린 답을 교정해 학습 (종료: q)
+  kosis q --learn
+  kosis q --learn "울산 구군별 업종별 종사자수"
 
   # 확인 없이 바로 실행
   kosis q "서울 미분양 최근 6개월" --yes
@@ -96,6 +101,15 @@ AI 모드 설명:
   같은 줄에 있는 곳을 맞는 표로 고치고(원본은 숨김 백업 .<파일>.bak), LEARNINGS.md 오답노트에 기록합니다.
   kosis update 는 스킬 파일을 덮어쓰므로 영구 반영은 저장소 문서 수정이 필요합니다.
 
+학습 모드 (--learn):
+  질문 → 바로 실행해 결과 표시 → "결과가 맞나요? [y/n/s]" → 다음 질문 … 을 q 까지 반복합니다.
+  y 맞음      선택을 학습 (신뢰도가 낮았던 선택도 사람이 확인했으므로 학습)
+  n 틀림      무엇이 틀렸는지 골라 교정 → 고친 계획으로 다시 실행 → 다시 확인
+              · 통계표: Jev 후보에서 고르기 / 검색어를 직접 입력해 찾기 / 다시 검색
+              · 값: 다른 값 고르기 / 전체(ALL)로 펼치기 ("구군별", "업종별"처럼 축 전체가 필요할 때)
+  s 건너뛰기  학습 없이 다음 질문
+  터미널에서만 동작하며 --yes 와 함께 쓸 수 없습니다. --ai 는 자동으로 켜집니다.
+
 외부 전송:
   --ai 사용 시 요청 문장이 글생성 공급자(기본 hermes)와 Jev(api.typesafe.ai)로 전송됩니다.
 
@@ -128,11 +142,26 @@ AI 공급자 관리:
 	Run: func(cmd *cobra.Command, args []string) {
 		aiFlag, _ := cmd.Flags().GetString("ai")
 		useAI := cmd.Flags().Changed("ai")
+		learnMode, _ := cmd.Flags().GetBool("learn")
 		if aiFlag == aiDefaultSentinel {
 			aiFlag = "" // 기본 공급자
 		}
 		formatFlag, _ := cmd.Flags().GetString("format")
 		outputFlag, _ := cmd.Flags().GetString("output")
+
+		// 학습 모드: 질문을 계속 받으므로 첫 질문이 없어도 된다
+		if learnMode {
+			if quickAssumeYes {
+				fmt.Println("오류: --learn 은 결과를 보고 답하는 모드라 --yes 와 함께 쓸 수 없습니다.")
+				return
+			}
+			if !config.HasAPIKey() {
+				fmt.Println(config.NoAPIKeyMessage())
+				return
+			}
+			handleAILearnSession(aiFlag, strings.Join(args, " "), formatFlag, outputFlag)
+			return
+		}
 
 		// 대화형 모드: 인자가 없으면 사용자 입력 받음
 		var userInput string
@@ -170,6 +199,7 @@ func init() {
 	quickCmd.Flags().Lookup("ai").NoOptDefVal = aiDefaultSentinel
 	quickCmd.Flags().StringP("format", "f", "", "출력 형식: table, json, csv, md. 미지정 시 config의 기본 형식 사용")
 	quickCmd.Flags().StringP("output", "o", "", "파일로 저장. 확장자로 형식 자동 결정: .csv .xlsx .json .db .parquet")
+	quickCmd.Flags().BoolP("learn", "l", false, "학습 모드: --ai 로 실행해 결과를 보여주고 맞는지 묻는다. 틀리면 교정(표 다시 고르기·검색·값 고치기·전체 펼치기)해 학습하고, 다음 질문을 계속 받는다(종료 q). --ai 를 함께 줄 필요 없음")
 	quickCmd.Flags().BoolVarP(&quickAssumeYes, "yes", "y", false, "확인 프롬프트 없이 바로 실행 (스크립트·AI 에이전트처럼 입력을 받을 수 없는 환경용)")
 }
 
@@ -472,7 +502,7 @@ func printReusableCommand(command string) {
 func quoteArgs(args []string) string {
 	var quoted []string
 	for _, arg := range args {
-		if strings.ContainsAny(arg, " \t\"") {
+		if strings.ContainsAny(arg, " \t\"*") { // *: "11*" 같은 접두 코드를 셸이 글로브로 펼치지 않게
 			escaped := strings.ReplaceAll(arg, "\"", "\\\"")
 			quoted = append(quoted, "\""+escaped+"\"")
 			continue

@@ -174,7 +174,7 @@ kosis s "미분양" -n 10
 | `list` | `ls` | `kosis ls --parent A_4` |
 | `explain <ORG> <TBL>` | `ex` | `kosis ex 101 DT_1IN1502` |
 | `bulk <userStatsId>` | | `kosis bulk "myid/..." -o data.xls` |
-| `quick <요청>` | `q` | `kosis q "GDP 최근 5년" --ai` (AI가 실제 검색·메타 목록에서 통계표·코드를 골라 조회, 사전 밖 통계도 가능) |
+| `quick <요청>` | `q` | `kosis q "GDP 최근 5년" --ai` (AI가 실제 검색·메타 목록에서 통계표·코드를 골라 조회, 사전 밖 통계도 가능). `kosis q --learn` = 학습 모드(결과를 보고 y/n, 틀리면 교정해 학습하며 계속 질문) |
 | `chart` | | `kosis d ... -f json \| kosis chart --type line` |
 | `ind search <이름>` | `ind s` | `kosis ind s "GDP"` |
 | `ind info <ID>` | | `kosis ind info 404` |

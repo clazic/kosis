@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -72,6 +73,45 @@ func TestTruncWidth(t *testing.T) {
 func TestRequestedFreq(t *testing.T) {
 	if requestedFreq(nlp.PeriodSpec{Unit: "Y", Freq: "Q"}) != "Q" || requestedFreq(nlp.PeriodSpec{Unit: "M"}) != "M" {
 		t.Error("freq 가 있으면 freq, 없으면 unit")
+	}
+}
+
+func TestLearnedNameAll(t *testing.T) {
+	opts := map[string]string{"26": "울산광역시"}
+	if n, ok := learnedName(opts, allCode); !ok || n != "전체" {
+		t.Error("ALL 은 메타에 없어도 유효해야 함")
+	}
+	if _, ok := learnedName(opts, "99"); ok {
+		t.Error("메타에 없는 코드는 무효")
+	}
+}
+
+func TestChildrenCodeAndLearnedName(t *testing.T) {
+	kids := []string{"Z_2601", "Z_2602", "Z_2631"}
+	code, ok := childrenCode("Z_26", kids)
+	if !ok || code != "Z_2601+Z_2602+Z_2631" {
+		t.Errorf("10개 이하는 + 나열: %q", code)
+	}
+	var many []string
+	for i := 0; i < 12; i++ {
+		many = append(many, fmt.Sprintf("Z_26%02d", i))
+	}
+	if code, ok := childrenCode("Z_26", many); !ok || code != "Z_26*" {
+		t.Errorf("10개 초과·공통 접두면 접두*: %q", code)
+	}
+	if _, ok := childrenCode("P", append(many, "Q1")); ok {
+		t.Error("접두사로 묶을 수 없으면 제공하지 않아야 함")
+	}
+
+	opts := map[string]string{"Z_26": "울산광역시", "Z_2601": "중구", "Z_2602": "남구", "Z_2631": "울주군"}
+	if n, ok := learnedName(opts, "Z_2601+Z_2631"); !ok || n != "중구·울주군" {
+		t.Errorf("+ 묶음: %q %v", n, ok)
+	}
+	if _, ok := learnedName(opts, "Z_2601+Z_9999"); ok {
+		t.Error("없는 코드가 섞이면 무효")
+	}
+	if n, ok := learnedName(opts, "Z_26*"); !ok || n != "울산광역시 하위 전체" {
+		t.Errorf("접두*: %q", n)
 	}
 }
 

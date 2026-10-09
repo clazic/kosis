@@ -30,17 +30,19 @@ import (
 // AI는 코드를 만들지 않는다. 실제 API가 돌려준 목록에서 고르기만 하므로 지어낸 코드가 나갈 수 없다.
 
 const (
-	lowConfidence  = 0.3
-	maxClassAxes   = 8 // kosis data 가 지원하는 --class1~8
-	maxAIAttempts  = 3
-	srcJev         = "Jev"
-	srcLearned     = "학습"
-	srcRequested   = "요청"
-	srcOnly        = "유일"
-	srcCorrected   = "교정"
-	itemAxis       = "@ITEM"
-	periodAxis     = "@PRD"
-	learnReasonLen = 120
+	lowConfidence    = 0.3
+	maxClassAxes     = 8 // kosis data 가 지원하는 --class1~8
+	maxAIAttempts    = 3
+	maxLearnAttempts = 6     // 학습 모드는 교정을 여러 번 해 볼 수 있게
+	allCode          = "ALL" // 축 전체 펼치기 ("구군별", "업종별")
+	srcJev           = "Jev"
+	srcLearned       = "학습"
+	srcRequested     = "요청"
+	srcOnly          = "유일"
+	srcCorrected     = "교정"
+	itemAxis         = "@ITEM"
+	periodAxis       = "@PRD"
+	learnReasonLen   = 120
 )
 
 // errTableUnusable 메타가 없거나 비어 이 통계표로는 조회할 수 없음 (학습된 표라면 회피 대상).
@@ -48,16 +50,17 @@ var errTableUnusable = errors.New("통계표를 사용할 수 없음")
 
 // aiPick 축 하나의 선택 결과.
 type aiPick struct {
-	Axis    string // 학습 키: 분류 OBJ_ID | @ITEM | @PRD
-	Cond    string // 학습 조건 키 (@ITEM 은 키워드까지 포함)
-	Flag    string // --class1 … | --item | --period
-	Label   string
-	Code    string
-	Name    string
-	Source  string
-	Conf    float64
-	Ranked  []string          // Jev 확률 순 후보 (교정용)
-	Options map[string]string // 코드 → 이름
+	Axis     string // 학습 키: 분류 OBJ_ID | @ITEM | @PRD
+	Cond     string // 학습 조건 키 (@ITEM 은 키워드까지 포함)
+	Flag     string // --class1 … | --item | --period
+	Label    string
+	Code     string
+	Name     string
+	Source   string
+	Conf     float64
+	Ranked   []string            // Jev 확률 순 후보 (교정용)
+	Options  map[string]string   // 코드 → 이름
+	Children map[string][]string // 상위 코드 → 하위 코드 (메타 UP_ITM_ID, "울산광역시의 하위 전체" 교정용)
 }
 
 // aiPlan 실행 직전의 전체 계획.
@@ -94,45 +97,91 @@ func (e *aiEnv) logf(format string, a ...any) {
 	}
 }
 
-// handleAIGeneration quick --ai 진입점. providerName이 비면 기본 글생성 공급자.
-func handleAIGeneration(providerName, userRequest, formatFlag, outputFlag string) {
+// newAIEnv 선택기(Jev)·KOSIS 클라이언트·학습 저장소를 준비한다. 실패 시 안내를 출력하고 nil.
+func newAIEnv() *aiEnv {
 	_, selector, err := config.GetAIProvider(config.SelectorProvider)
 	if err != nil || !selector.IsTypeSafe() {
 		printQuickFailure("AI 경로", "선택 공급자(jev)가 설정되지 않았습니다.", []string{"kosis config ai-list 로 jev 항목 확인"})
-		return
+		return nil
 	}
 	if selector.ResolveKey() == "" {
 		printQuickFailure("AI 경로", "Jev API 키가 없습니다.", []string{"kosis config ai-key jev <TYPESAFE_API_KEY>" + keyEnvHint(selector)})
-		return
+		return nil
 	}
 	client, err := NewAPIClient()
 	if err != nil {
 		printQuickFailure("AI 경로", err.Error(), nil)
+		return nil
+	}
+	return &aiEnv{
+		client: client,
+		jev:    nlp.Endpoint{Name: config.SelectorProvider, BaseURL: selector.BaseURL, Model: selector.Model, APIKey: selector.ResolveKey()},
+		store:  learn.Load(),
+	}
+}
+
+// handleAIGeneration quick --ai 진입점. providerName이 비면 기본 글생성 공급자.
+func handleAIGeneration(providerName, userRequest, formatFlag, outputFlag string) {
+	env := newAIEnv()
+	if env == nil {
 		return
 	}
-	env := &aiEnv{
-		client:  client,
-		jev:     nlp.Endpoint{Name: config.SelectorProvider, BaseURL: selector.BaseURL, Model: selector.Model, APIKey: selector.ResolveKey()},
-		store:   learn.Load(),
-		request: userRequest,
-	}
+	env.runQuestion(providerName, userRequest, formatFlag, outputFlag, false)
+}
 
+// handleAILearnSession quick --learn: 질문 → 실행 → 결과 확인 → (틀리면 교정·재실행) → 다음 질문 … 을 q 까지 반복.
+// 실행 전에는 묻지 않는다. 결과를 본 뒤에만 맞는지 묻는다 — 결과를 봐야 맞는지 판단할 수 있기 때문이다.
+func handleAILearnSession(providerName, firstRequest, formatFlag, outputFlag string) {
+	if !term.IsTerminal(int(os.Stdin.Fd())) {
+		printQuickFailure("학습 모드", "--learn 은 결과를 보고 답해야 하므로 터미널에서만 동작합니다.", []string{
+			"터미널에서 kosis q --learn 실행",
+			"스크립트에서는 kosis q \"<요청>\" --ai --yes (학습 없음)",
+		})
+		return
+	}
+	env := newAIEnv()
+	if env == nil {
+		return
+	}
+	fmt.Println("🎓 학습 모드 — 결과가 틀리면 n 으로 교정하세요. 고친 내용은 다음 질문부터 반영됩니다. (종료: q)")
+	req := firstRequest
+	for n := 1; ; n++ {
+		if strings.TrimSpace(req) == "" {
+			req = interactive.Prompt(fmt.Sprintf("\n[%d] 통계 질문을 입력하세요:", n))
+			if req == "" {
+				fmt.Println("학습 모드를 종료합니다. 학습 파일:", learn.FilePath())
+				return
+			}
+		}
+		env.runQuestion(providerName, req, formatFlag, outputFlag, true)
+		req = ""
+	}
+}
+
+// runQuestion 질문 하나를 끝까지 처리한다.
+// learnMode=false: 실행 전 확인(y/n), 거부하면 교정 / learnMode=true: 바로 실행하고 결과를 본 뒤 맞는지 확인.
+func (e *aiEnv) runQuestion(providerName, userRequest, formatFlag, outputFlag string, learnMode bool) {
+	e.request = userRequest
 	intent := interpretRequest(providerName, userRequest)
-	plan, err := env.chooseTable(intent, "")
+	plan, err := e.chooseTable(intent, "")
 	if err != nil {
 		printQuickFailure("AI 경로", err.Error(), []string{"검색어를 바꿔 재시도하거나 kosis search \"<키워드>\"로 직접 확인"})
 		return
 	}
 
-	for attempt := 0; attempt < maxAIAttempts; attempt++ {
+	attempts := maxAIAttempts
+	if learnMode {
+		attempts = maxLearnAttempts
+	}
+	for attempt := 0; attempt < attempts; attempt++ {
 		if plan.Picks == nil {
-			if err := env.chooseAxes(plan); err != nil {
+			if err := e.chooseAxes(plan); err != nil {
 				// 학습된 표가 더는 쓸 수 없으면(폐지·이관 등) 회피로 기록하고 한 번 새로 검색한다.
 				if errors.Is(err, errTableUnusable) && plan.TableSrc == srcLearned {
 					fmt.Printf("⚠ 학습된 통계표 %s를 쓸 수 없어 다시 검색합니다: %v\n", plan.Table, err)
-					env.store.TableBad(plan.Topic, plan.Table, "학습된 표 사용 불가: "+learn.Truncate(err.Error(), learnReasonLen))
-					saveLearn(env.store)
-					if plan, err = env.chooseTable(intent, ""); err == nil {
+					e.store.TableBad(plan.Topic, plan.Table, "학습된 표 사용 불가: "+learn.Truncate(err.Error(), learnReasonLen))
+					saveLearn(e.store)
+					if plan, err = e.chooseTable(intent, ""); err == nil {
 						continue
 					}
 				}
@@ -148,13 +197,13 @@ func handleAIGeneration(providerName, userRequest, formatFlag, outputFlag string
 		printAIPlan(plan)
 		fmt.Printf("\n🧭 생성된 명령어:\n  %s\n\n", displayCmd)
 
-		if !confirmExecution() {
-			if attempt == maxAIAttempts-1 {
+		if !learnMode && !confirmExecution() {
+			if attempt == attempts-1 {
 				fmt.Println("실행 취소됨 (교정 횟수 초과 — kosis meta / kosis data 로 직접 조회하세요)")
 				return
 			}
-			next, retry := env.collectCorrection(plan)
-			saveLearn(env.store)
+			next, retry := e.collectCorrection(plan)
+			saveLearn(e.store)
 			if !retry {
 				fmt.Println("실행 취소됨")
 				return
@@ -163,30 +212,98 @@ func handleAIGeneration(providerName, userRequest, formatFlag, outputFlag string
 			continue
 		}
 
-		out, err := runSubcommandOutput("data", dataArgs)
-		if err != nil {
-			learned := learnFailure(env.store, plan, err)
-			saveLearn(env.store)
-			fmt.Println("❌ quick 판정: 실패")
-			fmt.Printf("원인: %v\n", err)
-			if learned {
-				fmt.Println("📝 이 실패를 학습했습니다. 같은 요청을 다시 실행하면 다른 통계표를 고릅니다.")
+		out, runErr := runSubcommandOutput("data", dataArgs)
+		rows := -1
+		if runErr == nil {
+			rows = countDataRows(out, effectiveFormat(formatFlag), outputFlag)
+		}
+
+		if !learnMode {
+			e.finishOnce(plan, displayCmd, runErr, rows)
+			return
+		}
+
+		// 학습 모드: 결과를 보여준 뒤 판단을 받는다.
+		switch {
+		case runErr != nil:
+			fmt.Printf("❌ 실행 실패: %v\n", runErr)
+			if learnFailure(e.store, plan, runErr) {
+				fmt.Println("📝 통계표 오류로 학습했습니다.")
 			}
+		case rows == 0:
+			fmt.Println("⚠ 결과 0행 — 기간에 데이터가 없거나 분류 조합이 비어 있습니다.")
+		}
+		verdict := askVerdict(runErr == nil && rows != 0)
+		switch verdict {
+		case "y":
+			e.learnSuccess(plan, true)
+			saveLearn(e.store)
+			fmt.Println("✅ 맞다고 학습했습니다. 다음에 같은 질문은 이 선택을 바로 씁니다.")
+			printReusableCommand(displayCmd)
+			return
+		case "s":
+			fmt.Println("⏭ 건너뜀 (학습하지 않음)")
 			return
 		}
-		if rows := countDataRows(out, effectiveFormat(formatFlag), outputFlag); rows == 0 {
-			fmt.Println("⚠ quick 판정: 결과 없음 — 요청 기간에 데이터가 없거나 분류 조합이 비어 있습니다. 학습하지 않습니다.")
+		if attempt == attempts-1 {
+			fmt.Println("교정 횟수를 넘었습니다. 지금까지의 교정은 학습됐습니다.")
+			saveLearn(e.store)
 			return
 		}
-		fmt.Println("✅ quick 판정: 성공")
-		if quickAssumeYes {
-			fmt.Println("ℹ --yes 실행은 사람이 결과를 확인하지 않았으므로 학습하지 않습니다.")
-		} else {
-			env.learnSuccess(plan)
-			saveLearn(env.store)
+		next, retry := e.collectCorrection(plan)
+		saveLearn(e.store)
+		if !retry {
+			fmt.Println("⏭ 이 질문은 여기까지 (교정 내용은 학습됨)")
+			return
 		}
-		printReusableCommand(displayCmd)
+		plan = next
+	}
+}
+
+// finishOnce 일반 모드(--ai)의 실행 결과 처리.
+func (e *aiEnv) finishOnce(plan *aiPlan, displayCmd string, runErr error, rows int) {
+	if runErr != nil {
+		learned := learnFailure(e.store, plan, runErr)
+		saveLearn(e.store)
+		fmt.Println("❌ quick 판정: 실패")
+		fmt.Printf("원인: %v\n", runErr)
+		if learned {
+			fmt.Println("📝 이 실패를 학습했습니다. 같은 요청을 다시 실행하면 다른 통계표를 고릅니다.")
+		}
 		return
+	}
+	if rows == 0 {
+		fmt.Println("⚠ quick 판정: 결과 없음 — 요청 기간에 데이터가 없거나 분류 조합이 비어 있습니다. 학습하지 않습니다.")
+		return
+	}
+	fmt.Println("✅ quick 판정: 성공")
+	if quickAssumeYes {
+		fmt.Println("ℹ --yes 실행은 사람이 결과를 확인하지 않았으므로 학습하지 않습니다. 학습시키려면 --learn")
+	} else {
+		e.learnSuccess(plan, false)
+		saveLearn(e.store)
+	}
+	printReusableCommand(displayCmd)
+}
+
+// askVerdict 결과를 본 사용자의 판단: y(맞음) / n(틀림, 교정) / s(건너뛰기).
+func askVerdict(hasResult bool) string {
+	label := "\n결과가 질문에 맞나요? [y 맞음 / n 틀림·교정 / s 건너뛰기]"
+	if !hasResult {
+		label = "\n결과를 얻지 못했습니다. 교정할까요? [n 교정 / s 건너뛰기]"
+	}
+	for {
+		v := strings.ToLower(strings.TrimSpace(interactive.Prompt(label)))
+		switch v {
+		case "", "s", "skip":
+			return "s"
+		case "n", "no", "아니", "ㄴ":
+			return "n"
+		case "y", "yes", "예", "ㅇ":
+			if hasResult {
+				return "y"
+			}
+		}
 	}
 }
 
@@ -571,7 +688,12 @@ func (e *aiEnv) chooseAxes(plan *aiPlan) error {
 	itemCond := plan.CondKey + "#" + learn.NormKey(plan.Intent.Keyword) // 같은 표라도 측정 대상(키워드)이 다르면 항목이 다르다
 
 	decide := func(id, label, flag, cond, instructions string, rows []api.MetaResult, requested string) {
-		pk := &aiPick{Axis: id, Cond: cond, Flag: flag, Label: label}
+		pk := &aiPick{Axis: id, Cond: cond, Flag: flag, Label: label, Children: map[string][]string{}}
+		for _, r := range rows {
+			if r.UpItmID != "" {
+				pk.Children[r.UpItmID] = append(pk.Children[r.UpItmID], r.ItmID)
+			}
+		}
 		plan.Picks = append(plan.Picks, pk)
 		opts := axisOptions(rows, conds, e.store.AvoidCodes(plan.Table, id, cond))
 		if len(opts) == 0 {
@@ -586,7 +708,7 @@ func (e *aiEnv) chooseAxes(plan *aiPlan) error {
 			}
 		}
 		if code, ok := e.store.AxisPick(plan.Table, id, cond); ok {
-			if name, exists := opts[code]; exists {
+			if name, exists := learnedName(opts, code); exists {
 				pk.Code, pk.Name, pk.Source, pk.Conf = code, name, srcLearned, 1
 				return
 			}
@@ -633,6 +755,56 @@ func requestedFreq(ps nlp.PeriodSpec) string {
 		return ps.Freq
 	}
 	return ps.Unit
+}
+
+// maxListedCodes kosis data 가 "+"로 나열해 받는 코드 수 상한 (넘으면 "접두사*" 사용).
+const maxListedCodes = 10
+
+// childrenCode 하위 코드들을 data 인자 하나로. 10개 이하면 "a+b+c", 넘으면 모두 상위 코드로 시작할 때 "상위*".
+func childrenCode(parent string, kids []string) (string, bool) {
+	if len(kids) == 0 {
+		return "", false
+	}
+	if len(kids) <= maxListedCodes {
+		return strings.Join(kids, "+"), true
+	}
+	for _, k := range kids {
+		if !strings.HasPrefix(k, parent) {
+			return "", false // 접두사로 묶을 수 없으면 제공하지 않는다 (틀린 범위를 조회하느니 없는 게 낫다)
+		}
+	}
+	return parent + "*", true
+}
+
+// learnedName 학습된 코드가 지금 메타에 있는지. ALL·"a+b"·"접두*" 같은 묶음 코드도 확인한다.
+func learnedName(opts map[string]string, code string) (string, bool) {
+	switch {
+	case code == allCode:
+		return "전체", true
+	case strings.HasSuffix(code, "*"):
+		prefix := strings.TrimSuffix(code, "*")
+		if name, ok := opts[prefix]; ok {
+			return name + " 하위 전체", true
+		}
+		for c := range opts {
+			if strings.HasPrefix(c, prefix) {
+				return prefix + "* 하위 전체", true
+			}
+		}
+		return "", false
+	case strings.Contains(code, "+"):
+		var names []string
+		for _, c := range strings.Split(code, "+") {
+			n, ok := opts[c]
+			if !ok {
+				return "", false
+			}
+			names = append(names, n)
+		}
+		return strings.Join(names, "·"), true
+	}
+	name, ok := opts[code]
+	return name, ok
 }
 
 // perYear 주기별 1년당 시점 수. 환산할 수 없는 주기(5년·일·부정기)는 0.
@@ -782,9 +954,16 @@ func trusted(src string, conf float64) bool {
 }
 
 // learnSuccess 사람이 확인하고 결과가 나온 선택을 확정하고, 확정된 교정은 스킬 문서에 반영한다.
-func (e *aiEnv) learnSuccess(plan *aiPlan) {
+// verified: 사람이 결과를 보고 맞다고 했다(--learn) — 이때는 낮은 신뢰도 선택도 정답으로 학습한다.
+func (e *aiEnv) learnSuccess(plan *aiPlan, verified bool) {
 	kw := plan.Intent.Keyword
-	if trusted(plan.TableSrc, plan.TableConf) {
+	ok := func(src string, conf float64) bool {
+		if verified {
+			return src != srcRequested && src != srcOnly
+		}
+		return trusted(src, conf)
+	}
+	if verified || trusted(plan.TableSrc, plan.TableConf) {
 		corrected := e.store.AvoidTables(plan.Topic) // TableOK 가 지우기 전에 받아 둔다
 		e.store.TableOK(plan.Topic, plan.Table)
 		good := learn.ParseTableRef(plan.Table)
@@ -798,7 +977,7 @@ func (e *aiEnv) learnSuccess(plan *aiPlan) {
 		}
 	}
 	for _, pk := range plan.Picks {
-		if !trusted(pk.Source, pk.Conf) {
+		if !ok(pk.Source, pk.Conf) {
 			continue
 		}
 		e.store.AxisOK(plan.Table, pk.Axis, pk.Cond, pk.Code)
@@ -861,6 +1040,38 @@ func selectOrCancel(label string, options []string) int {
 	return i
 }
 
+// searchTable 사용자가 입력한 검색어로 KOSIS 를 검색해 통계표를 고르게 한다. 취소면 "".
+func (e *aiEnv) searchTable() (string, string) {
+	for {
+		kw := interactive.Prompt("검색어 (예: 사업체 종사자수 시군구 산업):")
+		if kw == "" {
+			return "", ""
+		}
+		results, err := e.client.Search(kw, api.SearchOptions{ResultCount: 20})
+		if err != nil {
+			fmt.Println("검색 실패:", err)
+			continue
+		}
+		if len(results) == 0 {
+			fmt.Println("결과가 없습니다. 다른 검색어를 입력하세요.")
+			continue
+		}
+		var ids, names, labels []string
+		for _, r := range results {
+			ids = append(ids, r.OrgID+"/"+r.TblID)
+			names = append(names, fmt.Sprintf("%s (%s, %s~%s)", r.TblNM, r.OrgNM, r.StrtPrdDe, r.EndPrdDe))
+			labels = append(labels, fmt.Sprintf("%s/%s — %s (%s, %s~%s)", r.OrgID, r.TblID, r.TblNM, r.OrgNM, r.StrtPrdDe, r.EndPrdDe))
+		}
+		j := selectOrCancel("통계표를 고르세요", append(labels, "다른 검색어로 다시 검색"))
+		switch {
+		case j < 0:
+			return "", ""
+		case j < len(ids):
+			return ids[j], names[j]
+		}
+	}
+}
+
 // collectCorrection 사용자가 실행을 거부했을 때 무엇이 틀렸는지 묻고 학습한다.
 // 터미널이 아니면 물을 수 없으므로 학습 없이 취소한다.
 func (e *aiEnv) collectCorrection(plan *aiPlan) (*aiPlan, bool) {
@@ -877,14 +1088,17 @@ func (e *aiEnv) collectCorrection(plan *aiPlan) (*aiPlan, bool) {
 				labels = append(labels, k+" — "+plan.TableNames[k])
 			}
 		}
-		force := ""
-		if len(alts) > 0 {
-			j := selectOrCancel("맞는 통계표를 고르세요", append(labels, "목록에 없음 (다시 검색해 Jev가 다시 고름)"))
-			switch {
-			case j < 0:
+		force, forceName := "", ""
+		labels = append(labels, "검색어를 직접 입력해 찾기", "목록에 없음 (다시 검색해 Jev가 다시 고름)")
+		j := selectOrCancel("맞는 통계표를 고르세요", labels)
+		switch {
+		case j < 0:
+			return nil, false
+		case j < len(alts):
+			force = alts[j]
+		case j == len(alts):
+			if force, forceName = e.searchTable(); force == "" {
 				return nil, false
-			case j < len(alts):
-				force = alts[j]
 			}
 		}
 		// 학습된 표였거나 "목록에 없음"이면 다시 검색한다 (방금 틀린 표는 회피 목록에 있어 제외된다).
@@ -892,6 +1106,9 @@ func (e *aiEnv) collectCorrection(plan *aiPlan) (*aiPlan, bool) {
 		if err != nil {
 			fmt.Println("오류:", err)
 			return nil, false
+		}
+		if forceName != "" && next.TableName == force {
+			next.TableName = forceName // 검색으로 고른 표는 Jev 후보 목록에 이름이 없을 수 있다
 		}
 		return next, true
 
@@ -925,12 +1142,27 @@ func (e *aiEnv) collectCorrection(plan *aiPlan) (*aiPlan, bool) {
 				names = append(names, fmt.Sprintf("%s (%s)", pk.Options[c], c))
 			}
 		}
+		if pk.Axis != periodAxis && pk.Code != allCode {
+			// "구군별", "업종별"처럼 축 전체를 원하는 질문용
+			codes = append([]string{allCode}, codes...)
+			names = append([]string{"전체 (ALL) — 이 축의 모든 값을 펼쳐서 조회"}, names...)
+			// "울산 구군별"처럼 지금 값의 하위만 펼치고 싶을 때 (메타의 상위-하위 관계)
+			if code, ok := childrenCode(pk.Code, pk.Children[pk.Code]); ok {
+				var kidNames []string
+				for _, k := range pk.Children[pk.Code] {
+					kidNames = append(kidNames, pk.Options[k])
+				}
+				codes = append([]string{code}, codes...)
+				names = append([]string{fmt.Sprintf("%s 의 하위 전체 (%d개: %s)", pk.Name, len(kidNames), learn.Truncate(strings.Join(kidNames, ", "), 40))}, names...)
+			}
+		}
 		j := selectOrCancel("맞는 값을 고르세요 (목록에 없으면 취소 후 kosis meta 로 확인)", names)
 		if j < 0 {
 			return nil, false
 		}
 		e.store.AxisBad(plan.Table, pk.Axis, pk.Cond, pk.Code, "사용자: 값 틀림")
-		pk.Code, pk.Name, pk.Source, pk.Conf = codes[j], pk.Options[codes[j]], srcCorrected, 1
+		name, _ := learnedName(pk.Options, codes[j])
+		pk.Code, pk.Name, pk.Source, pk.Conf = codes[j], name, srcCorrected, 1
 		return plan, true
 	}
 	return nil, false
