@@ -2,82 +2,97 @@
 package nlp
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
-	"os/exec"
+	"io"
+	"net/http"
 	"sort"
 	"strings"
+	"time"
 )
 
-// AIResult는 AI 도구가 생성한 명령어를 나타냅니다.
+// AIResult는 AI가 생성한 명령어를 나타냅니다.
 type AIResult struct {
 	Command string // 생성된 kosis 명령어 (예: "kosis d 116 DT_MLTM_2086 ...")
-	Tool    string // 사용된 AI 도구 이름
-	Error   error
+	Tool    string // 사용된 공급자 이름
 }
 
-// DetectAITool은 시스템에 설치된 AI CLI 도구를 감지합니다.
-// 우선순위: claude > gemini > codex
-func DetectAITool() string {
-	for _, tool := range []string{"claude", "gemini", "codex"} {
-		if _, err := exec.LookPath(tool); err == nil {
-			return tool
-		}
-	}
-	return ""
-}
+// aiHTTPClient 에이전트형 서버(Hermes 등)는 수십 초 걸릴 수 있어 넉넉히 잡는다.
+var aiHTTPClient = &http.Client{Timeout: 180 * time.Second}
 
-// shellEscape는 문자열을 작은따옴표로 감싸 셸 인젝션을 방지합니다.
-// 작은따옴표 내부의 작은따옴표는 '\” 패턴으로 이스케이프합니다.
-func shellEscape(s string) string {
-	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
-}
-
-// GenerateCommand는 AI 도구를 사용하여 자연어를 kosis 명령어로 변환합니다.
-func GenerateCommand(toolName, toolCmd, userRequest, skillContent string) (*AIResult, error) {
-	// 1. 프롬프트 구성
-	prompt := buildPrompt(userRequest, skillContent)
-
-	// 2. 도구 명령어에 프롬프트 삽입 (셸 이스케이프 적용)
-	//    toolCmd 예: "claude -p '{prompt}'"
-	//    → {prompt}를 셸 이스케이프된 프롬프트로 치환
-	//    기존 따옴표로 감싸진 '{prompt}' 패턴을 이스케이프된 값으로 교체
-	escapedPrompt := shellEscape(prompt)
-	// '{prompt}' (따옴표 포함) 패턴이 있으면 통째로 교체
-	fullCmd := strings.ReplaceAll(toolCmd, "'{prompt}'", escapedPrompt)
-	// "{prompt}" (쌍따옴표 포함) 패턴이 있으면 통째로 교체
-	fullCmd = strings.ReplaceAll(fullCmd, "\"{prompt}\"", escapedPrompt)
-	// 따옴표 없는 {prompt} 패턴이 남아있으면 이스케이프된 값으로 교체
-	fullCmd = strings.ReplaceAll(fullCmd, "{prompt}", escapedPrompt)
-
-	// 3. exec.Command로 실행
-	//    셸을 통해 실행 (파이프 등 지원)
-	cmd := exec.Command("sh", "-c", fullCmd)
-	output, err := cmd.CombinedOutput()
+// GenerateCommand는 OpenAI 호환 Chat Completions API로 자연어를 kosis 명령어로 변환합니다.
+// baseURL 예: http://host:8642/v1 → POST {baseURL}/chat/completions
+func GenerateCommand(name, baseURL, model, apiKey, userRequest, skillContent string) (*AIResult, error) {
+	body, err := json.Marshal(map[string]any{
+		"model": model,
+		"messages": []map[string]string{
+			{"role": "system", "content": systemPrompt(skillContent)},
+			{"role": "user", "content": userRequest},
+		},
+		"temperature": 0,
+	})
 	if err != nil {
-		return &AIResult{Tool: toolName, Error: err}, err
+		return nil, err
 	}
 
-	// 4. 결과 파싱 (kosis로 시작하는 줄 추출)
-	command := extractKosisCommand(string(output))
+	endpoint := strings.TrimRight(baseURL, "/") + "/chat/completions"
+	req, err := http.NewRequest(http.MethodPost, endpoint, bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("요청 생성 실패: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+	}
 
-	return &AIResult{Command: command, Tool: toolName}, nil
+	resp, err := aiHTTPClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("%s 연결 실패 (%s): %w", name, endpoint, err)
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+
+	if resp.StatusCode != http.StatusOK {
+		msg := strings.TrimSpace(string(raw))
+		if len(msg) > 300 {
+			msg = msg[:300] + "..."
+		}
+		if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+			return nil, fmt.Errorf("%s 인증 실패 (HTTP %d): API 키를 확인하세요 — %s", name, resp.StatusCode, msg)
+		}
+		return nil, fmt.Errorf("%s 응답 오류 (HTTP %d): %s", name, resp.StatusCode, msg)
+	}
+
+	var parsed struct {
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+	if err := json.Unmarshal(raw, &parsed); err != nil || len(parsed.Choices) == 0 {
+		return nil, fmt.Errorf("%s 응답 형식을 해석하지 못했습니다 (OpenAI 호환 API인지 확인)", name)
+	}
+
+	return &AIResult{Command: extractKosisCommand(parsed.Choices[0].Message.Content), Tool: name}, nil
 }
 
-// buildPrompt는 AI에게 보낼 프롬프트를 구성합니다.
-func buildPrompt(userRequest, skillContent string) string {
-	return fmt.Sprintf(`다음 사용자 요청을 kosis CLI 명령어로 변환해줘.
-명령어만 한 줄로 출력해. 설명은 불필요.
+// systemPrompt는 AI에게 보낼 지시문을 구성합니다.
+func systemPrompt(skillContent string) string {
+	return fmt.Sprintf(`사용자 요청을 kosis CLI 명령어로 변환해줘.
+도구를 사용하지 말고, 명령어만 한 줄로 출력해. 설명은 불필요.
 
 [사용법]
-%s
-
-[요청]
-%s`, skillContent, userRequest)
+%s`, skillContent)
 }
 
 // extractKosisCommand는 출력에서 kosis 명령어를 추출합니다.
 func extractKosisCommand(output string) string {
 	lines := strings.Split(strings.TrimSpace(output), "\n")
+	for i := range lines {
+		lines[i] = strings.Trim(lines[i], "`")
+	}
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
 		if strings.HasPrefix(line, "kosis ") {

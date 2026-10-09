@@ -21,12 +21,12 @@ func TestDefaultConfig(t *testing.T) {
 		t.Errorf("expected cache_ttl_hours=24, got %d", cfg.CacheTTLHours)
 	}
 
-	if cfg.AI.Default != "claude" {
-		t.Errorf("expected AI default=claude, got %s", cfg.AI.Default)
+	if cfg.AI.Default != DefaultAIProvider {
+		t.Errorf("expected AI default=%s, got %s", DefaultAIProvider, cfg.AI.Default)
 	}
 
-	if len(cfg.AI.Tools) != 3 {
-		t.Errorf("expected 3 default AI tools, got %d", len(cfg.AI.Tools))
+	if _, ok := cfg.AI.Providers[DefaultAIProvider]; !ok {
+		t.Errorf("기본 공급자 %s가 Providers에 없음", DefaultAIProvider)
 	}
 }
 
@@ -153,107 +153,95 @@ func TestGetAPIKeysWithEnv(t *testing.T) {
 	}
 }
 
-func TestAddRemoveAITool(t *testing.T) {
-	// 테스트용 임시 디렉토리 설정
-	tmpDir := t.TempDir()
-	SetConfigDirForTesting(tmpDir)
-	defer SetConfigDirForTesting("")
-
-	// 환경변수 해제
+func useTempConfig(t *testing.T) {
+	t.Helper()
+	SetConfigDirForTesting(t.TempDir())
+	t.Cleanup(func() { SetConfigDirForTesting("") })
 	os.Unsetenv("KOSIS_API_KEY")
-
-	cfg := DefaultConfig()
-	if err := Save(cfg); err != nil {
-		t.Fatalf("설정 저장 실패: %v", err)
-	}
-
-	// AI 도구 추가
-	if err := AddAITool("custom", "custom -p '{prompt}'"); err != nil {
-		t.Fatalf("AddAITool failed: %v", err)
-	}
-
-	cfg, _ = Load()
-	if _, exists := cfg.AI.Tools["custom"]; !exists {
-		t.Error("custom tool was not added")
-	}
-
-	// 중복 도구 추가 시도
-	if err := AddAITool("custom", "cmd"); err == nil {
-		t.Error("AddAITool should fail for duplicate tool")
-	}
-
-	// AI 도구 제거
-	if err := RemoveAITool("custom"); err != nil {
-		t.Fatalf("RemoveAITool failed: %v", err)
-	}
-
-	cfg, _ = Load()
-	if _, exists := cfg.AI.Tools["custom"]; exists {
-		t.Error("custom tool was not removed")
-	}
 }
 
-func TestSetAIDefault(t *testing.T) {
-	// 테스트용 임시 디렉토리 설정
-	tmpDir := t.TempDir()
-	SetConfigDirForTesting(tmpDir)
-	defer SetConfigDirForTesting("")
+func TestAIProviderLifecycle(t *testing.T) {
+	useTempConfig(t)
 
-	// 환경변수 해제
-	os.Unsetenv("KOSIS_API_KEY")
-
-	cfg := DefaultConfig()
-	if err := Save(cfg); err != nil {
-		t.Fatalf("설정 저장 실패: %v", err)
+	p := AIProvider{BaseURL: "http://localhost:11434/v1", Model: "llama3"}
+	if err := AddAIProvider("ollama", p); err != nil {
+		t.Fatalf("AddAIProvider failed: %v", err)
+	}
+	if err := AddAIProvider("bad", AIProvider{BaseURL: "localhost:11434", Model: "x"}); err == nil {
+		t.Error("스킴 없는 URL은 거부해야 함")
+	}
+	if err := AddAIProvider("bad", AIProvider{BaseURL: "http://h/v1"}); err == nil {
+		t.Error("모델 없는 공급자는 거부해야 함")
 	}
 
-	// 기본 AI 도구 변경
-	if err := SetAIDefault("gemini"); err != nil {
+	if err := SetAIDefault("ollama"); err != nil {
 		t.Fatalf("SetAIDefault failed: %v", err)
 	}
-
-	cfg, _ = Load()
-	if cfg.AI.Default != "gemini" {
-		t.Errorf("expected default=gemini, got %s", cfg.AI.Default)
+	if err := SetAIDefault("nonexistent"); err == nil {
+		t.Error("SetAIDefault should fail for nonexistent provider")
 	}
 
-	// 존재하지 않는 도구로 설정 시도
-	if err := SetAIDefault("nonexistent"); err == nil {
-		t.Error("SetAIDefault should fail for nonexistent tool")
+	if err := SetAIProviderKey("ollama", "sk-test-1234567890"); err != nil {
+		t.Fatalf("SetAIProviderKey failed: %v", err)
+	}
+	name, got, err := GetAIProvider("")
+	if err != nil || name != "ollama" || got.APIKey != "sk-test-1234567890" {
+		t.Fatalf("GetAIProvider(\"\") = %s %+v %v", name, got, err)
+	}
+
+	// 기본 공급자를 지우면 내장 기본값으로 복귀
+	if err := RemoveAIProvider("ollama"); err != nil {
+		t.Fatalf("RemoveAIProvider failed: %v", err)
+	}
+	cfg, _ := Load()
+	if _, exists := cfg.AI.Providers["ollama"]; exists {
+		t.Error("ollama was not removed")
+	}
+	if cfg.AI.Default != DefaultAIProvider {
+		t.Errorf("기본값 복귀 실패: %s", cfg.AI.Default)
+	}
+
+	if err := RemoveAIProvider(DefaultAIProvider); err == nil {
+		t.Error("내장 공급자는 제거할 수 없어야 함")
 	}
 }
 
-func TestListAITools(t *testing.T) {
-	// 테스트용 임시 디렉토리 설정
-	tmpDir := t.TempDir()
-	SetConfigDirForTesting(tmpDir)
-	defer SetConfigDirForTesting("")
-
-	// 환경변수 해제
-	os.Unsetenv("KOSIS_API_KEY")
-
-	cfg := DefaultConfig()
-	if err := Save(cfg); err != nil {
-		t.Fatalf("설정 저장 실패: %v", err)
+func TestResolveKeyEnvWins(t *testing.T) {
+	p := AIProvider{APIKey: "from-config", KeyEnv: "KOSIS_TEST_AI_KEY"}
+	if got := p.ResolveKey(); got != "from-config" {
+		t.Errorf("env 미설정 시 config 키여야 함, got %q", got)
 	}
+	t.Setenv("KOSIS_TEST_AI_KEY", "from-env")
+	if got := p.ResolveKey(); got != "from-env" {
+		t.Errorf("env가 우선해야 함, got %q", got)
+	}
+}
 
-	tools, err := ListAITools()
+// 예전 CLI 도구 방식 설정(ai.tools + default: gemini)은 hermes 기본으로 이관돼야 한다.
+func TestLegacyAIConfigMigrates(t *testing.T) {
+	useTempConfig(t)
+	legacy := "ai:\n  default: gemini\n  tools:\n    gemini:\n      cmd: gemini -p '{prompt}'\napi_keys: []\n"
+	if err := os.WriteFile(ConfigFilePath(), []byte(legacy), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load()
 	if err != nil {
-		t.Fatalf("ListAITools failed: %v", err)
+		t.Fatalf("Load failed: %v", err)
+	}
+	if cfg.AI.Default != DefaultAIProvider {
+		t.Errorf("default = %s, want %s", cfg.AI.Default, DefaultAIProvider)
+	}
+	if _, ok := cfg.AI.Providers[DefaultAIProvider]; !ok {
+		t.Error("내장 공급자가 채워지지 않음")
 	}
 
-	if len(tools) != 3 {
-		t.Errorf("expected 3 tools, got %d", len(tools))
+	// 저장 후 다시 읽어도 base_url 등 키 이름이 보존돼야 한다 (yaml/mapstructure 태그 일치)
+	if err := Save(cfg); err != nil {
+		t.Fatal(err)
 	}
-
-	// 각 도구가 올바른 구조인지 확인
-	for _, tool := range tools {
-		if tool.Name == "" {
-			t.Error("tool name should not be empty")
-		}
-		if tool.Cmd == "" {
-			t.Error("tool cmd should not be empty")
-		}
+	cfg2, _ := Load()
+	if cfg2.AI.Providers[DefaultAIProvider].BaseURL == "" {
+		t.Error("저장 후 base_url 유실")
 	}
 }
 

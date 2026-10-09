@@ -89,7 +89,7 @@ kosis d 101 DT_1DA7002S -c1 00 -i ALL -p M --periods "202401,202407,202501"
 kosis q "서울 미분양 최근 5년"
 kosis q "GDP 2020~2024"
 kosis q "인구 2015,2020,2025"
-kosis q "GDP 최근 5년" --ai claude
+kosis q "GDP 최근 5년" --ai
 ```
 
 ### 12.2.7 주요지표 조회

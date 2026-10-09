@@ -98,7 +98,7 @@ make build      # 5개 플랫폼 빌드 후 src/bin/ 과 apps/ 두 곳에 자동
 
 | 항목 | 경로 | 비고 |
 |------|------|------|
-| 설정 | `~/.kosis/config.yaml` | API 키, AI 도구, 기본 포맷, 캐시 TTL |
+| 설정 | `~/.kosis/config.yaml` | API 키, AI 공급자, 기본 포맷, 캐시 TTL |
 | 즐겨찾기 | `~/.kosis/bookmarks.yaml` | |
 | 이력 | `~/.kosis/history.yaml` | 최대 100개 |
 | 캐시 | `~/.kosis/cache/` | 메타/검색만, TTL 설정 가능 |
@@ -174,7 +174,7 @@ kosis s "미분양" -n 10
 | `list` | `ls` | `kosis ls --parent A_4` |
 | `explain <ORG> <TBL>` | `ex` | `kosis ex 101 DT_1IN1502` |
 | `bulk <userStatsId>` | | `kosis bulk "myid/..." -o data.xls` |
-| `quick <요청>` | `q` | `kosis q "GDP 최근 5년" --ai claude` |
+| `quick <요청>` | `q` | `kosis q "GDP 최근 5년" --ai` |
 | `chart` | | `kosis d ... -f json \| kosis chart --type line` |
 | `ind search <이름>` | `ind s` | `kosis ind s "GDP"` |
 | `ind info <ID>` | | `kosis ind info 404` |
@@ -349,10 +349,11 @@ kosis chart -i data.json --format excel -o chart.xlsx
 | `remove-key <INDEX>` | 인덱스 기준 제거 |
 | `key-list` | 등록 키 목록 (마스킹 표시) |
 | `show` | 전체 설정 YAML 출력 |
-| `set-ai <TOOL>` | 기본 AI 도구 설정 |
-| `ai-add <NAME> <CMD>` | 커스텀 AI 도구 추가 (`{prompt}` 포함 필수) |
-| `ai-remove <NAME>` | AI 도구 제거 |
-| `ai-list` | AI 도구 목록 (설치 여부 포함) |
+| `set-ai <PROVIDER>` | 기본 AI 공급자 설정 |
+| `ai-add <NAME> --url <BASE_URL> --model <MODEL> [--key <KEY> \| --key-env <ENV>]` | AI 공급자(OpenAI 호환 API) 추가·덮어쓰기 |
+| `ai-key <PROVIDER> <API_KEY>` | AI 공급자 API 키 저장 (환경변수가 우선) |
+| `ai-remove <NAME>` | AI 공급자 제거 (기본 공급자 제거 시 hermes로 복귀) |
+| `ai-list` | AI 공급자 목록 (주소·모델·키 출처 env:<변수>/config/없음) |
 | `cache-clear` | 캐시 디렉토리 전체 삭제 |
 | `cache-size` | 캐시 크기 확인 |
 | `cache-clean` | TTL 초과 항목만 정리 |
@@ -484,7 +485,7 @@ kosis d 101 DT_1FS1101 -c1 ALL -c2 C -i T04 -p Y -l 1
 | [05-quick-query.md](references/05-quick-query.md) | 자연어 조회, 내장 사전, AI 모드 |
 | [06-list-explain-bulk.md](references/06-list-explain-bulk.md) | 통계목록 탐색, 통계설명, 대용량 다운로드 |
 | [07-output-formats.md](references/07-output-formats.md) | 출력 형식 (table/JSON/CSV/Markdown/Excel/SQLite/Parquet) |
-| [08-utilities.md](references/08-utilities.md) | 편의 기능 (즐겨찾기, 이력, 캐시, AI 도구 설정) |
+| [08-utilities.md](references/08-utilities.md) | 편의 기능 (즐겨찾기, 이력, 캐시, AI 공급자 설정) |
 | [09-interactive-tui.md](references/09-interactive-tui.md) | 대화형 모드 및 TUI 대시보드 (키바인딩) |
 | [10-auto-split.md](references/10-auto-split.md) | 자동 분할 조회 (4만 셀 초과 시 분할/병렬 처리) |
 | [11-related-tables.md](references/11-related-tables.md) | 연관 통계표 찾기 |

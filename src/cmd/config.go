@@ -20,7 +20,7 @@ var configCmd = &cobra.Command{
 	Short: "설정 관리",
 	Long: `설정 관리
 
-API 키, AI 도구, 출력 형식 등의 설정을 관리합니다.
+API 키, AI 공급자, 출력 형식 등의 설정을 관리합니다.
 인자 없이 실행하면 현재 설정을 표시합니다.
 설정은 ~/.kosis/config.yaml에 저장됩니다.
 
@@ -34,10 +34,12 @@ API 키, AI 도구, 출력 형식 등의 설정을 관리합니다.
   key-list                 등록된 API 키 목록
   show                     현재 설정 표시
 
-  set-ai <도구>            기본 AI 도구 설정
-  ai-add <이름> <명령어>   커스텀 AI 도구 추가
-  ai-remove <이름>         AI 도구 제거
-  ai-list                  등록된 AI 도구 목록
+  set-ai <공급자>          기본 AI 공급자 설정 (quick --ai)
+  ai-add <이름> --url --model [--key|--key-env]
+                           AI 공급자(OpenAI 호환 API) 추가·수정
+  ai-key <공급자> <KEY>    AI 공급자 API 키 저장
+  ai-remove <이름>         AI 공급자 제거
+  ai-list                  등록된 AI 공급자 목록
 
   cache-clear              캐시 전체 삭제
   cache-size               캐시 크기 확인
@@ -53,9 +55,10 @@ API 키, AI 도구, 출력 형식 등의 설정을 관리합니다.
   # 현재 설정 확인
   kosis config show
 
-  # AI 도구 설정
-  kosis config set-ai claude
-  kosis config ai-add ollama "ollama run llama3 '{prompt}'"
+  # AI 공급자 설정 (기본: hermes)
+  kosis config ai-key hermes "<HERMES_API_KEY>"
+  kosis config ai-add openai --url https://api.openai.com/v1 --model gpt-4o-mini --key-env OPENAI_API_KEY
+  kosis config set-ai openai
 
   # 캐시 정리
   kosis config cache-clean
@@ -85,8 +88,8 @@ API 키, AI 도구, 출력 형식 등의 설정을 관리합니다.
 		}
 		fmt.Printf("기본 출력 형식: %s\n", cfg.DefaultFormat)
 		fmt.Printf("캐시 TTL: %d시간\n", cfg.CacheTTLHours)
-		fmt.Printf("기본 AI 도구: %s\n", cfg.AI.Default)
-		fmt.Printf("등록된 AI 도구: %d개\n", len(cfg.AI.Tools))
+		fmt.Printf("기본 AI 공급자: %s\n", cfg.AI.Default)
+		fmt.Printf("등록된 AI 공급자: %d개\n", len(cfg.AI.Providers))
 	},
 }
 
@@ -233,7 +236,7 @@ var showCmd = &cobra.Command{
 	Short: "전체 설정 표시",
 	Long: `현재 설정을 YAML 형식으로 표시합니다.
 
-표시 항목: API 키, 기본 출력 형식, 캐시 TTL, AI 도구 목록
+표시 항목: API 키, 기본 출력 형식, 캐시 TTL, AI 공급자 목록
 
 사용법:
   kosis config show
@@ -260,52 +263,60 @@ var showCmd = &cobra.Command{
 		fmt.Printf("cache_ttl_hours: %d\n", cfg.CacheTTLHours)
 		fmt.Printf("ai:\n")
 		fmt.Printf("  default: %s\n", cfg.AI.Default)
-		fmt.Printf("  tools:\n")
-		for name, tool := range cfg.AI.Tools {
+		fmt.Printf("  providers:\n")
+		for _, name := range sortedKeys(providerNames(cfg.AI.Providers)) {
+			p := cfg.AI.Providers[name]
 			fmt.Printf("    %s:\n", name)
-			fmt.Printf("      cmd: \"%s\"\n", tool.Cmd)
+			fmt.Printf("      base_url: %s\n", p.BaseURL)
+			fmt.Printf("      model: %s\n", p.Model)
+			if p.KeyEnv != "" {
+				fmt.Printf("      key_env: %s\n", p.KeyEnv)
+			}
+			if p.APIKey != "" {
+				fmt.Printf("      api_key: \"%s\"\n", config.MaskKey(p.APIKey))
+			}
 		}
 	},
 }
 
 var setAICmd = &cobra.Command{
-	Use:   "set-ai <TOOL_NAME>",
-	Short: "기본 AI 도구 설정",
-	Long: `kosis quick --ai에서 도구명을 생략했을 때 사용할 기본 AI 도구를 설정합니다.
+	Use:   "set-ai <PROVIDER>",
+	Short: "기본 AI 공급자 설정",
+	Long: `kosis quick --ai를 값 없이 썼을 때 사용할 기본 AI 공급자를 설정합니다.
 
 사용법:
-  kosis config set-ai <TOOL_NAME>
+  kosis config set-ai <PROVIDER>
 
 파라미터:
-  <TOOL_NAME>   내장 도구(claude, gemini, codex) 또는 ai-add로 등록한 커스텀 도구 이름
+  <PROVIDER>   내장 공급자(hermes) 또는 ai-add로 등록한 공급자 이름
 
 예시:
-  kosis config set-ai claude
-  kosis config set-ai gemini
-  kosis config set-ai ollama     # ai-add로 등록해 둔 커스텀 도구
+  kosis config set-ai hermes
+  kosis config set-ai openai     # ai-add로 등록해 둔 공급자
 
 관련 명령어:
-  kosis config ai-list      등록된 도구와 설치 여부 확인
-  kosis config ai-add ...   커스텀 도구 등록`,
+  kosis config ai-list      등록된 공급자 확인
+  kosis config ai-add ...   공급자 등록`,
 	Args: cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
-		toolName := args[0]
-		if err := config.SetAIDefault(toolName); err != nil {
+		name := args[0]
+		if err := config.SetAIDefault(name); err != nil {
 			fmt.Printf("오류: %v\n", err)
 			return
 		}
-		fmt.Printf("✓ 기본 AI 도구가 '%s'로 설정되었습니다.\n", toolName)
+		fmt.Printf("✓ 기본 AI 공급자가 '%s'로 설정되었습니다.\n", name)
 	},
 }
 
 var aiListCmd = &cobra.Command{
 	Use:   "ai-list",
-	Short: "AI 도구 목록",
-	Long: `등록된 AI 도구 목록과 각 도구의 실제 설치 여부를 표시합니다.
+	Short: "AI 공급자 목록",
+	Long: `등록된 AI 공급자(OpenAI 호환 API) 목록과 주소·모델·API 키 상태를 표시합니다.
 
-내장 도구(claude, gemini, codex)와 ai-add로 추가한 커스텀 도구를 모두 보여주며,
-PATH에서 실행 파일을 찾을 수 있으면 "설치됨"으로 표시합니다.
-기본 도구로 지정된 항목에는 표시가 붙습니다.
+키 상태는 실제로 사용할 키의 출처를 보여줍니다:
+  env:<변수>   환경변수에서 읽음
+  config       설정 파일(ai-key로 저장)에서 읽음
+  없음         키 없이 호출 (인증 없는 로컬 서버만 동작)
 
 사용법:
   kosis config ai-list
@@ -314,110 +325,152 @@ PATH에서 실행 파일을 찾을 수 있으면 "설치됨"으로 표시합니�
   kosis config ai-list
 
 관련 명령어:
-  kosis config set-ai <도구>   기본 도구 지정
-  kosis quick "..." --ai <도구> 해당 도구로 자연어 조회`,
+  kosis config set-ai <공급자>       기본 공급자 지정
+  kosis config ai-key <공급자> <KEY> API 키 저장
+  kosis quick "..." --ai [공급자]    AI로 자연어 조회`,
 	Run: func(cmd *cobra.Command, args []string) {
-		tools, err := config.ListAITools()
-		if err != nil {
-			fmt.Printf("오류: %v\n", err)
-			return
-		}
-
 		cfg, err := config.Load()
 		if err != nil {
 			fmt.Printf("오류: %v\n", err)
 			return
 		}
 
-		fmt.Println("=== 등록된 AI 도구 ===")
-		for _, tool := range tools {
-			status := "설치됨"
-			if !tool.Installed {
-				status = "미설치"
-			}
-
+		fmt.Println("=== 등록된 AI 공급자 ===")
+		for _, name := range sortedKeys(providerNames(cfg.AI.Providers)) {
+			p := cfg.AI.Providers[name]
 			marker := " "
-			if tool.Name == cfg.AI.Default {
+			if name == cfg.AI.Default {
 				marker = "*"
 			}
-
-			fmt.Printf("%s %s [%s]\n", marker, tool.Name, status)
-			fmt.Printf("  명령어: %s\n", tool.Cmd)
+			fmt.Printf("%s %s\n", marker, name)
+			fmt.Printf("  주소: %s\n", p.BaseURL)
+			fmt.Printf("  모델: %s\n", p.Model)
+			fmt.Printf("  키:   %s\n", keySource(p))
 		}
-		fmt.Printf("\n* = 현재 기본 AI 도구\n")
+		fmt.Printf("\n* = 현재 기본 AI 공급자\n")
 	},
 }
 
-var aiAddCmd = &cobra.Command{
-	Use:   "ai-add <NAME> <COMMAND>",
-	Short: "커스텀 AI 도구 추가",
-	Long: `임의의 CLI 실행 명령을 AI 도구로 등록합니다.
+// keySource 실제로 쓰일 키의 출처와 마스킹된 값.
+func keySource(p config.AIProvider) string {
+	if p.KeyEnv != "" && os.Getenv(p.KeyEnv) != "" {
+		return fmt.Sprintf("env:%s (%s)", p.KeyEnv, config.MaskKey(os.Getenv(p.KeyEnv)))
+	}
+	if p.APIKey != "" {
+		return fmt.Sprintf("config (%s)", config.MaskKey(p.APIKey))
+	}
+	if p.KeyEnv != "" {
+		return fmt.Sprintf("없음 — 환경변수 %s 또는 ai-key로 설정", p.KeyEnv)
+	}
+	return "없음"
+}
 
-kosis quick --ai <이름> 실행 시, 등록한 명령의 '{prompt}' 자리에
-자연어 요청이 치환되어 셸에서 실행됩니다.
-도구는 kosis data 명령어 문자열을 출력하도록 동작해야 합니다.
+func providerNames(m map[string]config.AIProvider) map[string]string {
+	out := make(map[string]string, len(m))
+	for k := range m {
+		out[k] = k
+	}
+	return out
+}
+
+var aiAddCmd = &cobra.Command{
+	Use:   "ai-add <NAME> --url <BASE_URL> --model <MODEL>",
+	Short: "AI 공급자 추가·수정",
+	Long: `OpenAI 호환 Chat Completions API를 AI 공급자로 등록합니다.
+같은 이름이 있으면 덮어씁니다 (내장 hermes의 주소 변경에도 사용).
+
+kosis quick --ai <이름> 실행 시 {BASE_URL}/chat/completions로
+POST 요청을 보내 kosis data 명령어를 생성합니다.
 
 사용법:
-  kosis config ai-add <NAME> <COMMAND>
+  kosis config ai-add <NAME> --url <BASE_URL> --model <MODEL> [--key <KEY> | --key-env <ENV>]
 
 파라미터:
-  <NAME>      quick --ai에서 사용할 도구 이름 (예: ollama)
-  <COMMAND>   실행할 셸 명령. 반드시 '{prompt}' 플레이스홀더를 포함해야 합니다.
+  <NAME>      quick --ai에서 사용할 공급자 이름 (예: openai)
+
+플래그:
+  --url <BASE_URL>    API 기본 주소, /v1까지 포함 (예: https://api.openai.com/v1)
+  --model <MODEL>     모델명 (예: gpt-4o-mini, hermes-agent)
+  --key <KEY>         API 키를 설정 파일에 저장
+  --key-env <ENV>     API 키를 읽을 환경변수 이름 (설정 파일 키보다 우선)
 
 예시:
-  kosis config ai-add ollama "ollama run llama3 '{prompt}'"
-  kosis config ai-add local "python ai.py '{prompt}'"
-
-주의:
-  - '{prompt}'가 없으면 등록이 거부됩니다
-  - 프롬프트에 공백이 들어가므로 {prompt}를 따옴표로 감싸세요
+  kosis config ai-add openai --url https://api.openai.com/v1 --model gpt-4o-mini --key-env OPENAI_API_KEY
+  kosis config ai-add ollama --url http://localhost:11434/v1 --model llama3
+  kosis config ai-add hermes --url http://oc:8642/v1 --model hermes-agent --key-env HERMES_API_KEY
 
 다음 단계:
-  kosis config ai-list          등록 확인
-  kosis quick "..." --ai ollama 사용`,
-	Args: cobra.ExactArgs(2),
+  kosis config ai-list           등록 확인
+  kosis quick "..." --ai openai  사용`,
+	Args: cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
-		name := args[0]
-		command := args[1]
+		baseURL, _ := cmd.Flags().GetString("url")
+		model, _ := cmd.Flags().GetString("model")
+		key, _ := cmd.Flags().GetString("key")
+		keyEnv, _ := cmd.Flags().GetString("key-env")
 
-		if !strings.Contains(command, "{prompt}") {
-			fmt.Println("오류: 명령어는 '{prompt}'를 포함해야 합니다.")
-			return
-		}
-
-		if err := config.AddAITool(name, command); err != nil {
+		p := config.AIProvider{BaseURL: baseURL, Model: model, APIKey: key, KeyEnv: keyEnv}
+		if err := config.AddAIProvider(args[0], p); err != nil {
 			fmt.Printf("오류: %v\n", err)
 			return
 		}
-		fmt.Printf("✓ AI 도구 '%s'이(가) 추가되었습니다.\n", name)
+		fmt.Printf("✓ AI 공급자 '%s'이(가) 등록되었습니다.\n", args[0])
+	},
+}
+
+var aiKeyCmd = &cobra.Command{
+	Use:   "ai-key <PROVIDER> <API_KEY>",
+	Short: "AI 공급자 API 키 저장",
+	Long: `AI 공급자의 API 키를 ~/.kosis/config.yaml에 저장합니다.
+공급자에 key_env 환경변수가 지정돼 있고 그 값이 있으면 환경변수가 우선합니다.
+
+사용법:
+  kosis config ai-key <PROVIDER> <API_KEY>
+
+파라미터:
+  <PROVIDER>   ai-list에 표시된 공급자 이름 (예: hermes)
+  <API_KEY>    API 키. hermes는 Hermes 서버의 API_SERVER_KEY 값
+
+예시:
+  kosis config ai-key hermes "<API_SERVER_KEY>"
+
+다음 단계:
+  kosis config ai-list           키 상태 확인`,
+	Args: cobra.ExactArgs(2),
+	Run: func(cmd *cobra.Command, args []string) {
+		if err := config.SetAIProviderKey(args[0], args[1]); err != nil {
+			fmt.Printf("오류: %v\n", err)
+			return
+		}
+		fmt.Printf("✓ '%s' API 키가 저장되었습니다.\n", args[0])
 	},
 }
 
 var aiRemoveCmd = &cobra.Command{
 	Use:   "ai-remove <NAME>",
-	Short: "AI 도구 제거",
-	Long: `ai-add로 등록한 AI 도구를 제거합니다.
+	Short: "AI 공급자 제거",
+	Long: `ai-add로 등록한 AI 공급자를 제거합니다. 내장 공급자(hermes)는 제거할 수 없습니다.
 
 사용법:
   kosis config ai-remove <NAME>
 
 파라미터:
-  <NAME>   제거할 도구 이름. ai-list 출력에서 확인합니다.
+  <NAME>   제거할 공급자 이름. ai-list 출력에서 확인합니다.
 
 예시:
-  kosis config ai-list     # 먼저 도구명 확인
-  kosis config ai-remove ollama
+  kosis config ai-list     # 먼저 이름 확인
+  kosis config ai-remove openai
 
 주의:
-  제거한 도구가 기본 도구였다면 kosis config set-ai로 다시 지정하세요.`,
+  기본 공급자를 제거하면 기본값이 hermes로 돌아갑니다.`,
 	Args: cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		name := args[0]
-		if err := config.RemoveAITool(name); err != nil {
+		if err := config.RemoveAIProvider(name); err != nil {
 			fmt.Printf("오류: %v\n", err)
 			return
 		}
-		fmt.Printf("✓ AI 도구 '%s'이(가) 제거되었습니다.\n", name)
+		fmt.Printf("✓ AI 공급자 '%s'이(가) 제거되었습니다.\n", name)
 	},
 }
 
@@ -656,7 +709,16 @@ func init() {
 	configCmd.AddCommand(setAICmd)
 	configCmd.AddCommand(aiListCmd)
 	configCmd.AddCommand(aiAddCmd)
+	configCmd.AddCommand(aiKeyCmd)
 	configCmd.AddCommand(aiRemoveCmd)
+
+	aiAddCmd.Flags().String("url", "", "API 기본 주소, /v1까지 포함 (예: https://api.openai.com/v1)")
+	aiAddCmd.Flags().String("model", "", "모델명 (예: gpt-4o-mini, hermes-agent)")
+	aiAddCmd.Flags().String("key", "", "API 키 (설정 파일에 저장)")
+	aiAddCmd.Flags().String("key-env", "", "API 키를 읽을 환경변수 이름 (설정 파일 키보다 우선)")
+	_ = aiAddCmd.MarkFlagRequired("url")
+	_ = aiAddCmd.MarkFlagRequired("model")
+	aiAddCmd.MarkFlagsMutuallyExclusive("key", "key-env")
 	configCmd.AddCommand(cacheClearCmd)
 	configCmd.AddCommand(cacheSizeCmd)
 	configCmd.AddCommand(cacheCleanCmd)

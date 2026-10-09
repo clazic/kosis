@@ -6,9 +6,10 @@ package config
 import (
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/spf13/viper"
 )
@@ -19,29 +20,51 @@ var configDirOverride string
 
 // Config는 KOSIS CLI의 전체 설정을 나타냅니다.
 type Config struct {
-	APIKeys       []string  `mapstructure:"api_keys"`
-	DefaultFormat string    `mapstructure:"default_format"`
-	CacheTTLHours int       `mapstructure:"cache_ttl_hours"`
-	AI            AIConfig  `mapstructure:"ai"`
-	UpdateCheck   bool      `mapstructure:"update_check"`
+	APIKeys       []string `mapstructure:"api_keys"`
+	DefaultFormat string   `mapstructure:"default_format"`
+	CacheTTLHours int      `mapstructure:"cache_ttl_hours"`
+	AI            AIConfig `mapstructure:"ai"`
+	UpdateCheck   bool     `mapstructure:"update_check"`
 }
 
-// AIConfig는 AI 도구 설정을 나타냅니다.
+// AIConfig는 quick --ai가 호출할 AI API 공급자 설정입니다.
 type AIConfig struct {
-	Default string             `mapstructure:"default"`
-	Tools   map[string]AITool  `mapstructure:"tools"`
+	Default   string                `mapstructure:"default" yaml:"default"`
+	Providers map[string]AIProvider `mapstructure:"providers" yaml:"providers"`
 }
 
-// AITool은 개별 AI 도구의 설정을 나타냅니다.
-type AITool struct {
-	Cmd string `mapstructure:"cmd"`
+// AIProvider는 OpenAI 호환 Chat Completions API 하나를 나타냅니다.
+// 키는 KeyEnv 환경변수 > APIKey(설정 파일) 순으로 찾습니다.
+type AIProvider struct {
+	BaseURL string `mapstructure:"base_url" yaml:"base_url"` // 예: http://host:8642/v1
+	Model   string `mapstructure:"model" yaml:"model"`
+	APIKey  string `mapstructure:"api_key" yaml:"api_key,omitempty"`
+	KeyEnv  string `mapstructure:"key_env" yaml:"key_env,omitempty"`
 }
 
-// AIToolInfo는 AI 도구의 정보를 나타냅니다 (설치 여부 포함).
-type AIToolInfo struct {
-	Name      string
-	Cmd       string
-	Installed bool
+// ResolveKey는 사용할 API 키를 반환합니다. 없으면 빈 문자열(인증 없는 로컬 서버용).
+func (p AIProvider) ResolveKey() string {
+	if p.KeyEnv != "" {
+		if v := os.Getenv(p.KeyEnv); v != "" {
+			return v
+		}
+	}
+	return p.APIKey
+}
+
+// DefaultAIProvider 기본 공급자 이름. o(oc) 머신의 Hermes Agent API 서버를 Tailscale로 호출한다.
+const DefaultAIProvider = "hermes"
+
+// builtinProviders 설정 파일에 없으면 자동으로 채워지는 공급자.
+// ponytail: 개인 Tailscale 주소가 기본값이다. 다른 환경에선 ai-add로 덮어쓰거나 set-ai로 바꿀 것.
+func builtinProviders() map[string]AIProvider {
+	return map[string]AIProvider{
+		DefaultAIProvider: {
+			BaseURL: "http://100.70.244.98:8642/v1",
+			Model:   "hermes-agent",
+			KeyEnv:  "HERMES_API_KEY",
+		},
+	}
 }
 
 // DefaultConfig는 기본 설정을 반환합니다.
@@ -52,18 +75,8 @@ func DefaultConfig() *Config {
 		CacheTTLHours: 24,
 		UpdateCheck:   true,
 		AI: AIConfig{
-			Default: "claude",
-			Tools: map[string]AITool{
-				"claude": {
-					Cmd: "claude -p '{prompt}'",
-				},
-				"gemini": {
-					Cmd: "gemini -p '{prompt}'",
-				},
-				"codex": {
-					Cmd: "codex -p '{prompt}'",
-				},
-			},
+			Default:   DefaultAIProvider,
+			Providers: builtinProviders(),
 		},
 	}
 }
@@ -126,12 +139,30 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("설정 파싱 실패: %w", err)
 	}
 
+	normalizeAI(&cfg.AI)
+
 	// 환경변수 KOSIS_API_KEY가 있으면 최우선으로 설정
 	if envKey := os.Getenv("KOSIS_API_KEY"); envKey != "" {
 		cfg.APIKeys = []string{envKey}
 	}
 
 	return cfg, nil
+}
+
+// normalizeAI 내장 공급자를 채우고, 기본값이 등록되지 않은 이름이면 내장 기본값으로 되돌린다.
+// 예전 CLI 방식 설정(ai.tools, default: claude 등)은 여기서 자연스럽게 hermes로 이관된다.
+func normalizeAI(ai *AIConfig) {
+	if ai.Providers == nil {
+		ai.Providers = map[string]AIProvider{}
+	}
+	for name, p := range builtinProviders() {
+		if _, ok := ai.Providers[name]; !ok {
+			ai.Providers[name] = p
+		}
+	}
+	if _, ok := ai.Providers[ai.Default]; !ok {
+		ai.Default = DefaultAIProvider
+	}
 }
 
 // Save는 설정을 파일에 저장합니다.
@@ -228,20 +259,26 @@ func SetDefaultKey(key string) error {
 	return Save(cfg)
 }
 
-// GetAIConfig는 AI 도구 설정을 반환합니다.
-func GetAIConfig() (AIConfig, error) {
+// GetAIProvider는 이름으로 공급자를 찾습니다. name이 비면 기본 공급자를 씁니다.
+func GetAIProvider(name string) (string, AIProvider, error) {
 	cfg, err := Load()
 	if err != nil {
-		return AIConfig{}, err
+		return "", AIProvider{}, err
 	}
-
-	return cfg.AI, nil
+	if name == "" {
+		name = cfg.AI.Default
+	}
+	p, ok := cfg.AI.Providers[name]
+	if !ok {
+		return name, AIProvider{}, fmt.Errorf("등록되지 않은 AI 공급자: %s", name)
+	}
+	return name, p, nil
 }
 
-// SetAIDefault는 기본 AI 도구를 설정합니다.
+// SetAIDefault는 기본 AI 공급자를 설정합니다.
 func SetAIDefault(name string) error {
 	if name == "" {
-		return errors.New("AI 도구명은 비워둘 수 없습니다")
+		return errors.New("AI 공급자명은 비워둘 수 없습니다")
 	}
 
 	cfg, err := Load()
@@ -249,22 +286,57 @@ func SetAIDefault(name string) error {
 		return err
 	}
 
-	// 설정된 도구인지 확인
-	if _, exists := cfg.AI.Tools[name]; !exists {
-		return fmt.Errorf("등록되지 않은 AI 도구: %s", name)
+	if _, exists := cfg.AI.Providers[name]; !exists {
+		return fmt.Errorf("등록되지 않은 AI 공급자: %s", name)
 	}
 
 	cfg.AI.Default = name
 	return Save(cfg)
 }
 
-// AddAITool은 커스텀 AI 도구를 추가합니다.
-func AddAITool(name, cmd string) error {
+// AddAIProvider는 AI 공급자를 추가하거나 같은 이름을 덮어씁니다.
+func AddAIProvider(name string, p AIProvider) error {
 	if name == "" {
-		return errors.New("AI 도구명은 비워둘 수 없습니다")
+		return errors.New("AI 공급자명은 비워둘 수 없습니다")
 	}
-	if cmd == "" {
-		return errors.New("명령어는 비워둘 수 없습니다")
+	u, err := url.Parse(p.BaseURL)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return fmt.Errorf("base URL은 http(s)://호스트[:포트]/v1 형식이어야 합니다: %q", p.BaseURL)
+	}
+	if p.Model == "" {
+		return errors.New("모델명은 비워둘 수 없습니다")
+	}
+
+	cfg, err := Load()
+	if err != nil {
+		return err
+	}
+	cfg.AI.Providers[name] = p
+	return Save(cfg)
+}
+
+// SetAIProviderKey는 공급자의 API 키를 설정 파일에 저장합니다.
+func SetAIProviderKey(name, key string) error {
+	if key == "" {
+		return errors.New("API 키는 비워둘 수 없습니다")
+	}
+	cfg, err := Load()
+	if err != nil {
+		return err
+	}
+	p, ok := cfg.AI.Providers[name]
+	if !ok {
+		return fmt.Errorf("등록되지 않은 AI 공급자: %s", name)
+	}
+	p.APIKey = key
+	cfg.AI.Providers[name] = p
+	return Save(cfg)
+}
+
+// RemoveAIProvider는 AI 공급자를 제거합니다. 내장 공급자는 제거할 수 없습니다.
+func RemoveAIProvider(name string) error {
+	if _, builtin := builtinProviders()[name]; builtin {
+		return fmt.Errorf("내장 공급자 '%s'는 제거할 수 없습니다 (ai-add로 주소를 덮어쓸 수 있음)", name)
 	}
 
 	cfg, err := Load()
@@ -272,77 +344,21 @@ func AddAITool(name, cmd string) error {
 		return err
 	}
 
-	// 이미 존재하는 도구인지 확인
-	if _, exists := cfg.AI.Tools[name]; exists {
-		return fmt.Errorf("이미 등록된 AI 도구: %s", name)
+	if _, exists := cfg.AI.Providers[name]; !exists {
+		return fmt.Errorf("등록되지 않은 AI 공급자: %s", name)
 	}
 
-	if cfg.AI.Tools == nil {
-		cfg.AI.Tools = make(map[string]AITool)
-	}
-
-	cfg.AI.Tools[name] = AITool{Cmd: cmd}
+	delete(cfg.AI.Providers, name)
+	normalizeAI(&cfg.AI) // 기본 공급자를 지웠다면 내장 기본값으로 복귀
 	return Save(cfg)
 }
 
-// RemoveAITool은 AI 도구를 제거합니다.
-func RemoveAITool(name string) error {
-	if name == "" {
-		return errors.New("AI 도구명은 비워둘 수 없습니다")
+// MaskKey 키의 앞뒤 4자만 보여준다.
+func MaskKey(key string) string {
+	if len(key) <= 10 {
+		return strings.Repeat("*", len(key))
 	}
-
-	cfg, err := Load()
-	if err != nil {
-		return err
-	}
-
-	if _, exists := cfg.AI.Tools[name]; !exists {
-		return fmt.Errorf("등록되지 않은 AI 도구: %s", name)
-	}
-
-	delete(cfg.AI.Tools, name)
-
-	// 기본 도구가 제거된 경우 처리
-	if cfg.AI.Default == name {
-		// 남은 도구 중 첫 번째를 기본으로 설정
-		for toolName := range cfg.AI.Tools {
-			cfg.AI.Default = toolName
-			break
-		}
-		// 도구가 없으면 기본값 설정
-		if cfg.AI.Default == name {
-			cfg.AI.Default = ""
-		}
-	}
-
-	return Save(cfg)
-}
-
-// ListAITools는 모든 AI 도구의 목록을 반환합니다 (설치 여부 포함).
-func ListAITools() ([]AIToolInfo, error) {
-	cfg, err := Load()
-	if err != nil {
-		return nil, err
-	}
-
-	var tools []AIToolInfo
-	for name, tool := range cfg.AI.Tools {
-		info := AIToolInfo{
-			Name:      name,
-			Cmd:       tool.Cmd,
-			Installed: isCommandAvailable(name),
-		}
-		tools = append(tools, info)
-	}
-
-	return tools, nil
-}
-
-// isCommandAvailable은 커맨드가 시스템에 설치되어 있는지 확인합니다.
-// exec.LookPath를 사용하여 크로스플랫폼 호환성을 제공합니다.
-func isCommandAvailable(name string) bool {
-	_, err := exec.LookPath(name)
-	return err == nil
+	return key[:4] + "..." + key[len(key)-4:]
 }
 
 // NoAPIKeyMessage는 API 키가 없을 때 표시할 안내 메시지를 반환합니다.

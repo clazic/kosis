@@ -36,7 +36,7 @@ var quickCmd = &cobra.Command{
 내부적으로 검색 -> 메타 확인 -> 데이터 조회를 자동 수행합니다.
 
 기본: 규칙 기반 키워드 매칭 (오프라인 동작)
---ai 플래그 사용 시: 외부 AI CLI 도구로 명령어 생성
+--ai 플래그 사용 시: AI API(OpenAI 호환)로 명령어 생성 — 기본 공급자 hermes
 
 사용법:
   kosis quick "<자연어 요청>" [flags]
@@ -44,7 +44,7 @@ var quickCmd = &cobra.Command{
   kosis q                              대화형 모드
 
 플래그:
-  --ai <도구명>            AI 도구 사용 (claude, gemini, codex 또는 커스텀)
+  -a, --ai[=<공급자>]      AI API로 명령 생성. 값 생략 시 기본 공급자(hermes)
   -f, --format <type>      출력 형식: table(기본), json, csv, md
   -o, --output <파일>      파일 저장
   -y, --yes                확인 프롬프트 없이 바로 실행 (스크립트·AI 에이전트용)
@@ -56,9 +56,9 @@ var quickCmd = &cobra.Command{
   kosis q "소비자물가 월별"
   kosis q "전국 인구 최근 5년"
 
-  # AI 사용
-  kosis q "서울과 부산의 미분양 추이 비교" --ai claude
-  kosis q "실업률 추세" --ai ollama
+  # AI 사용 (기본 공급자 hermes)
+  kosis q "서울과 부산의 미분양 추이 비교" --ai
+  kosis q "실업률 추세" --ai openai        # ai-add로 등록한 공급자
 
   # 확인 없이 바로 실행
   kosis q "서울 미분양 최근 6개월" --yes
@@ -75,34 +75,41 @@ var quickCmd = &cobra.Command{
   통계:    미분양, GDP, 물가, 인구, 실업률 등 주요 키워드
 
 AI 모드 설명:
-  --ai 플래그를 사용하면 외부 AI CLI 도구가 자연어를 분석하여
-  kosis data 명령어를 자동 생성합니다. 생성된 명령어는 실행 전
-  확인 프롬프트를 표시합니다.
+  --ai 플래그를 사용하면 등록된 AI API(OpenAI 호환 /v1/chat/completions)에
+  요청을 보내 kosis data 명령어를 생성합니다. 생성된 명령어는 실행 전
+  확인 프롬프트를 표시합니다 (--yes로 생략).
+  기본 공급자 hermes는 Hermes Agent API 서버를 호출하며,
+  API 키는 환경변수 HERMES_API_KEY 또는 kosis config ai-key hermes <KEY>로 지정합니다.
 
-AI 도구 관리:
-  kosis config ai-list                   등록된 도구 목록
-  kosis config set-ai claude             기본 AI 도구 설정
-  kosis config ai-add ollama "ollama run llama3 '{prompt}'"
-  kosis config ai-remove <도구명>
+AI 공급자 관리:
+  kosis config ai-list                          등록된 공급자 목록
+  kosis config ai-key hermes <KEY>              API 키 저장
+  kosis config ai-add openai --url https://api.openai.com/v1 --model gpt-4o-mini --key-env OPENAI_API_KEY
+  kosis config set-ai <공급자>                  기본 공급자 설정
+  kosis config ai-remove <공급자>
 
 관련 명령어:
-  kosis config set-ai <도구>       기본 AI 도구 설정
+  kosis config set-ai <공급자>     기본 AI 공급자 설정
   kosis data ...                   세밀한 파라미터 지정 조회`,
 
 	Example: `  # 규칙 기반 조회
   kosis quick "서울 미분양 최근 6개월"
 
-  # Claude AI 사용
-  kosis quick "GDP 최근 5년 추이" --ai claude
+  # AI 사용 (기본 공급자 hermes)
+  kosis quick "GDP 최근 5년 추이" --ai
 
-  # 커스텀 AI 도구 사용
-  kosis quick "인구 통계" --ai ollama
+  # 등록한 다른 공급자 사용
+  kosis quick "인구 통계" --ai openai
 
   # 대화형 모드
   kosis quick`,
 
 	Run: func(cmd *cobra.Command, args []string) {
 		aiFlag, _ := cmd.Flags().GetString("ai")
+		useAI := cmd.Flags().Changed("ai")
+		if aiFlag == aiDefaultSentinel {
+			aiFlag = "" // 기본 공급자
+		}
 		formatFlag, _ := cmd.Flags().GetString("format")
 		outputFlag, _ := cmd.Flags().GetString("output")
 
@@ -125,7 +132,7 @@ AI 도구 관리:
 		}
 
 		// AI 도구를 사용하는 경우
-		if aiFlag != "" {
+		if useAI {
 			handleAIGeneration(aiFlag, userInput, formatFlag, outputFlag)
 			return
 		}
@@ -138,7 +145,8 @@ AI 도구 관리:
 func init() {
 	rootCmd.AddCommand(quickCmd)
 
-	quickCmd.Flags().StringP("ai", "a", "", "자연어 해석에 쓸 외부 AI CLI 도구 (claude, gemini, codex, ollama 등). 미지정 시 오프라인 규칙 기반 매칭. 목록은 kosis config ai-list")
+	quickCmd.Flags().StringP("ai", "a", "", "AI API로 명령 생성. 값 생략(--ai) 시 기본 공급자(hermes), --ai <이름>으로 공급자 지정. 미사용 시 오프라인 규칙 기반 매칭. 목록은 kosis config ai-list")
+	quickCmd.Flags().Lookup("ai").NoOptDefVal = aiDefaultSentinel
 	quickCmd.Flags().StringP("format", "f", "", "출력 형식: table, json, csv, md. 미지정 시 config의 기본 형식 사용")
 	quickCmd.Flags().StringP("output", "o", "", "파일로 저장. 확장자로 형식 자동 결정: .csv .xlsx .json .db .parquet")
 	quickCmd.Flags().BoolVarP(&quickAssumeYes, "yes", "y", false, "확인 프롬프트 없이 바로 실행 (스크립트·AI 에이전트처럼 입력을 받을 수 없는 환경용)")
@@ -147,45 +155,62 @@ func init() {
 // quickAssumeYes는 --yes 플래그 값. 비대화형 환경에선 프롬프트가 EOF로 끝나 조회가 취소되므로 건너뛸 수단이 필요하다.
 var quickAssumeYes bool
 
-// handleAIGeneration은 AI 도구를 사용하여 명령어를 생성하고 실행합니다.
-func handleAIGeneration(aiToolName, userRequest, formatFlag, outputFlag string) {
-	cfg, err := config.Load()
-	if err != nil {
-		printQuickFailure("AI 경로", fmt.Sprintf("설정 로드 실패: %v", err), []string{
-			"kosis config show 로 설정 파일 상태 확인",
-			"환경변수 KOSIS_API_KEY 또는 ~/.kosis/config.yaml 점검",
-		})
-		return
-	}
+// aiDefaultSentinel 값 없이 --ai만 줬을 때의 플래그 값 (= 기본 공급자 사용).
+const aiDefaultSentinel = "default"
 
-	// 지정된 AI 도구의 명령어 가져오기
-	aiTool, exists := cfg.AI.Tools[aiToolName]
-	if !exists {
-		printQuickFailure("AI 경로", fmt.Sprintf("AI 도구 '%s'가 설정되지 않았습니다.", aiToolName), []string{
-			"kosis config ai-list",
-			"kosis config ai-add <이름> \"<명령어 '{prompt}' 포함>\"",
-		})
-		fmt.Println("등록된 도구 목록:")
-		tools, _ := config.ListAITools()
-		for _, t := range tools {
-			installed := "미설치"
-			if t.Installed {
-				installed = "설치됨"
+// normalizeQuickAIFlag `quick ... --ai hermes`처럼 공백으로 준 공급자명을 `--ai=hermes`로 합친다.
+// --ai는 값 생략이 가능한 플래그라 pflag가 다음 인자를 값으로 먹지 않기 때문이다.
+// 등록된 공급자명일 때만 합치므로 `--ai "요청문"` 같은 입력을 잘못 삼키지 않는다.
+func normalizeQuickAIFlag(args []string) []string {
+	if len(args) == 0 || (args[0] != "quick" && args[0] != "q") {
+		return args
+	}
+	var providers map[string]config.AIProvider
+	out := make([]string, 0, len(args))
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		if (a == "--ai" || a == "-a") && i+1 < len(args) {
+			if providers == nil {
+				if cfg, err := config.Load(); err == nil {
+					providers = cfg.AI.Providers
+				} else {
+					providers = map[string]config.AIProvider{}
+				}
 			}
-			fmt.Printf("  - %s (%s)\n", t.Name, installed)
+			if _, ok := providers[args[i+1]]; ok {
+				out = append(out, "--ai="+args[i+1])
+				i++
+				continue
+			}
 		}
+		out = append(out, a)
+	}
+	return out
+}
+
+// handleAIGeneration은 AI API로 명령어를 생성하고 실행합니다. providerName이 비면 기본 공급자.
+func handleAIGeneration(providerName, userRequest, formatFlag, outputFlag string) {
+	name, provider, err := config.GetAIProvider(providerName)
+	if err != nil {
+		printQuickFailure("AI 경로", err.Error(), []string{
+			"kosis config ai-list 로 등록된 공급자 확인",
+			"kosis config ai-add <이름> --url <BASE_URL> --model <MODEL> [--key-env <ENV>]",
+		})
 		return
 	}
 
 	// AI 명령어 생성
-	fmt.Printf("🤖 %s로 명령어 생성 중...\n", aiToolName)
-	result, err := nlp.GenerateCommand(aiToolName, aiTool.Cmd, userRequest, nlp.GetSKILLContent())
+	fmt.Printf("🤖 %s(%s)로 명령어 생성 중...\n", name, provider.Model)
+	result, err := nlp.GenerateCommand(name, provider.BaseURL, provider.Model, provider.ResolveKey(), userRequest, nlp.GetSKILLContent())
 	if err != nil {
-		printQuickFailure("AI 경로", fmt.Sprintf("명령어 생성 실패: %v", err), []string{
-			"kosis config ai-list 로 도구 설치 상태 확인",
-			"kosis config ai-add ... 명령 템플릿에 '{prompt}' 포함 여부 확인",
+		actions := []string{
+			"kosis config ai-list 로 주소·모델·키 상태 확인",
 			"동일 요청을 규칙 기반으로 재시도: kosis quick \"<요청>\"",
-		})
+		}
+		if provider.ResolveKey() == "" {
+			actions = append([]string{fmt.Sprintf("API 키 미설정: kosis config ai-key %s <KEY>%s", name, keyEnvHint(provider))}, actions...)
+		}
+		printQuickFailure("AI 경로", fmt.Sprintf("명령어 생성 실패: %v", err), actions)
 		return
 	}
 
@@ -216,6 +241,13 @@ func handleAIGeneration(aiToolName, userRequest, formatFlag, outputFlag string) 
 	}
 
 	fmt.Println("✅ quick 판정: 성공")
+}
+
+func keyEnvHint(p config.AIProvider) string {
+	if p.KeyEnv == "" {
+		return ""
+	}
+	return " 또는 환경변수 " + p.KeyEnv
 }
 
 // handleRuleBasedMatching은 규칙 기반으로 명령어를 매칭하고 실행합니다.

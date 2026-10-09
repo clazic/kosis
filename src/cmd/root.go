@@ -132,7 +132,7 @@ var rootCmd = &cobra.Command{
 
 func Execute() {
 	rootCmd.Version = appVersion
-	rootCmd.SetArgs(normalizeClassShortFlags(os.Args[1:]))
+	rootCmd.SetArgs(normalizeQuickAIFlag(normalizeClassShortFlags(os.Args[1:])))
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
 	}

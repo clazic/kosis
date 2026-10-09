@@ -85,7 +85,7 @@ kosis config add-key <API_KEY_3>
 
 | 항목 | 경로 | 설명 |
 |------|------|------|
-| 설정 파일 | `~/.kosis/config.yaml` | API 키, AI 도구, 기본 포맷 |
+| 설정 파일 | `~/.kosis/config.yaml` | API 키, AI 공급자, 기본 포맷 |
 | 즐겨찾기 | `~/.kosis/bookmarks.yaml` | 저장한 통계표 목록 |
 | 조회 이력 | `~/.kosis/history.yaml` | 최근 100개 조회 기록 |
 | 캐시 | `~/.kosis/cache/` | 메타/검색 캐시 (TTL: 24시간) |

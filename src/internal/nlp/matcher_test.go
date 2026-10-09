@@ -1,7 +1,10 @@
 package nlp
 
 import (
+	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -236,5 +239,42 @@ func TestGetSKILLContentReflectsShortcuts(t *testing.T) {
 		if strings.Contains(content, forbidden) {
 			t.Errorf("AI 프롬프트에 폐기된 값 %q가 남아 있습니다", forbidden)
 		}
+	}
+}
+
+func TestGenerateCommandOpenAICompatible(t *testing.T) {
+	var gotAuth, gotModel string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/chat/completions" {
+			http.NotFound(w, r)
+			return
+		}
+		gotAuth = r.Header.Get("Authorization")
+		var req struct {
+			Model string `json:"model"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		gotModel = req.Model
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"` + "```" + `\nkosis d 301 DT_200Y001 --period Y\n` + "```" + `"}}]}`))
+	}))
+	defer srv.Close()
+
+	res, err := GenerateCommand("t", srv.URL+"/v1/", "m1", "k1", "GDP", "")
+	if err != nil {
+		t.Fatalf("GenerateCommand: %v", err)
+	}
+	if res.Command != "kosis d 301 DT_200Y001 --period Y" {
+		t.Errorf("command = %q", res.Command)
+	}
+	if gotAuth != "Bearer k1" || gotModel != "m1" {
+		t.Errorf("auth=%q model=%q", gotAuth, gotModel)
+	}
+
+	srv401 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, `{"error":"bad key"}`, http.StatusUnauthorized)
+	}))
+	defer srv401.Close()
+	if _, err := GenerateCommand("t", srv401.URL+"/v1", "m1", "", "GDP", ""); err == nil || !strings.Contains(err.Error(), "인증 실패") {
+		t.Errorf("401은 인증 실패 오류여야 함: %v", err)
 	}
 }

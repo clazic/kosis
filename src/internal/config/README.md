@@ -19,15 +19,19 @@ api_keys:
 default_format: table
 cache_ttl_hours: 24
 ai:
-  default: claude
-  tools:
-    claude:
-      cmd: "claude -p '{prompt}'"
-    gemini:
-      cmd: "gemini -p '{prompt}'"
-    codex:
-      cmd: "codex -p '{prompt}'"
+  default: hermes
+  providers:
+    hermes:
+      base_url: http://100.70.244.98:8642/v1
+      model: hermes-agent
+      key_env: HERMES_API_KEY
+    openai:
+      base_url: https://api.openai.com/v1
+      model: gpt-4o-mini
+      key_env: OPENAI_API_KEY
 ```
+
+예전 `ai.tools`/`cmd` 설정은 로드 시 hermes 기본값으로 자동 이관됩니다.
 
 ## API 키 설정
 
@@ -54,20 +58,25 @@ kosis config key-list
 kosis config remove-key 1
 ```
 
-## AI 도구 관리
+## AI 공급자 관리
+
+`quick --ai`는 OpenAI 호환 Chat Completions API(`POST {base_url}/chat/completions`)를 호출합니다. 환경변수 키가 설정 파일 키보다 우선합니다.
 
 ```bash
-# 등록된 AI 도구 목록 확인
+# 등록된 공급자 목록 (주소·모델·키 출처)
 kosis config ai-list
 
-# 기본 AI 도구 설정
-kosis config set-ai gemini
+# 기본 공급자 설정
+kosis config set-ai openai
 
-# 커스텀 AI 도구 추가
-kosis config ai-add ollama "ollama run llama3 '{prompt}'"
+# 공급자 추가·덮어쓰기
+kosis config ai-add openai --url https://api.openai.com/v1 --model gpt-4o-mini --key-env OPENAI_API_KEY
 
-# AI 도구 제거
-kosis config ai-remove ollama
+# API 키 저장
+kosis config ai-key hermes "<HERMES_API_KEY>"
+
+# 공급자 제거 (기본 공급자 제거 시 hermes로 복귀)
+kosis config ai-remove openai
 ```
 
 ## 주요 함수
@@ -96,13 +105,15 @@ kosis config ai-remove ollama
 
 - `SetCacheTTL(hours int) error` - 캐시 TTL 설정
 
-### AI 도구 관리
+### AI 공급자 관리
 
-- `GetAIConfig() (AIConfig, error)` - AI 설정 반환
-- `SetAIDefault(name string) error` - 기본 AI 도구 설정
-- `AddAITool(name, cmd string) error` - 도구 추가
-- `RemoveAITool(name string) error` - 도구 제거
-- `ListAITools() ([]AIToolInfo, error)` - 도구 목록 반환
+- `GetAIProvider(name string) (string, AIProvider, error)` - 공급자 조회 (빈 이름이면 기본 공급자)
+- `SetAIDefault(name string) error` - 기본 공급자 설정
+- `AddAIProvider(name string, p AIProvider) error` - 공급자 추가·덮어쓰기
+- `SetAIProviderKey(name, key string) error` - 공급자 API 키 저장
+- `RemoveAIProvider(name string) error` - 공급자 제거
+- `MaskKey(key string) string` - 키 마스킹 표시
+- `AIProvider.ResolveKey() string` - 키 결정 (환경변수 우선, 없으면 설정 파일)
 
 ### 유틸리티
 
@@ -143,7 +154,7 @@ go test ./internal/config -v
 - 기본 설정
 - 설정 파일 로드/저장
 - API 키 추가/제거
-- AI 도구 관리
+- AI 공급자 관리
 - 환경변수 우선순위
 - 입력 검증
 

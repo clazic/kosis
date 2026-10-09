@@ -8,7 +8,7 @@
 - `output/`: 포맷터 및 파일 저장
 - `interactive/`: CLI 대화형 입력 유틸리티
 - `nlp/`: quick 규칙 기반/AI 보조 처리
-- `config/`: 설정 및 AI 도구 등록
+- `config/`: 설정 및 AI 공급자 등록
 
 Constraints:
 - 공개 계약을 바꾸는 변경은 `cmd/` help와 함께 반영해야 한다.
@@ -48,7 +48,7 @@ Don't:
 - **[출력 포맷터와 파일 저장](./output/AGENTS.md)** — table/json/csv/xlsx/sqlite/parquet 저장 및 stdout 분기 수정 시.
 - **[자연어 매칭과 AI 실행](./nlp/AGENTS.md)** — shortcut, 기간 파싱, AI 명령 생성 규칙 수정 시.
 - **[대화형 입력 유틸리티](./interactive/AGENTS.md)** — Prompt/Select/MultiSelect/Confirm UX와 비TTY 처리 수정 시.
-- **[설정과 AI 도구 등록](./config/AGENTS.md)** — API 키, 기본 포맷, AI 도구 설정/테스트 수정 시.
+- **[설정과 AI 공급자 등록](./config/AGENTS.md)** — API 키, 기본 포맷, AI 공급자 설정/테스트 수정 시.
 - **[파일 기반 캐시](./cache/AGENTS.md)** — TTL, 만료 정리, 원자적 쓰기, 캐시 테스트 수정 시.
 - **[즐겨찾기 저장소](./bookmark/AGENTS.md)** — bookmarks.yaml CRUD와 이름/인덱스 규칙 수정 시.
 - **[조회 이력 저장소](./history/AGENTS.md)** — history.yaml 기록, 최대 개수, replay 대상 조회 수정 시.

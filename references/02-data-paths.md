@@ -52,7 +52,7 @@ quick "자연어 요청"
 kosis q "서울 미분양 최근 5년"
 kosis q "GDP 2020~2024"
 kosis q "인구 2015,2020,2025"
-kosis q "실업률 최근 12개월" --ai claude   # AI 활용
+kosis q "실업률 최근 12개월" --ai          # AI 활용 (기본 공급자 hermes)
 ```
 
 **적합한 경우:** CLI에 익숙하지 않을 때, 탐색적으로 빠르게 데이터를 확인할 때

@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/clazic/kosis/internal/config"
 	"github.com/clazic/kosis/internal/nlp"
 )
 
@@ -209,5 +210,23 @@ func TestSplitCommandLine(t *testing.T) {
 	want := []string{"kosis", "d", "301", "T", "--periods", "2020,2022", "--x", "a b", "--y="}
 	if strings.Join(got, "|") != strings.Join(want, "|") {
 		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestNormalizeQuickAIFlag(t *testing.T) {
+	config.SetConfigDirForTesting(t.TempDir())
+	defer config.SetConfigDirForTesting("")
+
+	got := normalizeQuickAIFlag([]string{"q", "GDP", "--ai", "hermes", "-y"})
+	if strings.Join(got, " ") != "q GDP --ai=hermes -y" {
+		t.Errorf("등록 공급자는 합쳐야 함: %q", got)
+	}
+	got = normalizeQuickAIFlag([]string{"q", "--ai", "GDP 최근 5년"})
+	if strings.Join(got, "|") != "q|--ai|GDP 최근 5년" {
+		t.Errorf("미등록 값은 그대로 둬야 함: %q", got)
+	}
+	got = normalizeQuickAIFlag([]string{"data", "-a", "hermes"})
+	if strings.Join(got, "|") != "data|-a|hermes" {
+		t.Errorf("quick 외 명령은 건드리지 않아야 함: %q", got)
 	}
 }

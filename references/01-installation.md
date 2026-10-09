@@ -104,8 +104,10 @@ api_keys: ["키1", "키2"]       # API 키 목록
 default_format: "table"        # 기본 출력 형식
 cache_ttl_hours: 24            # 캐시 유효 시간
 ai:
-  default: "claude"            # 기본 AI 도구
-  tools:
-    claude:
-      cmd: "claude -p '{prompt}'"
+  default: "hermes"            # 기본 AI 공급자 (OpenAI 호환 API)
+  providers:
+    hermes:
+      base_url: "http://100.70.244.98:8642/v1"
+      model: "hermes-agent"
+      key_env: "HERMES_API_KEY"   # 키는 환경변수 또는 `kosis config ai-key`로 지정
 ```
