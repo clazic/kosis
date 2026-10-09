@@ -319,7 +319,7 @@ func confirmExecution() bool {
 
 // executeGeneratedCommand는 생성된 명령어를 파싱하여 실행합니다.
 func executeGeneratedCommand(command, formatFlag, outputFlag string) error {
-	parts := strings.Fields(command)
+	parts := splitCommandLine(command)
 	if len(parts) > 0 && parts[0] == "kosis" {
 		parts = parts[1:]
 	}
@@ -355,6 +355,41 @@ func executeGeneratedCommand(command, formatFlag, outputFlag string) error {
 
 	printReusableCommand(displayCmd)
 	return nil
+}
+
+// splitCommandLine AI가 출력한 한 줄 명령을 셸처럼 나눈다 — 따옴표는 묶음 표시일 뿐 값에 남기지 않는다.
+// (AI는 치트시트대로 --periods "2020,2022"처럼 따옴표를 쓴다. strings.Fields면 따옴표가 값에 섞여 API가 거부한다.)
+// ponytail: 따옴표·공백만 처리. 백슬래시 이스케이프는 kosis 인자에 쓰일 일이 없어 생략.
+func splitCommandLine(line string) []string {
+	var out []string
+	var cur strings.Builder
+	var quote rune
+	inToken := false
+	for _, r := range line {
+		switch {
+		case quote != 0:
+			if r == quote {
+				quote = 0
+			} else {
+				cur.WriteRune(r)
+			}
+		case r == '"' || r == '\'':
+			quote, inToken = r, true
+		case r == ' ' || r == '\t':
+			if inToken {
+				out = append(out, cur.String())
+				cur.Reset()
+				inToken = false
+			}
+		default:
+			cur.WriteRune(r)
+			inToken = true
+		}
+	}
+	if inToken {
+		out = append(out, cur.String())
+	}
+	return out
 }
 
 // validateGeneratedArgs AI가 생성한 data 인자를 API 호출 전에 검사합니다.

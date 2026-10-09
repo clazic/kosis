@@ -203,3 +203,11 @@ func TestConfirmExecutionYes(t *testing.T) {
 		t.Fatal("-y 단축 플래그가 --yes 에 연결되지 않음")
 	}
 }
+
+func TestSplitCommandLine(t *testing.T) {
+	got := splitCommandLine(`kosis d 301 T --periods "2020,2022"  --x 'a b' --y=""`)
+	want := []string{"kosis", "d", "301", "T", "--periods", "2020,2022", "--x", "a b", "--y="}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
