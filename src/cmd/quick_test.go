@@ -182,3 +182,24 @@ func TestValidateGeneratedArgs(t *testing.T) {
 		})
 	}
 }
+
+// TestConfirmExecutionYes --yes 면 표준입력을 읽지 않고 실행을 허용한다.
+// 비대화형(stdin 이 비었거나 닫힘)에서 프롬프트가 "실행 취소됨"으로 끝나던 문제의 회귀 방지.
+func TestConfirmExecutionYes(t *testing.T) {
+	t.Cleanup(func() { quickAssumeYes = false })
+
+	if err := quickCmd.Flags().Parse([]string{"--yes"}); err != nil {
+		t.Fatalf("--yes 파싱 실패: %v", err)
+	}
+	if !quickAssumeYes {
+		t.Fatal("--yes 가 quickAssumeYes 에 반영되지 않음")
+	}
+	if !confirmExecution() {
+		t.Fatal("--yes 인데 실행이 거부됨")
+	}
+
+	quickAssumeYes = false
+	if f := quickCmd.Flags().ShorthandLookup("y"); f == nil || f.Name != "yes" {
+		t.Fatal("-y 단축 플래그가 --yes 에 연결되지 않음")
+	}
+}

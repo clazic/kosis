@@ -47,6 +47,7 @@ var quickCmd = &cobra.Command{
   --ai <도구명>            AI 도구 사용 (claude, gemini, codex 또는 커스텀)
   -f, --format <type>      출력 형식: table(기본), json, csv, md
   -o, --output <파일>      파일 저장
+  -y, --yes                확인 프롬프트 없이 바로 실행 (스크립트·AI 에이전트용)
 
 예제:
   # 규칙 기반 (기본)
@@ -140,7 +141,11 @@ func init() {
 	quickCmd.Flags().StringP("ai", "a", "", "자연어 해석에 쓸 외부 AI CLI 도구 (claude, gemini, codex, ollama 등). 미지정 시 오프라인 규칙 기반 매칭. 목록은 kosis config ai-list")
 	quickCmd.Flags().StringP("format", "f", "", "출력 형식: table, json, csv, md. 미지정 시 config의 기본 형식 사용")
 	quickCmd.Flags().StringP("output", "o", "", "파일로 저장. 확장자로 형식 자동 결정: .csv .xlsx .json .db .parquet")
+	quickCmd.Flags().BoolVarP(&quickAssumeYes, "yes", "y", false, "확인 프롬프트 없이 바로 실행 (스크립트·AI 에이전트처럼 입력을 받을 수 없는 환경용)")
 }
+
+// quickAssumeYes는 --yes 플래그 값. 비대화형 환경에선 프롬프트가 EOF로 끝나 조회가 취소되므로 건너뛸 수단이 필요하다.
+var quickAssumeYes bool
 
 // handleAIGeneration은 AI 도구를 사용하여 명령어를 생성하고 실행합니다.
 func handleAIGeneration(aiToolName, userRequest, formatFlag, outputFlag string) {
@@ -299,6 +304,10 @@ func promptUserInput() string {
 
 // confirmExecution은 생성된 명령어 실행 여부를 사용자에게 확인합니다.
 func confirmExecution() bool {
+	if quickAssumeYes {
+		fmt.Println("확인 없이 실행합니다 (--yes)")
+		return true
+	}
 	fmt.Print("이 명령어를 실행하시겠습니까? (y/n): ")
 	scanner := bufio.NewScanner(os.Stdin)
 	if scanner.Scan() {

@@ -57,7 +57,7 @@ kosis config set-key <API_KEY>          # API 키 설정
 kosis s "미분양"                         # 1. 검색
 kosis m 116 DT_MLTM_2086               # 2. 메타 확인
 kosis d 116 DT_MLTM_2086 -c1 ALL -c2 ALL -i ALL -p Y -l 5   # 3. 데이터 조회
-kosis q "서울 미분양 최근 5년"            # 또는 자연어 한 줄
+kosis q "서울 미분양 최근 5년"            # 또는 자연어 한 줄 (에이전트·스크립트에선 --yes 필수: 없으면 확인 프롬프트에서 취소됨)
 ```
 
 > API 키: https://kosis.kr/openapi/ 에서 발급

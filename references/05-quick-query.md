@@ -12,6 +12,9 @@ kosis q "인구 2015,2020,2025"
 kosis q "GDP 최근 5년" --ai claude
 kosis q "서울 노원구 인구" --ai gemini
 
+# 확인 프롬프트 없이 실행 (스크립트·AI 에이전트 등 입력을 받을 수 없는 환경 — 없으면 "실행 취소됨"으로 끝남)
+kosis q "서울 미분양 최근 5년" --yes      # 또는 -y
+
 # 출력 형식/파일 지정
 kosis q "소비자물가 월별" -f json
 kosis q "서울 미분양" -o 미분양.xlsx
