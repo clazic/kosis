@@ -51,6 +51,7 @@ type TableMemo struct {
 
 // Store 학습 저장소 전체.
 type Store struct {
+	path     string                  // 저장 경로 (LoadFrom 으로 지정, 기본 FilePath)
 	Keywords map[string]*KeywordMemo `yaml:"keywords"` // 키: TopicKey
 	Tables   map[string]*TableMemo   `yaml:"tables"`
 }
@@ -61,14 +62,18 @@ func FilePath() string {
 }
 
 // Load 학습 파일을 읽는다. 없거나 깨졌으면 빈 저장소를 돌려준다 — 학습은 부가 기능이라 조회를 막지 않는다.
-func Load() *Store {
+func Load() *Store { return LoadFrom(FilePath()) }
+
+// LoadFrom 지정한 경로의 학습 파일을 읽는다 (평가처럼 실제 학습과 격리할 때).
+func LoadFrom(path string) *Store {
 	s := &Store{}
-	if data, err := os.ReadFile(FilePath()); err == nil {
+	if data, err := os.ReadFile(path); err == nil {
 		if yaml.Unmarshal(data, s) != nil {
-			fmt.Fprintf(os.Stderr, "경고: %s 파싱 실패, 학습 없이 진행합니다\n", FilePath())
+			fmt.Fprintf(os.Stderr, "경고: %s 파싱 실패, 학습 없이 진행합니다\n", path)
 			s = &Store{}
 		}
 	}
+	s.path = path
 	if s.Keywords == nil {
 		s.Keywords = map[string]*KeywordMemo{}
 	}
@@ -81,14 +86,18 @@ func Load() *Store {
 // Save 임시 파일에 쓰고 rename해 중간에 끊겨도 파일이 깨지지 않게 한다.
 // ponytail: 동시 실행 시 마지막 저장이 이긴다(병합 없음). 학습 몇 건 유실은 다음 실행에서 다시 쌓이므로 허용.
 func (s *Store) Save() error {
-	if err := config.EnsureConfigDir(); err != nil {
+	if s.path == "" {
+		s.path = FilePath()
+	}
+	dir := filepath.Dir(s.path)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
 	data, err := yaml.Marshal(s)
 	if err != nil {
 		return fmt.Errorf("학습 인코딩 실패: %w", err)
 	}
-	f, err := os.CreateTemp(config.ConfigDir(), ".learnings-*.tmp")
+	f, err := os.CreateTemp(dir, ".learnings-*.tmp")
 	if err != nil {
 		return fmt.Errorf("학습 파일 저장 실패: %w", err)
 	}
@@ -103,7 +112,7 @@ func (s *Store) Save() error {
 		os.Remove(tmp)
 		return err
 	}
-	if err := os.Rename(tmp, FilePath()); err != nil {
+	if err := os.Rename(tmp, s.path); err != nil {
 		os.Remove(tmp)
 		return err
 	}

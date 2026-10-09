@@ -1,0 +1,148 @@
+# kosis quick --ai 학습 평가용 질문과 정답 (kosis quick-eval 이 읽음)
+#
+# 정답은 kosis search / kosis meta 로 직접 확인해 정했다 (2026-10-10).
+#   tables: 허용 통계표 (하나라도 고르면 정답)
+#   values: 고른 분류·항목 값 이름에 들어 있어야 할 말. "A|B" = 대안, "이름@코드접두" = 이름과 코드 접두 모두 확인
+#   unit:   기대 수록주기 (Y 연, Q 분기, M 월)
+#   period: 기대 기간 인자. {Y}=올해, {Y-1}=작년 … "|"로 대안
+#   hard:   이 질문이 어려운 이유
+
+- q: "재작년 경남 여성 고용률"
+  tables: [101/INH_1DA7014S_03]
+  values: ["경상남도", "여자", "고용률"]
+  unit: Y
+  period: "--start {Y-2} --end {Y-2}"
+  hard: "상대 기간(재작년) + 지역 약칭(경남) + 동의어(여성↔여자)"
+
+- q: "최근 2년간 서울 남자 실업률을 분기별로"
+  tables: [101/DT_1DA7104S, 101/INH_1DA7104S]
+  values: ["서울특별시", "남자", "실업률"]
+  unit: Q
+  period: "--latest 8"
+  hard: "주기 지정(분기) + 기간 환산(2년→8분기) + 성별"
+
+- q: "부산에서 작년에 결혼한 커플이 몇 쌍이야"
+  tables: [101/INH_1B83A35, 101/DT_1B8000H, 101/DT_1B8000I]
+  values: ["부산광역시", "혼인"]
+  unit: Y
+  period: "--start {Y-1} --end {Y-1}"
+  hard: "구어체(결혼한 커플 몇 쌍 → 혼인건수) + 상대 기간"
+
+- q: "울산 북구에서 2020년부터 2024년까지 태어난 아기"
+  tables: [101/INH_1B81A01, 101/DT_1B81A23, 101/DT_1B8000I]
+  values: ["북구@26"]
+  unit: Y
+  period: "--start 2020 --end 2024"
+  hard: "'북구'는 부산·대구·광주·울산에 다 있음 — 울산(26) 소속을 골라야 함"
+
+- q: "세종시로 순유입된 인구 최근 3년"
+  tables: [101/INH_1B26001_A021]
+  values: ["세종"]
+  unit: Y
+  period: "--latest 3"
+  hard: "순유입↔순이동, 세종시↔세종특별자치시"
+
+- q: "전국 합계출산율 2015년이랑 2025년 비교"
+  tables: [101/INH_1B81A17, 101/DT_1B81A21, 101/DT_1B81A23, 101/INH_1B8000F_01, 101/DT_1B8000F, 101/DT_1B8000H, 101/DT_1B8000I]
+  values: ["합계출산율"]
+  unit: Y
+  period: "--periods 2015,2025"
+  hard: "비연속 두 시점 + 같은 표에 출생아수·합계출산율이 함께 있음"
+
+- q: "인천 소비자물가 상승률 말고 지수로, 2025년 1분기"
+  tables: [101/INH_1J22003, 101/DT_1J22003]
+  values: ["인천"]
+  unit: Q
+  period: "--start 20251 --end 20251"
+  hard: "부정 표현(상승률 말고) + 분기 형식(20251)"
+
+- q: "대전 아파트 전세가격지수 최근 1년"
+  tables: [101/DT_1YL20172E]
+  values: ["대전"]
+  unit: M
+  period: "--latest 12"
+  hard: "매매↔전세 구분 + 월간 표에 '1년'을 12개월로 환산"
+
+- q: "제주도 사망자 수 최근 5년, 남녀 구분 없이"
+  tables: [101/INH_1B82A01, 101/DT_1B8000H, 101/DT_1B8000I]
+  values: ["제주", "계|사망건수"]
+  unit: Y
+  period: "--latest 5"
+  hard: "성별 축에서 '전체(계)'를 골라야 함"
+
+- q: "광주 고령인구 비율 2024년"
+  tables: [101/DT_1YL20631]
+  values: ["광주광역시", "고령인구비율"]
+  unit: Y
+  period: "--start 2024 --end 2024"
+  hard: "'광주'가 광주광역시·전남광주통합특별시 두 값에 걸림 + 항목 3개 중 비율"
+
+- q: "최근 3년 전국 출생 성비"
+  tables: [101/DT_1B81A19, 101/INH_1B8000F_01, 101/DT_1B8000F]
+  values: ["성비"]
+  unit: Y
+  period: "--latest 3"
+  hard: "출산순위별 성비 표에서 '총' 성비 선택"
+
+- q: "충청북도 2023년 이혼 건수"
+  tables: [101/INH_1B85033, 101/DT_1B8000H, 101/DT_1B8000I]
+  values: ["충청북도", "이혼"]
+  unit: Y
+  period: "--start 2023 --end 2023"
+  hard: "이혼건수·조이혼율 혼동 가능"
+
+- q: "경기도 남자 인구 최근 3년"
+  tables: [101/DT_1B040A3]
+  values: ["경기도", "남자"]
+  unit: Y
+  period: "--latest 3"
+  hard: "성별이 분류축이 아니라 항목(남자인구수)에 있음"
+
+- q: "서울 강남구 아파트 매매가격지수 2026년 1월"
+  tables: [101/DT_1YL20162E]
+  values: ["강남구"]
+  unit: M
+  period: "--start 202601 --end 202601"
+  hard: "207개 행정구역 중 구 단위 선택 + 특정 월"
+
+- q: "전남의 조혼인율 지난 5년 추이"
+  tables: [101/INH_1B8000I_02, 101/DT_1B8000H, 101/DT_1B8000I]
+  values: ["전라남도", "조혼인율"]
+  unit: Y
+  period: "--latest 5|--start {Y-5} --end {Y-1}"
+  hard: "'전남'이 전라남도·전남광주통합특별시 두 값에 걸림 + 혼인건수와 혼동"
+
+- q: "작년 전국 출생아 수와 사망자 수"
+  tables: [101/DT_1B8000F, 101/DT_1B8000H, 101/DT_1B8000I]
+  values: ["출생", "사망"]
+  unit: Y
+  period: "--start {Y-1} --end {Y-1}"
+  hard: "항목 2개 동시 요청 — 축당 1개만 고르는 구조라 만점 불가 (한계 측정)"
+
+- q: "부산과 대구 고용률 비교 2025년"
+  tables: [101/INH_1DA7014S_03, 101/DT_1DA7004S]
+  values: ["부산광역시", "대구광역시", "고용률"]
+  unit: Y
+  period: "--start 2025 --end 2025"
+  hard: "지역 2개 동시 요청 — 만점 불가 (한계 측정)"
+
+- q: "Ulsan unemployment rate for the last 3 years"
+  tables: [101/INH_1DA7104S, 101/DT_1DA7104S, 101/DT_1DA7004S]
+  values: ["울산", "실업률"]
+  unit: Y
+  period: "--latest 3"
+  hard: "영어 질문"
+
+- q: "강원 인구 자연증가 건수 최근 3년"
+  tables: [101/DT_1B8000H, 101/DT_1B8000I]
+  values: ["강원", "자연증가건수"]
+  unit: Y
+  period: "--latest 3"
+  hard: "인구동태 표의 항목 10여 개 중 자연증가건수(자연증가율 아님)"
+
+- q: "2025년 12월 전국 소비자물가 총지수"
+  tables: [101/DT_1J22003, 101/INH_1J22003]
+  values: ["전국"]
+  unit: M
+  period: "--start 202512 --end 202512|--periods 202512"
+  hard: "특정 월 1개 + 시도별 표에서 전국 선택"
