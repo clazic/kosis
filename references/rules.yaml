@@ -286,7 +286,7 @@ rules:
     topic: workflow
     when: -f json/csv 결과를 프로그램(Python·jq)으로 읽을 때
     do: stdout 만 읽는다. 결과 수·안내·오류는 stderr 로 나온다 (2>/dev/null 로 버려도 된다). 결과가 없으면 json 은 []
-    why: v0.5.16 부터 안내문을 stdout 에서 뺐다. 이전 버전은 "검색 결과: N개" 가 JSON 뒤에 붙어 파싱이 깨졌다
+    why: "v0.5.16 부터 안내문을 stdout 에서 뺐다. 이전 버전은 '검색 결과: N개' 가 JSON 뒤에 붙어 파싱이 깨졌다"
     evidence: "kosis s 울산 -n 2 -f json 2>/dev/null | python3 -c 'import json,sys; json.load(sys.stdin)' 성공"
     verified: "2026-10-12"
 

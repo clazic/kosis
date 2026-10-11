@@ -9,7 +9,22 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
+  test:
+    runs-on: ubuntu-latest
+    name: Test
+    steps:
+      - uses: actions/checkout@v5
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: src/go.mod
+      - name: Test
+        working-directory: src
+        # -count=1: references/rules.yaml 은 모듈 밖이라 바뀌어도 테스트 캐시가 갱신되지 않는다
+        run: go test -count=1 ./...
+
   build:
+    needs: test
     strategy:
       matrix:
         include:
@@ -70,6 +85,7 @@ jobs:
           path: src/${{ matrix.artifact }}
 
   skill-package:
+    needs: test
     runs-on: ubuntu-latest
     name: Package skill files
 

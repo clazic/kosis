@@ -35,5 +35,5 @@ clean:
 	@echo "✅ 산출물 삭제 완료"
 
 test:
-	go test ./...
+	go test -count=1 ./...  # rules.yaml(모듈 밖) 변경을 캐시가 못 봄
 
