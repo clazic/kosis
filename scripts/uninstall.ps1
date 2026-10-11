@@ -3,7 +3,7 @@
 #         .\uninstall.ps1 [-Purge] [-Yes]
 #
 # 옵션:
-#   -Purge   설정·데이터(%USERPROFILE%\.kosis)까지 삭제
+#   -Purge   설정·데이터(%USERPROFILE%\.kosis: API 키·로컬 규칙 rules.local.yaml 포함)까지 삭제
 #   -Yes     확인 프롬프트 없이 바로 실행
 #
 # 환경변수:
@@ -51,7 +51,7 @@ if (-not $Yes) {
 
 # ── config 삭제 여부 추가 질문 (purge 아닐 때) ──
 if (-not $Purge) {
-  $p = Read-Host "`n설정·데이터(~\.kosis)도 삭제할까요? (y/N)"
+  $p = Read-Host "`n설정·데이터(~\.kosis: API 키·로컬 규칙 rules.local.yaml 포함)도 삭제할까요? (y/N)"
   if ($p -match '^[yY]$') { $Purge = $true }
 }
 
@@ -87,7 +87,7 @@ $ConfigNote = "(설정·데이터 보존: $ConfigDir)"
 if ($Purge) {
   if (Test-Path $ConfigDir) {
     Write-Host ""
-    Write-Host "⚠  설정·데이터 삭제: $ConfigDir (API 키/북마크/이력/캐시 포함)"
+    Write-Host "⚠  설정·데이터 삭제: $ConfigDir (API 키/북마크/이력/캐시/로컬 규칙 포함)"
     Remove-Target $ConfigDir
   }
   $ConfigNote = "(설정·데이터 삭제됨)"

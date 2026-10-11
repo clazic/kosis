@@ -5,7 +5,7 @@
 #   sh uninstall.sh [--purge] [--yes]
 #
 # 옵션:
-#   --purge   설정·데이터(~/.kosis)까지 삭제
+#   --purge   설정·데이터(~/.kosis: API 키·로컬 규칙 rules.local.yaml 포함)까지 삭제
 #   --yes     확인 프롬프트 없이 바로 실행
 #
 # 환경변수:
@@ -60,7 +60,7 @@ fi
 
 # ── 대화형 + purge 아닐 때: config 삭제 여부 추가 질문 ──
 if [ "$HAVE_TTY" = 1 ] && [ "$PURGE" = 0 ]; then
-  printf "\n설정·데이터(~/.kosis)도 삭제할까요? (y/N) " > /dev/tty
+  printf "\n설정·데이터(~/.kosis: API 키·로컬 규칙 rules.local.yaml 포함)도 삭제할까요? (y/N) " > /dev/tty
   read PURGE_ANSWER < /dev/tty
   case "$PURGE_ANSWER" in
     y|Y) PURGE=1 ;;
@@ -85,7 +85,7 @@ remove "$(pwd)/.codex/skills/kosis"
 if [ "$PURGE" = 1 ]; then
   if [ -d "$HOME/.kosis" ]; then
     echo ""
-    echo "⚠  설정·데이터 삭제: $HOME/.kosis (API 키/북마크/이력/캐시 포함)"
+    echo "⚠  설정·데이터 삭제: $HOME/.kosis (API 키/북마크/이력/캐시/로컬 규칙 포함)"
     rm -rf "$HOME/.kosis"
     echo "  ✓ 제거: $HOME/.kosis"
   fi

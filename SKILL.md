@@ -7,12 +7,20 @@ argument-hint: "<통계 키워드 또는 명령>"
 
 # KOSIS
 
-## 학습 루프 (AI 필독 — 스킬이 진화하는 방식)
+## 규칙 (AI 필독 — 작업 전 읽고, 알게 된 것은 적는다)
 
-**KOSIS 작업을 시작하면 가장 먼저 [LEARNINGS.md](LEARNINGS.md)를 읽는다.** 과거의 실패·함정·성공 쿼리가 누적된 "오답노트"다.
+kosis 는 판단하지 않는다. 판단은 kosis 를 쓰는 AI 가 `s`(검색) → `m`(메타) → `d`(데이터)로 한다.
+그 판단에 쓸 검증된 지식이 규칙 파일에 있다.
 
-- **조회 전 READ**: `LEARNINGS.md`의 `테이블별 함정`·`오류코드 대응`을 확인해 같은 실수를 반복하지 않는다.
-- **작업 후 APPEND**: 예상 못한 실패나 처음 통한 쿼리·해결한 함정을 겪으면 `LEARNINGS.md`의 해당 섹션에 **한 줄 이상** 추가한다("왜"를 반드시 포함). 이렇게 쓸수록 스킬이 똑똑해진다.
+1. **작업 전 READ** — 두 파일을 읽는다.
+   - [references/rules.yaml](references/rules.yaml): 배포 규칙 (모든 사용자 공통, 검증된 것만). 작업 순서·검색 요령·시점 형식·오류 대응과 통계표별 검증 코드(`tables`)
+   - `~/.kosis/rules.local.yaml`: 이 컴퓨터의 로컬 규칙 (있으면. 더 최신이다)
+   - 원하는 표가 `tables`에 있으면 검색·메타를 건너뛰고 그 코드로 바로 조회해도 된다 (`verified`가 오래됐으면 `m`으로 재확인)
+2. **작업 후 WRITE** — s·m·d 를 하며 **새로 확인한 사실**은 `~/.kosis/rules.local.yaml`에 같은 형식으로 추가한다.
+   - 실제로 실행해 본 것만. `evidence`(무엇을 실행해 무엇을 봤는지)와 `verified`(날짜) 필수. 추측은 쓰지 않는다
+   - 기존 규칙이 틀렸으면 지우지 말고 `status: wrong`과 이유를 적는다
+   - 여러 번 확인된 로컬 규칙은 저장소의 `references/rules.yaml`로 올린다 (PR → 릴리스 → 모든 사용자)
+3. 사람용 설명·사례는 [LEARNINGS.md](LEARNINGS.md)(오답노트)에 있다. 규칙 파일은 같은 지식을 AI 가 바로 쓰도록 구조화한 것이다.
 
 ---
 
@@ -57,7 +65,6 @@ kosis config set-key <API_KEY>          # API 키 설정
 kosis s "미분양"                         # 1. 검색
 kosis m 116 DT_MLTM_2086               # 2. 메타 확인
 kosis d 116 DT_MLTM_2086 -c1 ALL -c2 ALL -i ALL -p Y -l 5   # 3. 데이터 조회
-kosis q "서울 미분양 최근 5년"            # 또는 자연어 한 줄 (에이전트·스크립트에선 --yes 필수: 없으면 확인 프롬프트에서 취소됨)
 ```
 
 > API 키: https://kosis.kr/openapi/ 에서 발급
@@ -98,7 +105,7 @@ make build      # 5개 플랫폼 빌드 후 src/bin/ 과 apps/ 두 곳에 자동
 
 | 항목 | 경로 | 비고 |
 |------|------|------|
-| 설정 | `~/.kosis/config.yaml` | API 키, AI 공급자, 기본 포맷, 캐시 TTL |
+| 설정 | `~/.kosis/config.yaml` | API 키, 기본 포맷, 캐시 TTL |
 | 즐겨찾기 | `~/.kosis/bookmarks.yaml` | |
 | 이력 | `~/.kosis/history.yaml` | 최대 100개 |
 | 캐시 | `~/.kosis/cache/` | 메타/검색만, TTL 설정 가능 |
@@ -174,7 +181,6 @@ kosis s "미분양" -n 10
 | `list` | `ls` | `kosis ls --parent A_4` |
 | `explain <ORG> <TBL>` | `ex` | `kosis ex 101 DT_1IN1502` |
 | `bulk <userStatsId>` | | `kosis bulk "myid/..." -o data.xls` |
-| `quick <요청>` | `q` | `kosis q "GDP 최근 5년" --ai` (AI가 실제 검색·메타 목록에서 통계표·코드를 골라 조회, 사전 밖 통계도 가능). `kosis q --learn` = 학습 모드(결과를 보고 y/n, 틀리면 교정해 학습하며 계속 질문) |
 | `chart` | | `kosis d ... -f json \| kosis chart --type line` |
 | `ind search <이름>` | `ind s` | `kosis ind s "GDP"` |
 | `ind info <ID>` | | `kosis ind info 404` |
@@ -349,11 +355,6 @@ kosis chart -i data.json --format excel -o chart.xlsx
 | `remove-key <INDEX>` | 인덱스 기준 제거 |
 | `key-list` | 등록 키 목록 (마스킹 표시) |
 | `show` | 전체 설정 YAML 출력 |
-| `set-ai <PROVIDER>` | 기본 AI 글생성 공급자 설정 (jev는 선택 전용이라 불가) |
-| `ai-add <NAME> --url <BASE_URL> --model <MODEL> [--type openai\|typesafe] [--key <KEY> \| --key-env <ENV>]` | AI 공급자 추가·덮어쓰기 (type openai=글생성, typesafe=선택·이름 jev 고정) |
-| `ai-key <PROVIDER> <API_KEY>` | AI 공급자 API 키 저장 (환경변수가 우선; 예: `ai-key jev <KEY>`) |
-| `ai-remove <NAME>` | AI 공급자 제거 (기본 공급자 제거 시 hermes로 복귀) |
-| `ai-list` | AI 공급자 목록 (주소·모델·키 출처 env:<변수>/config/없음, 역할 [글생성 (--ai)] / [선택 (Jev)]) |
 | `cache-clear` | 캐시 디렉토리 전체 삭제 |
 | `cache-size` | 캐시 크기 확인 |
 | `cache-clean` | TTL 초과 항목만 정리 |
@@ -482,10 +483,9 @@ kosis d 101 DT_1FS1101 -c1 ALL -c2 C -i T04 -p Y -l 1
 | [02-data-paths.md](references/02-data-paths.md) | 두 가지 데이터 경로 (통계표/주요지표) |
 | [03-statistics-query.md](references/03-statistics-query.md) | 통계표 조회 Step by Step |
 | [04-indicators.md](references/04-indicators.md) | 주요지표 조회 (search/info/data/list) |
-| [05-quick-query.md](references/05-quick-query.md) | 자연어 조회, 내장 사전, AI 모드 |
 | [06-list-explain-bulk.md](references/06-list-explain-bulk.md) | 통계목록 탐색, 통계설명, 대용량 다운로드 |
 | [07-output-formats.md](references/07-output-formats.md) | 출력 형식 (table/JSON/CSV/Markdown/Excel/SQLite/Parquet) |
-| [08-utilities.md](references/08-utilities.md) | 편의 기능 (즐겨찾기, 이력, 캐시, AI 공급자 설정) |
+| [08-utilities.md](references/08-utilities.md) | 편의 기능 (즐겨찾기, 이력, 캐시, 학습 기록) |
 | [09-interactive-tui.md](references/09-interactive-tui.md) | 대화형 모드 및 TUI 대시보드 (키바인딩) |
 | [10-auto-split.md](references/10-auto-split.md) | 자동 분할 조회 (4만 셀 초과 시 분할/병렬 처리) |
 | [11-related-tables.md](references/11-related-tables.md) | 연관 통계표 찾기 |

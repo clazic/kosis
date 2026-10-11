@@ -1,0 +1,537 @@
+# kosis 규칙 (rules.yaml) — AI 에이전트용
+#
+# kosis 를 쓰는 AI(Claude, GPT 등)가 s(검색) → m(메타) → d(데이터) 로 일할 때 따르는 검증된 지식.
+# 사람용 설명은 LEARNINGS.md, 명령 문법은 references/13-reference.md.
+#
+# ── 읽는 법 ──
+# 1. 작업 전에 이 파일과 로컬 규칙 ~/.kosis/rules.local.yaml(있으면)을 읽는다. 로컬이 더 최신이다.
+# 2. tables 에 원하는 통계표가 있으면 검색·메타를 건너뛰고 바로 써도 된다 (verified 날짜가 오래됐으면 m 으로 재확인).
+#
+# ── 쓰는 법 (로컬 규칙) ──
+# s·m·d 를 하며 새로 확인한 사실은 ~/.kosis/rules.local.yaml 에 같은 형식으로 추가한다.
+# - 실제로 실행해 확인한 것만 적는다. 추측은 적지 않는다 (불확실하면 confidence: guess 로 표시).
+# - evidence 에 무엇을 실행해 무엇을 봤는지 한 줄로 적는다. verified 에 날짜.
+# - 틀린 규칙을 발견하면 지우지 말고 status: wrong 과 이유를 적는다.
+# - 여러 번 확인된 로컬 규칙은 저장소의 이 파일로 올린다 (PR → 릴리스 → 모든 사용자).
+#
+# ── 형식 ──
+# rules:   일반 규칙. id, topic, when(언제), do(무엇을), why, evidence, verified, [confidence]
+# tables:  통계표별 검증된 코드·함정. id(ORG/TBL), name, periods, axes, items, facts, verified
+#          axes 의 flag 는 kosis d 플래그(--class1 …), codes 는 "이름: 코드"
+
+version: 1
+updated: "2026-10-12"
+
+rules:
+
+  # ── 작업 순서 ──
+  - id: workflow.meta-first
+    topic: workflow
+    when: 처음 쓰는 통계표를 조회하기 전
+    do: kosis m <ORG> <TBL> 로 분류축 개수·코드·수록주기를 먼저 확인한다
+    why: 표마다 분류축 개수와 코드 체계가 다르다. 메타 없이 조회하면 [20]/[21] 이 난다
+    evidence: "DT_1B04006 에 -c1 ALL 만 넣어 [20] objL 누락 (LEARNINGS.md)"
+    verified: "2026-06-15"
+
+  - id: workflow.fill-all-axes
+    topic: workflow
+    when: kosis d 인자를 만들 때
+    do: 메타의 분류축 수만큼 --class1 ~ --classN 을 모두 채운다 (필요 없는 축은 합계 코드)
+    why: 축 하나라도 빠지면 [20] objL 누락
+    evidence: "DT_1B04006 은 A(시군구)+YRE(연령) 2축 — -c2 추가로 해결 (LEARNINGS.md)"
+    verified: "2026-06-15"
+
+  - id: workflow.codes-not-names
+    topic: workflow
+    when: 분류·항목을 지정할 때
+    do: 한글 이름이 아니라 메타의 코드(ITM_ID)를 넘긴다
+    why: 이름을 넘기면 [21] 잘못된 요청 변수
+    evidence: "kosis --help 표준 워크플로우 2단계"
+    verified: "2026-10-12"
+
+  - id: workflow.small-first
+    topic: workflow
+    when: 본 조회 전
+    do: --latest 1~5 로 값·시점 형식을 먼저 확인하고 범위를 넓힌다
+    why: 틀린 코드·주기를 큰 조회 전에 잡는다
+    evidence: "kosis --help 표준 워크플로우 3단계"
+    verified: "2026-10-12"
+
+  # ── 검색 (s) ──
+  - id: search.terms-not-sentences
+    topic: search
+    when: kosis s 검색어를 정할 때
+    do: 문장이 아니라 통계표 이름에 쓰일 짧은 용어로 검색한다. "~별" 단어(구군별·업종별)와 조사(와·과·및)는 뺀다
+    why: KOSIS 검색은 표 이름 매칭이라 문장을 넣으면 결과가 없다([30])
+    evidence: "s \"구군별 업종별 종사자수 와 생산액\" → [30]. \"종사자수 생산액\" 은 결과 있음"
+    verified: "2026-10-12"
+
+  - id: search.kosis-vocabulary
+    topic: search
+    when: 일상어로는 원하는 표가 안 나올 때
+    do: "KOSIS 표 이름의 말로 바꿔 검색한다 — 구군·시군·구별 → 시군구, 업종 → 산업, 결혼 → 혼인, 태어난 아기 → 출생아수, 순유입 → 순이동"
+    why: 표 이름은 행정·통계 용어를 쓴다
+    evidence: "\"종사자수 시군구 산업\" 으로 118/DT_118N_SAUPM75 등 시군구×산업 표가 검색됨. 출생아수·혼인·순이동은 s 결과 표 이름으로 확인"
+    verified: "2026-10-12"
+
+  - id: search.survey-name
+    topic: search
+    when: 검색 결과가 0건이거나 엉뚱한 표만 나올 때
+    do: 통계 조사명(예 "광업제조업조사", "사업체노동실태현황")으로 다시 검색한다
+    why: 일상어와 KOSIS 항목명이 다르다
+    evidence: "\"제조업 생산액\" 은 생산'지수'만 나옴 (LEARNINGS.md)"
+    verified: "2026-06-21"
+
+  - id: search.production-amount
+    topic: search
+    when: 시군구 단위 "생산액"이 필요할 때
+    do: 광업제조업조사 표(101/DT_1FS1101)의 출하액(T04)을 쓴다. 이 조사는 광업·제조업만 다룬다
+    why: 시군구 단위 생산액 통계는 광업제조업조사뿐이고, 항목 이름은 "출하액"이다
+    evidence: "m 101 DT_1FS1101 항목: T01 사업체수 … T04 출하액 … T07 유형자산 (생산액 항목 없음)"
+    verified: "2026-10-12"
+
+  - id: search.check-recency
+    topic: search
+    when: 검색 결과에서 표를 고를 때
+    do: STRT_PRD_DE~END_PRD_DE 가 요청 기간을 덮는 표를 고른다. 최신 자료를 원하면 END_PRD_DE 가 최근인 표
+    why: 같은 주제의 옛 표가 남아 있다 (예 2002~2006 년에서 끝난 표)
+    evidence: "시군구×산업 종사자수 검색에 118/DT_118N_SAUP35(2004~2006), SAUP14(2002~2003) 가 최신 표와 함께 나옴"
+    verified: "2026-10-12"
+
+  - id: search.region-coverage-in-name
+    topic: search
+    when: 시군구 단위 표를 고를 때
+    do: "표 이름의 지역 범위를 본다 — (8개시) 는 특별·광역시의 구·군, (9개도) 는 도의 시·군"
+    why: 범위 밖 지역은 그 표에 없다
+    evidence: "118/DT_118N_SAUPM75(8개시)에 울산 구군 있음, 118/DT_118N_SAUPM78(9개도)에는 울산 없음"
+    verified: "2026-10-12"
+
+  - id: search.city-only-tables
+    topic: search
+    when: 표 ID 끝이 _<시도코드>(예 _26 = 울산)인 시도 전용 표를 볼 때
+    do: 지역 축이 시도 한 값뿐일 수 있으니 구·군 구분이 필요하면 m 으로 확인한다
+    why: 시도 전용 표는 구·군 축이 없는 경우가 있다
+    evidence: "101/INH_DT_1K52F01_26 지역 축 값은 '울  산' 하나 (구군 없음)"
+    verified: "2026-10-12"
+
+  # ── 메타 (m) ──
+  - id: meta.hierarchy
+    topic: meta
+    when: 특정 지역·분류의 하위 값(예 울산의 구·군)이 필요할 때
+    do: kosis m <ORG> <TBL> -f json 의 CLASSIFICATIONS 에서 UP_ITM_ID 가 그 값의 코드인 항목을 찾는다
+    why: 메타에 상위-하위 관계가 들어 있다. 이름만으로는 같은 '중구'가 여러 시에 있다
+    evidence: "101/DT_1FS1101: 26(울산광역시) 아래 26010 중구·26020 남구·26030 동구·26040 북구·26510 울주군"
+    verified: "2026-10-12"
+
+  - id: meta.totals-first
+    topic: meta
+    when: 합계(전국·계·전체) 코드를 찾을 때
+    do: 축의 맨 앞 값을 먼저 확인한다. 이름이 '계·전국·전체·합계'가 아니어도 합계일 수 있다(예 '광업 및 제조업')
+    why: KOSIS 는 합계를 보통 축 맨 앞에 둔다 — 단 규칙이 아니라 경향이므로 이름과 하위 관계로 확인
+    evidence: "DT_1FS1101 산업축 첫 값 0='광업 및 제조업'(B 광업, C 제조업의 합)"
+    verified: "2026-10-12"
+    confidence: tendency
+
+  - id: meta.region-codes-differ
+    topic: meta
+    when: 지역 코드를 넣을 때
+    do: 표마다 m 으로 지역 코드를 확인한다. 다른 표의 코드를 옮겨 쓰지 않는다
+    why: "같은 '서울'이 표마다 다르다 — 101/DT_1IN1502 11, 101/DT_1J22003 T11, 101/DT_1YL20162E a7, 116/DT_MLTM_2086 13102871014B.0006"
+    evidence: "각 표 m 실측 (tables 참고)"
+    verified: "2026-10-10"
+
+  - id: meta.names-with-spaces
+    topic: meta
+    when: 값 이름으로 코드를 찾을 때
+    do: 공백을 무시하고 비교한다
+    why: "일부 표는 '울  산', '전  국'처럼 글자 사이에 공백이 있다"
+    evidence: "101/INH_DT_1K52F01_26, 101/DT_1K52F08 데이터 출력"
+    verified: "2026-10-12"
+
+  - id: meta.merged-region
+    topic: meta
+    when: 광주·전남을 조회할 때
+    do: 메타에 '전남광주통합특별시'가 광주광역시·전라남도와 함께 있는지 확인하고 의도에 맞는 값을 고른다
+    why: 2026년 자료부터 통합 지역 값이 함께 있는 표가 있다
+    evidence: "101/INH_1DA7014S_03 12=전남광주통합특별시, 101/DT_1J22003 T19=전남광주통합특별시"
+    verified: "2026-10-10"
+
+  - id: meta.period-codes
+    topic: meta
+    when: 메타 수록주기를 -p 로 옮길 때
+    do: "년→Y, 월→M, 분기→Q, 반기→H, 5년→F"
+    why: 메타는 한글로 주고 data 는 코드를 받는다. 5년 주기 표에 Y 를 쓰면 [30]
+    evidence: "m 101 DT_1YL20162E 주기 '월'. kosis d --help 수록주기 표"
+    verified: "2026-10-12"
+
+  - id: meta.extra-categories
+    topic: meta
+    when: 성별 등 단순해 보이는 축을 전체로 펼칠 때
+    do: 축 값 목록을 확인한다
+    why: 성별 축에 농가·비농가 같은 추가 구분이 들어 있는 표가 있다
+    evidence: "101/DT_1DA7001S 성별 축: 계, 남자, 여자, 농가, 농가남자 …"
+    verified: "2026-10-12"
+
+  # ── 데이터 (d) ──
+  - id: data.list-codes
+    topic: data
+    when: 같은 축에서 여러 값을 조회할 때
+    do: 코드를 + 로 잇는다 (예 --class1 "26010+26020"). 25개까지 실측으로 동작
+    why: 한 번의 조회로 여러 값을 받는다
+    evidence: "118/DT_118N_SAUPM75 산업 대분류 18개, 101/DT_1YL20162E 서울 25개 구를 + 로 조회 성공"
+    verified: "2026-10-12"
+
+  - id: data.prefix-includes-parent
+    topic: data
+    when: 접두 코드("41*")를 쓸 때
+    do: 상위 값 자신과 모든 하위 단계가 섞여 나온다는 것을 감안한다. 한 단계만 원하면 하위 코드를 + 로 나열한다
+    why: 접두 일치라 경기도(41)·시(41110…)·구가 모두 포함된다
+    evidence: "d 101 DT_1YL20651E --class1 '41*' → 경기도 + 시·구 32행"
+    verified: "2026-10-12"
+
+  - id: data.all-mixes-levels
+    topic: data
+    when: ALL 을 쓸 때
+    do: 모든 단계(대·중·소분류)가 다 나온다는 것을 감안한다. 대분류만 원하면 최상위 코드를 + 로 나열한다
+    why: ALL 은 축의 모든 값
+    evidence: "101/INH_DT_1K52F01_26 산업 ALL → 1,620개 업종, 1,851행"
+    verified: "2026-10-12"
+
+  - id: data.auto-split
+    topic: data
+    when: 큰 조회
+    do: 4만 셀을 넘으면 kosis 가 시점·분류로 자동 분할한다. 너무 느리면 분류·항목을 좁힌다
+    why: KOSIS 한 번 조회 한도 4만 셀 ([31])
+    evidence: "DT_1B04006 단일 연도 ~134만 셀 → 분류 2차 분할로 89,353행 (LEARNINGS.md)"
+    verified: "2026-06-15"
+
+  # ── 시점 ──
+  - id: period.quarter-format
+    topic: period
+    when: 분기(Q) 기간을 지정할 때
+    do: "YYYY0Q 형식 (2025년 1분기 = 202501)"
+    why: "YYYYQ(20251) 는 [30] 데이터 없음"
+    evidence: "d 101 DT_1DA7104S -p Q -s 202501 -e 202502 성공 / d 101 INH_1J22003 -p Q -s 20251 → [30]"
+    verified: "2026-10-12"
+
+  - id: period.month-year-format
+    topic: period
+    when: 월·연 기간을 지정할 때
+    do: "월 YYYYMM (202601), 연 YYYY"
+    why: 출력 시점 표기와 같다
+    evidence: "101/DT_1YL20162E 월 202601, 연 표들 2024"
+    verified: "2026-10-12"
+
+  - id: period.latest-unit
+    topic: period
+    when: --latest N 을 쓸 때
+    do: N 은 표 주기 단위의 개수다 (월간 표에서 최근 1년 = --latest 12)
+    why: 연 단위로 세지 않는다
+    evidence: "101/DT_1YL20162E --latest 6 → 6개월"
+    verified: "2026-10-10"
+
+  - id: period.range-clips
+    topic: period
+    when: 끝 시점을 넉넉히 잡을 때
+    do: 수록 범위를 넘는 끝 시점을 줘도 있는 데까지 나온다
+    why: 최신 연도를 몰라도 범위 조회가 된다
+    evidence: "101/INH_1B83A35 -s 2020 -e 2026 → 2020~2025"
+    verified: "2026-10-10"
+
+  - id: period.empty-may-be-unpublished
+    topic: period
+    when: 특정 값이 [30] 데이터 없음일 때
+    do: 바로 이전 시점으로 다시 조회해 본다. 최신 시점만 아직 공표 전일 수 있다
+    why: 값 자체가 없는 것과 최신 시점이 비어 있는 것은 다르다
+    evidence: "142/DT_BR_B008 class3 16142T209(전체기업): 2023 → [30], 2022 → 3,159명"
+    verified: "2026-10-12"
+
+  # ── 오류 코드 ──
+  - id: error.20
+    topic: error
+    when: "[20] 필수 변수 누락"
+    do: m 으로 분류축 개수를 확인하고 --class1~N 을 모두 채운다
+    evidence: LEARNINGS.md 오류코드 대응
+    verified: "2026-06-15"
+  - id: error.21
+    topic: error
+    when: "[21] 잘못된 요청 변수"
+    do: m 으로 분류·항목 코드를 다시 확인한다 (한글 이름을 넘기지 않았는지)
+    evidence: LEARNINGS.md 오류코드 대응
+    verified: "2026-06-15"
+  - id: error.30
+    topic: error
+    when: "[30] 데이터 없음"
+    do: 시점 형식(period.*)과 최신 시점 공표 여부(period.empty-may-be-unpublished)를 확인한다. 검색이 [30] 이면 검색어를 줄인다(search.terms-not-sentences)
+    evidence: LEARNINGS.md 오류코드 대응 + 2026-10-12 실측
+    verified: "2026-10-12"
+  - id: error.31
+    topic: error
+    when: "[31] 4만 셀 초과"
+    do: 자동 분할로도 안 되면 분류·항목 범위를 좁힌다
+    evidence: LEARNINGS.md 오류코드 대응
+    verified: "2026-06-15"
+  - id: error.429
+    topic: error
+    when: HTTP 429 분당 호출 제한
+    do: kosis 가 자동으로 재시도한다. 잦으면 kosis config add-key 로 키를 늘린다
+    evidence: LEARNINGS.md 오류코드 대응
+    verified: "2026-06-15"
+
+tables:
+
+  - id: "116/DT_MLTM_2086"
+    name: 미분양주택현황
+    periods: [Y]
+    axes:
+      - flag: --class1
+        name: 대분류
+        codes: {시도별미분양현황: "13102871014A.0002"}
+      - flag: --class2
+        name: 구분(지역)
+        codes:
+          전국: "13102871014B.0005"
+          서울: "13102871014B.0006"
+          부산: "13102871014B.0007"
+          대구: "13102871014B.0008"
+          인천: "13102871014B.0009"
+          광주: "13102871014B.0010"
+          대전: "13102871014B.0011"
+          울산: "13102871014B.0012"
+          경기: "13102871014B.0013"
+          세종: "13102871014B.0014"
+          강원: "13102871014B.0015"
+          충북: "13102871014B.0016"
+          충남: "13102871014B.0017"
+          전북: "13102871014B.0018"
+          전남: "13102871014B.0019"
+          경북: "13102871014B.0020"
+          경남: "13102871014B.0021"
+          제주: "13102871014B.0022"
+    items: {"미분양(12월기준)": "13103871014T1"}
+    facts:
+      - 연간만 있다. 월 단위 요청은 불가
+      - 지역 코드 순서가 표준과 다르다 (울산 다음 경기, 그다음 세종)
+    verified: "2026-07-20"
+
+  - id: "101/DT_1J22003"
+    name: 소비자물가지수(2020=100)
+    periods: [M, Q, Y]
+    axes:
+      - flag: --class1
+        name: 시도별
+        codes:
+          전국: T10
+          서울: T11
+          부산: T12
+          대구: T13
+          인천: T14
+          광주: T15
+          대전: T16
+          울산: T17
+          세종: T18
+          전남광주통합특별시: T19
+          경기: T21
+          강원: T31
+          충북: T41
+          충남: T51
+          전북: T61
+          전남: T71
+          경북: T81
+          경남: T90
+          제주: T96
+    items: {"소비자물가지수(총지수)": T}
+    facts:
+      - 시도별 버전 101/INH_1J22003 도 같은 지역 코드 체계 (T12 부산, T14 인천 실측)
+    verified: "2026-07-20"
+
+  - id: "301/DT_200Y001"
+    name: 국민계정 주요지표 (명목 GDP)
+    periods: [Y]
+    axes:
+      - flag: --class1
+        name: 계정항목별
+        codes: {"국내총생산(명목 원화표시)": "13102134474ACC_ITEM.10101"}
+    items: {"주요지표(연간지표)": "13103134474999"}
+    facts:
+      - 지역 구분이 없다
+      - "2026-10-10 기준 2023년까지 수록 (2024 요청 시 2023 까지만 나옴)"
+    verified: "2026-10-10"
+
+  - id: "101/DT_1IN1502"
+    name: 인구총조사 총인구
+    periods: [Y]
+    axes:
+      - flag: --class1
+        name: 행정구역별
+        codes: {전국: "00"}
+    items: {총인구: T100}
+    facts:
+      - "2021~2025 전국 총인구 조회 확인 (51,738,071 → 51,817,499)"
+    verified: "2026-10-10"
+
+  - id: "101/DT_1DA7002S"
+    name: 경제활동인구조사 연령계층별
+    periods: [M, Q, Y]
+    axes:
+      - flag: --class1
+        name: 연령계층별
+        codes: {15세 이상 전체: "00"}
+    items: {인구: T10, 경제활동인구: T20, 취업자: T30, 실업자: T40, 비경제활동인구: T50, 경제활동참가율: T60, 실업률: T80, 고용률: T90}
+    facts:
+      - 축은 지역이 아니라 연령계층이다 (지역별 실업률은 101/DT_1DA7104S)
+    verified: "2026-07-20"
+
+  - id: "101/DT_1DA7104S"
+    name: 행정구역(시도)/성별 실업률
+    periods: [M, Q, Y]
+    axes:
+      - flag: --class1
+        name: 시도별
+        codes: {계: "00", 서울특별시: "11", 전남광주통합특별시: "12", 광주광역시: "24", 전라남도: "36", 부산광역시: "21", 대구광역시: "22"}
+      - flag: --class2
+        name: 성별
+        codes: {계: "0", 남자: "2", 여자: "3"}
+    items: {실업률: T80}
+    facts:
+      - "분기 시점은 YYYY0Q (202501 = 2025년 1분기)"
+    verified: "2026-10-12"
+
+  - id: "101/INH_1DA7014S_03"
+    name: 고용률(시도)
+    periods: [M, Q, Y]
+    axes:
+      - flag: --class1
+        name: 시도별
+        codes: {계: "00", 서울특별시: "11", 전남광주통합특별시: "12", 광주광역시: "24", 전라남도: "36"}
+      - flag: --class2
+        name: 성별
+        codes: {계: "0", 남자: "2", 여자: "3"}
+    items: {고용률: T90}
+    verified: "2026-10-10"
+
+  - id: "101/DT_1YL20651E"
+    name: 주민등록인구(시도/시/군/구)
+    periods: [Y]
+    axes:
+      - flag: --class1
+        name: 행정구역별
+        codes: {경기도: "41"}
+    items: {계: T20}
+    facts:
+      - "경기도 하위는 41xxx 코드. '41*' 은 경기도+시+구가 섞여 32행, 시·군 31개만 원하면 하위 코드를 + 로 나열"
+    verified: "2026-10-12"
+
+  - id: "101/INH_1B81A01"
+    name: 출생아수(시도/시/군/구)
+    periods: [Y, M]
+    axes:
+      - flag: --class1
+        name: 시군구별
+        codes: {전국: "00", 서울특별시: "11", 울산광역시: "26"}
+    items: {계: T1, 남자: T2, 여자: T3}
+    facts:
+      - 울산 하위 구·군은 26xxx (메타 UP_ITM_ID 로 확인)
+      - "울산 출생아수 2021~2025: 6,127 / 5,399 / 5,082 / 5,282 / 5,574"
+    verified: "2026-10-10"
+
+  - id: "101/DT_1B81A23"
+    name: 시군구/출생아수, 합계출산율
+    periods: [Y]
+    axes:
+      - flag: --class1
+        name: 시군구별
+        codes: {전국: "00", 울산광역시: "26"}
+    items: {출생아수: T1, 합계출산율: T2}
+    verified: "2026-10-10"
+
+  - id: "101/DT_1B81A21"
+    name: 시도/합계출산율, 모의 연령별 출산율
+    periods: [Y]
+    axes:
+      - flag: --class1
+        name: 시도별
+        codes: {전국: "00", 서울특별시: "11", 세종특별자치시: "29"}
+    items: {합계출산율: T1}
+    facts:
+      - "17개 시도는 11+21+22+23+24+25+26+29+31+32+33+34+35+36+37+38+39 로 한 번에 조회"
+    verified: "2026-10-12"
+
+  - id: "101/DT_1YL20162E"
+    name: 아파트매매가격지수(시도/시/군/구)
+    periods: [M]
+    axes:
+      - flag: --class1
+        name: 행정구역별
+        codes: {전국: a0, 서울특별시: a7}
+      - flag: --class2
+        name: 주택유형별
+        codes: {아파트: "01"}
+    items: {아파트매매가격지수: sales}
+    facts:
+      - 월간만 있다. 서울 하위 25개 구는 a70101xx·a70201xx 등 (UP_ITM_ID=a7)
+      - 전세는 101/DT_1YL20172E (같은 구조, 항목 sales = 아파트전세가격지수)
+    verified: "2026-10-12"
+
+  - id: "118/DT_118N_SAUPM75"
+    name: 시군구별(8개시), 산업별, 규모별, 사업체수 및 종사자수 (고용노동부)
+    periods: [Y]
+    axes:
+      - flag: --class1
+        name: 지역별(시/군/구)
+        codes:
+          울산광역시: "15118ZONE2012_26"
+          울산 중구: "15118ZONE2012_262601"
+          울산 남구: "15118ZONE2012_262602"
+          울산 동구: "15118ZONE2012_262603"
+          울산 북구: "15118ZONE2012_262604"
+          울산 울주군: "15118ZONE2012_262631"
+      - flag: --class2
+        name: 산업분류별
+        codes: {전체: INDUSTRY_11S0}
+      - flag: --class3
+        name: 규모별
+        codes: {전규모: "15118SIZES_0700"}
+    items: {사업체수: "16118ED_1", 총종사자수_계: "16118ED_9A", 총종사자수_남자: "16118ED_9B", 총종사자수_여자: "16118ED_9C"}
+    facts:
+      - "2024년 한 해만 수록"
+      - 산업 대분류 18개는 전체(INDUSTRY_11S0)와 같은 최상위 단계 (UP_ITM_ID 빈 값). ALL 은 중분류까지 44개
+      - "울산 구·군 × 대분류 총종사자수 2024: 합계 443,646명 (중구 40,432, 남구 137,274, 동구 66,106, 북구 99,692, 울주군 100,142)"
+    verified: "2026-10-12"
+
+  - id: "101/DT_1FS1101"
+    name: 시도(시군구)/산업분류별 주요지표 (광업제조업조사, 10명 이상)
+    periods: [Y]
+    axes:
+      - flag: --class1
+        name: 시도별
+        codes: {울산광역시: "26", 울산 중구: "26010", 울산 남구: "26020", 울산 동구: "26030", 울산 북구: "26040", 울산 울주군: "26510"}
+      - flag: --class2
+        name: 산업별
+        codes: {광업 및 제조업: "0", 광업: B, 제조업: C}
+    items: {사업체수: T01, 종사자수: T02, 급여액: T03, 출하액: T04, 주요생산비: T05, 부가가치: T06, 유형자산 연말잔액: T07}
+    facts:
+      - 시군구 단위 '생산액' 은 출하액(T04, 백만원)을 쓴다
+      - 광업·제조업만 다룬다 (서비스업 없음). 광업은 비공개(X)가 많다
+      - "울주군 코드가 26510 이다 (같은 조사의 101/DT_1FS1001_S, 142 표들은 26310) — 표마다 확인"
+      - "2020~2024 수록"
+    verified: "2026-10-12"
+
+  - id: "142/DT_BR_B008"
+    name: 시군구별·산업대분류별·기업규모별 종사자수 (중소벤처기업부)
+    periods: [Y]
+    axes:
+      - flag: --class1
+        name: 시군구별
+        codes: {울산 중구: "15142N.26010", 울산 남구: "15142N.26020", 울산 동구: "15142N.26030", 울산 북구: "15142N.26040", 울산 울주군: "15142N.26310"}
+      - flag: --class2
+        name: 산업별(10차)대분류별
+        codes: {전산업: "15142700", 제조업: "151427C"}
+      - flag: --class3
+        name: 기업규모별
+        codes: {전체기업: "16142T209", 소상공인: "16142T2524", 소기업: T004, 중기업: T001}
+    items: {종사자수: T001}
+    facts:
+      - "전체기업(16142T209)은 2023 이 [30], 2022 는 있음 — 최신 연도 공표가 늦다"
+      - "2019~2023 수록"
+    verified: "2026-10-12"

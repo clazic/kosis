@@ -103,18 +103,6 @@ kosis config key-list              # 등록된 키 확인
 api_keys: ["키1", "키2"]       # API 키 목록
 default_format: "table"        # 기본 출력 형식
 cache_ttl_hours: 24            # 캐시 유효 시간
-ai:
-  default: "hermes"            # 기본 AI 공급자 (OpenAI 호환 API)
-  providers:
-    hermes:
-      base_url: "http://100.70.244.98:8642/v1"
-      model: "hermes-agent"
-      key_env: "HERMES_API_KEY"   # 키는 환경변수 또는 `kosis config ai-key`로 지정
-    jev:                          # 선택 전용(통계표·코드 고르기). type: typesafe, 이름 jev 고정
-      type: "typesafe"
-      base_url: "https://api.typesafe.ai/v1"
-      model: "jev-latest"
-      key_env: "TYPESAFE_API_KEY"
 ```
 
-`quick --ai`는 글생성 공급자(hermes)와 선택 공급자(jev)를 함께 씁니다. 학습 결과는 별도 파일 `~/.kosis/learnings.yaml`에 저장됩니다 (05번 문서 참고).
+AI 에이전트가 작업하며 확인한 사실은 `~/.kosis/rules.local.yaml`(로컬 규칙)에 적습니다. 배포 규칙은 스킬의 `references/rules.yaml`입니다 (SKILL.md "규칙" 참고).
