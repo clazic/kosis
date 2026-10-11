@@ -12,6 +12,7 @@
 .playwright-mcp/
 .plan/
 .DS_Store
+.kosis-manifest.json
 
 # 빌드 바이너리 (빌드/Release로 생성 — git에 올리지 않음)
 apps/kosis-*

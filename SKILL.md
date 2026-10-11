@@ -19,7 +19,8 @@ kosis 는 판단하지 않는다. 판단은 kosis 를 쓰는 AI 가 `s`(검색) 
 2. **작업 후 WRITE** — s·m·d 를 하며 **새로 확인한 사실**은 `kosis rules add`로 한 항목씩 저장한다 (YAML을 표준입력으로. 파일 이름·형식 검사는 kosis가 한다. 형식이 틀리면 종료 코드 1). `kosis d`가 오류를 내면 원인을 확인한 뒤 꼭 기록한다.
    - 내용: `kind`(rule|table|concept|breakdown|crosswalk|gap), `title`, `verified`, `evidence` + 종류별 필드 (형식은 `kosis rules --help`)
    - 실제로 실행해 본 것만. `evidence`(무엇을 실행해 무엇을 봤는지)와 `verified`(날짜) 필수. 추측은 쓰지 않는다
-   - 기존 규칙이 틀렸으면 지우지 말고 `status: wrong`과 이유를 적는다
+   - 기존 규칙이 틀렸으면 지우지 말고 `status: wrong`과 이유를 적는다. 잘못 고쳤으면 `kosis rules log`로 이력을 보고 `kosis rules revert <파일>`로 되돌린다
+   - 설치된 SKILL.md·references 는 직접 고치지 않는다 (`kosis update` 가 덮어쓴다. 고친 파일은 `~/.kosis/skill-backup/`에 백업은 된다)
    - 저장한 뒤 `kosis rules sync`로 다른 컴퓨터와 합친다 (`rules.d`가 저장소와 연결된 경우. 처음 연결은 `kosis rules sync --init <비공개 저장소 URL>`)
    - 여러 번 확인된 로컬 규칙은 저장소의 `references/rules.yaml`로 올린다 (PR → 릴리스 → 모든 사용자)
 3. 사람용 설명·사례는 [LEARNINGS.md](LEARNINGS.md)(오답노트)에 있다. 규칙 파일은 같은 지식을 AI 가 바로 쓰도록 구조화한 것이다.
@@ -189,7 +190,7 @@ kosis s "미분양" -n 10
 | `ind data <이름>` | `ind d` | `kosis ind d "GDP(명목)"` |
 | `ind list <목록ID>` | `ind ls` | `kosis ind ls I01` (목록ID 필수) |
 | `config set-key/add-key/show` | | `kosis config set-key <KEY>` |
-| `rules list/add/sync/validate` | | `kosis rules list 울산` (배포·로컬 규칙 보기, `-f json`), `kosis rules add < rule.yaml` (로컬 규칙 저장), `kosis rules sync` (여러 컴퓨터 합치기), `kosis rules validate` (형식 점검) |
+| `rules list/add/sync/log/revert/validate` | | `kosis rules list 울산` (배포·로컬 규칙 보기, `-f json`), `kosis rules add < rule.yaml` (로컬 규칙 저장), `kosis rules sync` (여러 컴퓨터 합치기), `kosis rules log 울산` (변경 이력), `kosis rules revert <파일>` (이전 내용으로), `kosis rules validate` (형식 점검) |
 | `bookmark add/ls/remove` | `bm` | `kosis bm add 101 DT_1IN1502 --name "인구"` |
 | `history` | `hi` | `kosis hi replay 3` |
 | (인자 없음) | | `kosis` → TUI 대시보드 |

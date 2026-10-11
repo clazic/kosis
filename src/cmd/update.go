@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -179,10 +180,23 @@ func runUpdate() error {
 			fmt.Fprintf(os.Stderr, "  경고: SHA256SUMS에서 %s 항목을 찾지 못했습니다. 검증 생략.\n", skillAsset)
 		}
 
+		stamp := time.Now().Format("20060102-150405")
 		for _, dest := range collectSkillDirs(home) {
-			if err := extractTarGz(skillTar, dest); err != nil {
+			// 지난 설치 이후 직접 고친 파일은 덮어쓰기 전에 백업
+			if changed, backup, err := backupModifiedSkillFiles(dest, stamp); err != nil {
+				fmt.Fprintf(os.Stderr, "  스킬 백업 실패(%s): %v — 갱신하지 않습니다\n", dest, err)
+				continue
+			} else if len(changed) > 0 {
+				fmt.Fprintf(os.Stderr, "  ⚠ 직접 고친 스킬 파일 %d개를 덮어씁니다 (백업: %s): %s\n", len(changed), backup, strings.Join(changed, ", "))
+				fmt.Fprintln(os.Stderr, "    오래 남길 내용은 저장소(SKILL.md·references)에 올리거나, 규칙이면 kosis rules add 로 적으세요.")
+			}
+			files, err := extractTarGz(skillTar, dest)
+			if err != nil {
 				fmt.Fprintf(os.Stderr, "  스킬 갱신 실패(%s): %v\n", dest, err)
 				continue
+			}
+			if err := writeSkillManifest(dest, latest, files); err != nil {
+				fmt.Fprintf(os.Stderr, "  경고: 스킬 목록(%s) 저장 실패: %v\n", skillManifestName, err)
 			}
 			fmt.Printf("  스킬: %s\n", dest)
 			skillUpdated = true
@@ -534,20 +548,97 @@ func downloadFile(url, dest string) error {
 	return err
 }
 
-// extractTarGz tar.gz를 dest에 추출합니다 (경로 traversal 방어, 기존 파일 덮어쓰기).
-func extractTarGz(tarPath, dest string) error {
-	f, err := os.Open(tarPath)
+// skillManifestName 스킬 폴더에 남기는 설치 기록 — 다음 업데이트 때 직접 고친 파일을 알아낸다.
+const skillManifestName = ".kosis-manifest.json"
+
+type skillManifest struct {
+	Version string            `json:"version"`
+	Files   map[string]string `json:"files"` // 슬래시 경로 → sha256
+}
+
+func fileSHA256(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// writeSkillManifest 방금 설치한 파일들의 해시를 기록한다.
+func writeSkillManifest(dest, version string, files []string) error {
+	m := skillManifest{Version: version, Files: map[string]string{}}
+	for _, rel := range files {
+		sum, err := fileSHA256(filepath.Join(dest, rel))
+		if err != nil {
+			return err
+		}
+		m.Files[filepath.ToSlash(rel)] = sum
+	}
+	data, err := json.MarshalIndent(m, "", "  ")
 	if err != nil {
 		return err
+	}
+	return os.WriteFile(filepath.Join(dest, skillManifestName), data, 0o644)
+}
+
+// backupModifiedSkillFiles 지난 설치 기록과 내용이 달라진 파일을 ~/.kosis/skill-backup/<stamp>/<폴더>/ 로 복사한다.
+// 기록이 없으면(설치 스크립트로 처음 깔았거나 이전 버전) 비교할 수 없어 건너뛴다.
+// ponytail: 기록에 없는 새 파일(사용자가 추가한 파일)은 tar 가 덮어쓰지 않으므로 보지 않는다.
+func backupModifiedSkillFiles(dest, stamp string) (changed []string, backupDir string, err error) {
+	data, err := os.ReadFile(filepath.Join(dest, skillManifestName))
+	if err != nil {
+		return nil, "", nil
+	}
+	var m skillManifest
+	if json.Unmarshal(data, &m) != nil {
+		return nil, "", nil
+	}
+	home, _ := os.UserHomeDir()
+	label := dest
+	if rel, rerr := filepath.Rel(home, dest); rerr == nil && !strings.HasPrefix(rel, "..") {
+		label = rel
+	}
+	label = strings.NewReplacer(string(os.PathSeparator), "_", ":", "_").Replace(label)
+	backupDir = filepath.Join(config.ConfigDir(), "skill-backup", stamp, label)
+	for rel, want := range m.Files {
+		p := filepath.Join(dest, filepath.FromSlash(rel))
+		got, herr := fileSHA256(p)
+		if herr != nil || got == want { // 지워졌거나 그대로
+			continue
+		}
+		dst := filepath.Join(backupDir, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(dst), 0o700); err != nil {
+			return changed, backupDir, err
+		}
+		if err := copyFile(p, dst, 0o644); err != nil {
+			return changed, backupDir, err
+		}
+		changed = append(changed, rel)
+	}
+	sort.Strings(changed)
+	return changed, backupDir, nil
+}
+
+// extractTarGz tar.gz를 dest에 추출합니다 (경로 traversal 방어, 기존 파일 덮어쓰기). 반환: 쓴 파일(dest 기준 상대 경로).
+func extractTarGz(tarPath, dest string) ([]string, error) {
+	f, err := os.Open(tarPath)
+	if err != nil {
+		return nil, err
 	}
 	defer f.Close()
 	gz, err := gzip.NewReader(f)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer gz.Close()
 
 	cleanDest := filepath.Clean(dest)
+	var files []string
 	tr := tar.NewReader(gz)
 	for {
 		hdr, err := tr.Next()
@@ -555,7 +646,7 @@ func extractTarGz(tarPath, dest string) error {
 			break
 		}
 		if err != nil {
-			return err
+			return nil, err
 		}
 		name := filepath.Clean(hdr.Name)
 		if name == "." {
@@ -564,29 +655,30 @@ func extractTarGz(tarPath, dest string) error {
 		target := filepath.Join(cleanDest, name)
 		// 경로 이탈(zip slip) 방어
 		if target != cleanDest && !strings.HasPrefix(target, cleanDest+string(os.PathSeparator)) {
-			return fmt.Errorf("안전하지 않은 경로 항목: %s", hdr.Name)
+			return files, fmt.Errorf("안전하지 않은 경로 항목: %s", hdr.Name)
 		}
 		switch hdr.Typeflag {
 		case tar.TypeDir:
 			if err := os.MkdirAll(target, 0o755); err != nil {
-				return err
+				return nil, err
 			}
 		case tar.TypeReg:
 			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-				return err
+				return nil, err
 			}
 			out, err := os.OpenFile(target, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, os.FileMode(hdr.Mode)&0o777)
 			if err != nil {
-				return err
+				return nil, err
 			}
 			if _, err := io.Copy(out, tr); err != nil {
 				out.Close()
-				return err
+				return nil, err
 			}
 			out.Close()
+			files = append(files, name)
 		}
 	}
-	return nil
+	return files, nil
 }
 
 // replaceBinary 새 바이너리를 dst에 설치합니다. 실행 중인 바이너리도 안전하게 교체합니다.

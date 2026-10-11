@@ -71,3 +71,66 @@ func TestSyncTwoComputers(t *testing.T) {
 		t.Error("merge 는 되돌려져야 함")
 	}
 }
+
+func TestLogAndRevert(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git 없음")
+	}
+	root := t.TempDir()
+	remote := filepath.Join(root, "remote.git")
+	_ = exec.Command("git", "init", "-q", "--bare", remote).Run()
+	dir := filepath.Join(root, "a")
+	path, err := Write(dir, sampleTable(), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	name := filepath.Base(path)
+	if _, err := Revert(dir, name, ""); err == nil {
+		t.Error("이력 없으면 오류")
+	}
+	if _, err := Sync(dir, remote); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Revert(dir, name, ""); err == nil || !strings.Contains(err.Error(), "처음 버전") {
+		t.Errorf("처음 버전은 되돌릴 수 없음: %v", err)
+	}
+	orig, _ := os.ReadFile(path)
+	_ = os.WriteFile(path, append(append([]byte{}, orig...), "status: wrong\n"...), 0o600)
+
+	// 미동기화 변경이 이력 맨 위에, 제목과 함께
+	ch, err := Log(dir, "울주", 10)
+	if err != nil || len(ch) != 2 || ch[0].Commit != "" || ch[0].Title != sampleTable().Title || ch[1].Status != "A" {
+		t.Fatalf("log: %+v %v", ch, err)
+	}
+	// sync 전 변경 → 마지막 sync 상태로
+	if _, err := Revert(dir, name, ""); err != nil {
+		t.Fatal(err)
+	}
+	if now, _ := os.ReadFile(path); string(now) != string(orig) {
+		t.Error("sync 전 변경이 버려져야 함")
+	}
+	// sync 후 고친 것 → 직전 커밋으로
+	_ = os.WriteFile(path, append(append([]byte{}, orig...), "status: wrong\n"...), 0o600)
+	if _, err := Sync(dir, ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Revert(dir, name, ""); err != nil {
+		t.Fatal(err)
+	}
+	if now, _ := os.ReadFile(path); string(now) != string(orig) {
+		t.Error("직전 커밋 내용이어야 함")
+	}
+	// 지운 파일 살리기
+	_, _ = Sync(dir, "")
+	_ = os.Remove(path)
+	_, _ = Sync(dir, "")
+	if _, err := Revert(dir, name, ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Error("지운 규칙이 살아나야 함")
+	}
+	if _, err := Revert(dir, "울산.yaml", ""); err == nil {
+		t.Error("규칙 파일 이름이 아니면 오류")
+	}
+}

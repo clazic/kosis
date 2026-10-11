@@ -3,6 +3,7 @@ package cmd
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -67,5 +68,34 @@ func TestParseSHA256SumsAndVerify(t *testing.T) {
 	}
 	if err := verifySHA256(payload, "deadbeef"); err == nil {
 		t.Error("불일치 해시인데 통과 — 변조된 다운로드가 설치될 수 있음")
+	}
+}
+
+// 지난 설치 이후 직접 고친 스킬 파일만 백업된다.
+func TestBackupModifiedSkillFiles(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	dest := filepath.Join(home, ".agents", "skills", "kosis")
+	_ = os.MkdirAll(filepath.Join(dest, "references"), 0o755)
+	_ = os.WriteFile(filepath.Join(dest, "SKILL.md"), []byte("v1"), 0o644)
+	_ = os.WriteFile(filepath.Join(dest, "references", "a.md"), []byte("a"), 0o644)
+
+	if ch, _, err := backupModifiedSkillFiles(dest, "s0"); err != nil || len(ch) != 0 {
+		t.Fatalf("기록이 없으면 건너뜀: %v %v", ch, err)
+	}
+	if err := writeSkillManifest(dest, "v0.5.13", []string{"SKILL.md", filepath.Join("references", "a.md")}); err != nil {
+		t.Fatal(err)
+	}
+	_ = os.WriteFile(filepath.Join(dest, "SKILL.md"), []byte("내가 고침"), 0o644)
+	ch, backup, err := backupModifiedSkillFiles(dest, "s1")
+	if err != nil || len(ch) != 1 || ch[0] != "SKILL.md" {
+		t.Fatalf("고친 파일만: %v %v", ch, err)
+	}
+	if got, _ := os.ReadFile(filepath.Join(backup, "SKILL.md")); string(got) != "내가 고침" {
+		t.Errorf("백업 내용: %q (%s)", got, backup)
+	}
+	if !strings.Contains(backup, filepath.Join("skill-backup", "s1", ".agents_skills_kosis")) {
+		t.Errorf("백업 위치: %s", backup)
 	}
 }

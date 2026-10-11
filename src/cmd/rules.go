@@ -35,6 +35,8 @@ var rulesCmd = &cobra.Command{
   list [찾을 말]   배포·로컬 규칙 목록 (-f json 이면 본문까지)
   add [파일]       규칙 한 항목을 rules.d 에 저장 (YAML, 파일을 안 주면 표준입력)
   sync             rules.d 를 비공개 git 저장소와 합치기 (여러 컴퓨터)
+  log [찾을 말]    로컬 규칙 변경 이력 (언제·어느 컴퓨터·무엇이)
+  revert <파일>    규칙 파일 하나를 이전 내용으로 되돌리기
   validate         로컬 규칙과 배포 규칙의 형식 점검 (문제가 있으면 종료 코드 1)
 
 예제:
@@ -43,6 +45,8 @@ var rulesCmd = &cobra.Command{
   kosis rules list --kind table -f json
   kosis rules add < rule.yaml
   kosis rules sync
+  kosis rules log 울산
+  kosis rules revert 20261012-3ca06abf.yaml
   kosis rules validate
 
 참고:
@@ -281,6 +285,93 @@ git 이 필요하고, 인증은 git 설정(gh auth 등)을 그대로 씁니다.
 	},
 }
 
+var rulesLogCmd = &cobra.Command{
+	Use:   "log [찾을 말]",
+	Short: "로컬 규칙 변경 이력",
+	Long: `~/.kosis/rules.d 의 변경 이력을 최근 순으로 보여줍니다 (kosis rules sync 가 남긴 git 이력).
+맨 위에는 아직 sync 하지 않은 변경이 "미동기화"로 나옵니다.
+
+파라미터:
+  [찾을 말]   규칙 제목·파일 이름에 든 말 (공백·대소문자 무시). 생략하면 전부.
+
+플래그:
+  -n <수>     최대 줄 수 (기본 50)
+  -f json     JSON 으로
+
+표시: A 추가, M 수정, D 삭제, R 이름 바뀜, ?? 새 파일(미동기화)
+
+예제:
+  kosis rules log
+  kosis rules log 울산
+  kosis rules log -n 10 -f json`,
+	Args: cobra.MaximumNArgs(1),
+	Run: func(cmd *cobra.Command, args []string) {
+		n, _ := cmd.Flags().GetInt("limit")
+		format, _ := cmd.Flags().GetString("format")
+		query := ""
+		if len(args) == 1 {
+			query = args[0]
+		}
+		changes, err := rules.Log(rules.Dir(), query, n)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "❌", err)
+			os.Exit(1)
+		}
+		if format == "json" {
+			enc := json.NewEncoder(os.Stdout)
+			enc.SetEscapeHTML(false)
+			enc.SetIndent("", "  ")
+			_ = enc.Encode(changes)
+			return
+		}
+		for _, c := range changes {
+			commit := c.Commit
+			if commit == "" {
+				commit = "-------"
+			}
+			fmt.Printf("%s %-10s %-2s %s  %s", commit, c.Date, c.Status, c.File, c.Title)
+			if c.Subject != "" {
+				fmt.Printf("  (%s)", c.Subject)
+			}
+			fmt.Println()
+		}
+		if len(changes) == 0 {
+			fmt.Println("이력이 없습니다.")
+		}
+	},
+}
+
+var rulesRevertCmd = &cobra.Command{
+	Use:   "revert <파일>",
+	Short: "규칙 파일 하나를 이전 내용으로 되돌리기",
+	Long: `~/.kosis/rules.d 의 규칙 파일 하나를 이전 내용으로 되돌립니다.
+  - sync 전 변경이 있으면: 마지막 sync 상태로
+  - 없으면: 그 파일의 직전 버전으로 (지운 파일이면 다시 살림)
+  - --to <커밋>: 그 커밋의 내용으로 (커밋은 kosis rules log 에서 확인)
+되돌린 뒤 kosis rules sync 로 다른 컴퓨터에 반영합니다.
+처음 버전이거나 아직 sync 하지 않은 새 규칙은 되돌릴 이전 내용이 없습니다 — 틀렸으면 status: wrong.
+
+파라미터:
+  <파일>   규칙 파일 이름 (YYYYMMDD-<8hex>.yaml, 경로를 줘도 됨)
+
+예제:
+  kosis rules revert 20261012-3ca06abf.yaml
+  kosis rules revert 20261012-3ca06abf.yaml --to 9a636f4`,
+	Args: cobra.ExactArgs(1),
+	Run: func(cmd *cobra.Command, args []string) {
+		to, _ := cmd.Flags().GetString("to")
+		what, err := rules.Revert(rules.Dir(), args[0], to)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "❌", err)
+			os.Exit(1)
+		}
+		fmt.Printf("✅ %s 을(를) %s 되돌렸습니다 — kosis rules sync 로 반영하세요\n", filepath.Base(args[0]), what)
+		if _, probs := rules.LoadDir(rules.Dir()); len(probs) > 0 {
+			fmt.Fprintf(os.Stderr, "⚠ 형식 문제 %d건 — kosis rules validate\n", len(probs))
+		}
+	},
+}
+
 var rulesValidateCmd = &cobra.Command{
 	Use:   "validate",
 	Short: "규칙 형식 점검",
@@ -333,7 +424,12 @@ func init() {
 	rulesCmd.AddCommand(rulesListCmd)
 	rulesCmd.AddCommand(rulesAddCmd)
 	rulesCmd.AddCommand(rulesSyncCmd)
+	rulesCmd.AddCommand(rulesLogCmd)
+	rulesCmd.AddCommand(rulesRevertCmd)
 	rulesCmd.AddCommand(rulesValidateCmd)
+	rulesLogCmd.Flags().IntP("limit", "n", 50, "최대 줄 수")
+	rulesLogCmd.Flags().StringP("format", "f", "table", "출력 형식: table | json")
+	rulesRevertCmd.Flags().String("to", "", "되돌릴 커밋 (kosis rules log 참고)")
 	rulesSyncCmd.Flags().String("init", "", "처음 연결할 비공개 git 저장소 URL")
 	rulesListCmd.Flags().String("kind", "", "종류: rule|table|concept|breakdown|crosswalk|gap")
 	rulesListCmd.Flags().StringP("format", "f", "table", "출력 형식: table | json")
