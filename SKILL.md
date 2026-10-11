@@ -178,11 +178,11 @@ kosis s "미분양" -n 10
 
 | 명령어 | 별칭 | 예시 |
 |--------|------|------|
-| `search <키워드>` | `s` | `kosis s "인구" -n 50` |
-| `meta <ORG> <TBL>` | `m` | `kosis m 101 DT_1IN1502` |
-| `data <ORG> <TBL>` | `d` | `kosis d 101 DT_1IN1502 -c1 00 -i T100 -p Y -l 5` |
+| `search <키워드>` | `s` | `kosis s "인구" -n 50`, `kosis s "출하액" --stat 광업제조업조사 --items` (거르기: `--org`·`--stat`·`--region`, 항목·단위: `--items`) |
+| `meta <ORG> <TBL>` | `m` | `kosis m 101 DT_1IN1502`, `kosis m 101 DT_1FS1101 --under 26` (코드 고르기: `--find 이름`·`--under 상위코드`·`--level N` → d 에 넣을 `"a+b"`) |
+| `data <ORG> <TBL>` | `d` | `kosis d 101 DT_1IN1502 -c1 00 -i T100 -p Y -l 5`, `... --pivot C1` (분류1 값을 열로 펼친 비교표) |
 | `list` | `ls` | `kosis ls --parent A_4` |
-| `explain <ORG> <TBL>` | `ex` | `kosis ex 101 DT_1IN1502` |
+| `explain <ORG> <TBL>` | `ex` | `kosis ex 101 DT_1IN1502` (조사 범위·주석·원표/조사설명 링크) |
 | `bulk <userStatsId>` | | `kosis bulk "myid/..." -o data.xls` |
 | `chart` | | `kosis d ... -f json \| kosis chart --type line` |
 | `ind search <이름>` | `ind s` | `kosis ind s "GDP"` |
@@ -193,6 +193,8 @@ kosis s "미분양" -n 10
 | `rules list/add/sync/log/revert/validate` | | `kosis rules list 울산` (배포·로컬 규칙 보기, `-f json`), `kosis rules add < rule.yaml` (로컬 규칙 저장), `kosis rules sync` (여러 컴퓨터 합치기), `kosis rules log 울산` (변경 이력), `kosis rules revert <파일>` (이전 내용으로), `kosis rules validate` (형식 점검) |
 | `bookmark add/ls/remove` | `bm` | `kosis bm add 101 DT_1IN1502 --name "인구"` |
 | `history` | `hi` | `kosis hi replay 3` |
+
+> 출력: stdout 에는 데이터(table/json/csv/md)만, 결과 수·안내·오류는 stderr 로 나온다. `-f json` 결과는 `2>/dev/null` 후 그대로 파싱하면 된다 (결과가 없으면 `[]`).
 | (인자 없음) | | `kosis` → TUI 대시보드 |
 
 **서비스뷰 코드** (`list --view` 플래그):

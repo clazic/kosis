@@ -20,16 +20,16 @@ type SearchResult struct {
 
 // MetaResult represents metadata result from statisticsData.getMeta API.
 type MetaResult struct {
-	ObjID   string `json:"OBJ_ID"`
-	ObjNM   string `json:"OBJ_NM"`
-	ObjIDSN string `json:"OBJ_ID_SN"`
-	ItmID   string `json:"ITM_ID"`
-	ItmNM   string `json:"ITM_NM"`
-	UpItmID string `json:"UP_ITM_ID"`
-	Level   int    `json:"LEVEL"`
-	Type    string `json:"TYPE"`
-	Code    string `json:"CODE"`
-	Label   string `json:"LABEL"`
+	ObjID     string `json:"OBJ_ID"`
+	ObjNM     string `json:"OBJ_NM"`
+	ObjIDSN   string `json:"OBJ_ID_SN"`
+	ItmID     string `json:"ITM_ID"`
+	ItmNM     string `json:"ITM_NM"`
+	UpItmID   string `json:"UP_ITM_ID"`
+	Level     int    `json:"LEVEL"`
+	Type      string `json:"TYPE"`
+	Code      string `json:"CODE"`
+	Label     string `json:"LABEL"`
 	PrdSe     string `json:"PRD_SE"`
 	PrdDe     string `json:"PRD_DE"`
 	StrtPrdDe string `json:"STRT_PRD_DE"`
@@ -259,18 +259,6 @@ type StatList struct {
 	RecTblSe string `json:"REC_TBL_SE"`
 }
 
-// ExplainResult represents explanation data from statisticsExplData API.
-type ExplainResult struct {
-	OrgID        string `json:"orgId"`
-	StatsNM      string `json:"statsNm"`
-	WritingPurps string `json:"writingPurps"`
-	StatsPeriod  string `json:"statsPeriod"`
-	DataCollect  string `json:"dataCollect"`
-	SurveyScope  string `json:"surveyScope"`
-	PublishDe    string `json:"publishDe"`
-	OrgNM        string `json:"orgNm"`
-}
-
 // IndicatorResult represents indicator data from indicator APIs.
 type IndicatorResult struct {
 	StatJipyoID  string `json:"jipyoId"`
@@ -301,6 +289,7 @@ type SearchOptions struct {
 // MetaOptions contains optional metadata parameters.
 type MetaOptions struct {
 	Type string
+	raw  *[]map[string]any // MetaRaw 용: API 필드 그대로 받기
 }
 
 // DataOptions contains optional data query parameters.

@@ -93,6 +93,14 @@ rules:
     evidence: "m 101 DT_1FS1101 항목: T01 사업체수 … T04 출하액 … T07 유형자산 (생산액 항목 없음)"
     verified: "2026-10-12"
 
+  - id: search.filters
+    topic: search
+    when: 검색 결과에 다른 지역·기관·분야 표가 많이 섞일 때
+    do: "--org <기관 코드|이름 일부>, --stat <조사명 일부>, --region <지역 이름> 으로 거른다. 표마다 항목·단위를 보려면 --items (-n 을 작게)"
+    why: KOSIS 검색 API 는 키워드만 받는다. kosis 가 결과를 넉넉히 받아 거른다. --region 은 이름·기관·조사명·분류 경로 글자 매칭이라 전국 시도별 표는 빠진다
+    evidence: "s 출하액 --stat 광업제조업조사 → DT_1FS1103 등 광업제조업조사 표만. s 광업제조업 --org 101 --items → DT_1FJY1102 기업체수(개)"
+    verified: "2026-10-12"
+
   - id: search.check-recency
     topic: search
     when: 검색 결과에서 표를 고를 때
@@ -121,9 +129,25 @@ rules:
   - id: meta.hierarchy
     topic: meta
     when: 특정 지역·분류의 하위 값(예 울산의 구·군)이 필요할 때
-    do: kosis m <ORG> <TBL> -f json 의 CLASSIFICATIONS 에서 UP_ITM_ID 가 그 값의 코드인 항목을 찾는다
-    why: 메타에 상위-하위 관계가 들어 있다. 이름만으로는 같은 '중구'가 여러 시에 있다
-    evidence: "101/DT_1FS1101: 26(울산광역시) 아래 26010 중구·26020 남구·26030 동구·26040 북구·26510 울주군"
+    do: kosis m <ORG> <TBL> --under <상위 코드> 로 바로 아래 코드를 받는다 (끝에 d 에 넣을 "a+b+c" 가 나옴). 상위 코드를 모르면 --find <이름>, 대분류만이면 --level 1
+    why: 메타에 상위-하위 관계(UP_ITM_ID)가 들어 있다. 이름만으로는 같은 '중구'가 여러 시에 있다
+    evidence: "m 101 DT_1FS1101 --under 26 → 26010 중구·26020 남구·26030 동구·26040 북구·26510 울주군, --class1 \"26010+26020+26030+26040+26510\""
+    verified: "2026-10-12"
+
+  - id: meta.find-codes
+    topic: meta
+    when: 지역·산업·항목 코드를 이름으로 골라야 할 때
+    do: "kosis m <ORG> <TBL> --find \"이름1,이름2\" (공백 무시) 로 찾는다. -f json 이면 [{flag, code, name, level, parent_code, path, unit}] — flag 가 d 에 넘길 플래그(--class1 …, --item)"
+    why: 메타 JSON 을 직접 가공하지 않아도 되고, 어느 축(--class 몇 번)인지 함께 나온다
+    evidence: "m 101 DT_1FS1101 --find 출하액 → --item T04, --find 울주 → --class1 26510 (울산광역시 > 울주군)"
+    verified: "2026-10-12"
+
+  - id: meta.notes-and-survey
+    topic: meta
+    when: 표의 조사 범위·주석·용어 정의가 필요할 때 (예 10명 이상 사업체만인지)
+    do: kosis ex <ORG> <TBL> 로 통계설명(조사대상 범위·공표범위·주요 용어 등)·주석·원표/조사설명 링크를 본다. 주석만이면 m --type CMMT
+    why: 항목 이름만으로는 조사 범위를 알 수 없다. 원표(kosis.kr)·조사설명(narastat.kr) 링크는 사람에게 근거로 줄 수 있다
+    evidence: "ex 101 DT_1FS1101 → 승인번호 101009, 조사대상 10인 이상 사업체, 공표범위 시군구. ex 101 DT_1IN1502 → 주석 주1) 총인구(외국인 포함)"
     verified: "2026-10-12"
 
   - id: meta.totals-first
@@ -182,6 +206,14 @@ rules:
     do: 코드를 + 로 잇는다 (예 --class1 "26010+26020"). 25개까지 실측으로 동작
     why: 한 번의 조회로 여러 값을 받는다
     evidence: "118/DT_118N_SAUPM75 산업 대분류 18개, 101/DT_1YL20162E 서울 25개 구를 + 로 조회 성공"
+    verified: "2026-10-12"
+
+  - id: data.pivot
+    topic: data
+    when: 지역·시점 등을 열로 놓은 비교표가 필요할 때
+    do: kosis d … --pivot C1 (분류1 값이 열), --pivot PRD (시점이 열), --pivot ITM (항목이 열). 분류 이름(시도별)도 된다
+    why: 긴 표를 직접 피벗하지 않아도 된다. 한 칸에 값이 겹치면 경고하고 첫 값만 남긴다
+    evidence: "d 101 DT_1FS1101 --class1 \"26010+26020+26030+26040+26510\" --class2 \"B+C\" --item T04 -p Y -l 1 --pivot C1 → 산업별 행 × 구군 열"
     verified: "2026-10-12"
 
   - id: data.prefix-includes-parent
@@ -250,6 +282,14 @@ rules:
     verified: "2026-10-12"
 
   # ── 오류 코드 ──
+  - id: output.stdout-data-only
+    topic: workflow
+    when: -f json/csv 결과를 프로그램(Python·jq)으로 읽을 때
+    do: stdout 만 읽는다. 결과 수·안내·오류는 stderr 로 나온다 (2>/dev/null 로 버려도 된다). 결과가 없으면 json 은 []
+    why: v0.5.16 부터 안내문을 stdout 에서 뺐다. 이전 버전은 "검색 결과: N개" 가 JSON 뒤에 붙어 파싱이 깨졌다
+    evidence: "kosis s 울산 -n 2 -f json 2>/dev/null | python3 -c 'import json,sys; json.load(sys.stdin)' 성공"
+    verified: "2026-10-12"
+
   - id: error.20
     topic: error
     when: "[20] 필수 변수 누락"

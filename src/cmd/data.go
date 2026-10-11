@@ -55,6 +55,8 @@ var dataCmd = &cobra.Command{
   -f, --format <type>      출력 형식: table(기본), json, csv, md
   -o, --output <파일>      파일 저장 (.csv/.xlsx/.json/.db/.parquet)
   --fields <필드목록>      출력 필드 선택 ("C1_NM,ITM_NM,PRD_DE,DT")
+  --pivot <축>             그 축의 값을 열로 펼친 비교표 (C1~C8, ITM, PRD 또는 분류 이름)
+                           예: --pivot C1 → 지역이 열, --pivot PRD → 시점이 열
 
 차트 플래그:
   --chart <타입>           차트 생성: line, bar, pie
@@ -154,8 +156,8 @@ var dataCmd = &cobra.Command{
 
 		// CLI 모드: 모든 인자가 제공되어야 함
 		if len(args) < 2 {
-			fmt.Println("오류: ORG_ID와 TBL_ID는 필수입니다")
-			fmt.Println()
+			fmt.Fprintln(os.Stderr, "오류: ORG_ID와 TBL_ID는 필수입니다")
+			fmt.Fprintln(os.Stderr)
 			cmd.Help()
 			return
 		}
@@ -176,32 +178,32 @@ var dataCmd = &cobra.Command{
 		hasPeriods := periodsValue != ""
 
 		if userIDFlag == "" && (class1Flag == "" || itemFlag == "" || periodFlag == "") {
-			fmt.Println("오류: -c1/--class1, --item, --period는 필수입니다 (또는 --user-id 사용)")
-			fmt.Println()
+			fmt.Fprintln(os.Stderr, "오류: -c1/--class1, --item, --period는 필수입니다 (또는 --user-id 사용)")
+			fmt.Fprintln(os.Stderr)
 			cmd.Help()
 			return
 		}
 		if hasLatest && latestFlag <= 0 {
-			fmt.Println("오류: --latest는 1 이상의 정수여야 합니다.")
-			fmt.Println()
+			fmt.Fprintln(os.Stderr, "오류: --latest는 1 이상의 정수여야 합니다.")
+			fmt.Fprintln(os.Stderr)
 			cmd.Help()
 			return
 		}
 		if (startFlag == "") != (endFlag == "") {
-			fmt.Println("오류: --start와 --end는 함께 사용해야 합니다.")
-			fmt.Println()
+			fmt.Fprintln(os.Stderr, "오류: --start와 --end는 함께 사용해야 합니다.")
+			fmt.Fprintln(os.Stderr)
 			cmd.Help()
 			return
 		}
 		if hasPeriods && (hasLatest || hasRange) {
-			fmt.Println("오류: --periods는 --latest 또는 --start/--end와 함께 사용할 수 없습니다.")
-			fmt.Println()
+			fmt.Fprintln(os.Stderr, "오류: --periods는 --latest 또는 --start/--end와 함께 사용할 수 없습니다.")
+			fmt.Fprintln(os.Stderr)
 			cmd.Help()
 			return
 		}
 		if hasLatest && hasRange {
-			fmt.Println("오류: --latest와 --start/--end는 함께 사용할 수 없습니다.")
-			fmt.Println()
+			fmt.Fprintln(os.Stderr, "오류: --latest와 --start/--end는 함께 사용할 수 없습니다.")
+			fmt.Fprintln(os.Stderr)
 			cmd.Help()
 			return
 		}
@@ -348,6 +350,25 @@ var dataCmd = &cobra.Command{
 			formatOpts.Columns = fields
 		}
 
+		// --pivot: 한 축의 값을 열로 펼친다 (지역을 열로 놓은 비교표 등)
+		if pivotFlag != "" {
+			if colMeta == nil {
+				fmt.Fprintln(os.Stderr, "오류: --pivot 은 메타(분류 이름)를 읽어야 합니다 — 메타 조회에 실패했습니다")
+				os.Exit(1)
+			}
+			pcol, drop, ok := pivotColumn(colMetaFull, pivotFlag)
+			if !ok {
+				fmt.Fprintf(os.Stderr, "오류: --pivot %q 에 맞는 축이 없습니다 (C1~C8, ITM, PRD 또는 분류 이름)\n", pivotFlag)
+				os.Exit(1)
+			}
+			drop[colMetaFull.GetLabel("LST_CHN_DE")] = true // 행마다 달라 열로 펼치면 행이 갈라진다
+			var dups int
+			dataMap, formatOpts.Columns, dups = pivotRows(dataMap, formatOpts.Columns, pcol, colMetaFull.GetLabel("DT"), drop)
+			if dups > 0 {
+				fmt.Fprintf(os.Stderr, "경고: 같은 칸에 값이 %d번 겹쳐 첫 값만 남겼습니다 — --fields 로 나눌 축을 남기세요\n", dups)
+			}
+		}
+
 		// --chart가 있으면 차트 렌더링
 		if dataChartFlag != "" {
 			chartType, err := chart.ParseChartType(dataChartFlag)
@@ -400,20 +421,20 @@ var dataCmd = &cobra.Command{
 		if outputFlag != "" {
 			err = output.WriteToFile(dataMap, outputFlag, formatOpts)
 			if err != nil {
-				fmt.Printf("파일 저장 오류: %v\n", err)
+				fmt.Fprintf(os.Stderr, "파일 저장 오류: %v\n", err)
 				return
 			}
-			fmt.Printf("✓ 데이터가 %s로 저장되었습니다.\n", outputFlag)
+			fmt.Fprintf(os.Stderr, "✓ 데이터가 %s로 저장되었습니다.\n", outputFlag)
 		} else {
 			// 없으면 NewFormatter(format)으로 stdout 출력
 			formatter, err := output.NewFormatter(formatFlag)
 			if err != nil {
-				fmt.Printf("포맷 오류: %v\n", err)
+				fmt.Fprintf(os.Stderr, "포맷 오류: %v\n", err)
 				return
 			}
 			err = formatter.Format(dataMap, formatOpts)
 			if err != nil {
-				fmt.Printf("포맷팅 오류: %v\n", err)
+				fmt.Fprintf(os.Stderr, "포맷팅 오류: %v\n", err)
 				return
 			}
 		}
@@ -443,6 +464,7 @@ var (
 	outputFlag       string
 	fieldsFlag       string
 	withCodeFlag     bool
+	pivotFlag        string
 	userIDFlag       string
 	noAutoSplitFlag  bool
 	concurrencyFlag  int
@@ -468,12 +490,12 @@ func runDataInteractive() {
 	// 1. 검색어 입력
 	keyword := interactive.Prompt("? 검색어를 입력하세요:")
 	if keyword == "" {
-		fmt.Println("검색어가 입력되지 않았습니다.")
+		fmt.Fprintln(os.Stderr, "검색어가 입력되지 않았습니다.")
 		return
 	}
 
 	// 2. 검색 실행
-	fmt.Print("  📋 검색 중...\n")
+	fmt.Fprint(os.Stderr, "  📋 검색 중...\n")
 	searchOpts := api.SearchOptions{ResultCount: 20}
 	searchResults, err := client.Search(keyword, searchOpts)
 	if err != nil {
@@ -482,7 +504,7 @@ func runDataInteractive() {
 	}
 
 	if len(searchResults) == 0 {
-		fmt.Println("검색 결과가 없습니다.")
+		fmt.Fprintln(os.Stderr, "검색 결과가 없습니다.")
 		return
 	}
 
@@ -495,7 +517,7 @@ func runDataInteractive() {
 	// 3. 통계표 선택
 	selectedIdx, _ := interactive.Select("? 통계표를 선택하세요:", tableOptions)
 	if selectedIdx < 0 {
-		fmt.Println("통계표를 선택해야 합니다.")
+		fmt.Fprintln(os.Stderr, "통계표를 선택해야 합니다.")
 		return
 	}
 
@@ -504,7 +526,7 @@ func runDataInteractive() {
 	tblID := selectedTable.TblID
 
 	// 4. 메타 데이터 로드
-	fmt.Print("  📋 메타 로딩 중...\n")
+	fmt.Fprint(os.Stderr, "  📋 메타 로딩 중...\n")
 	metaSummary, err := client.MetaSummary(orgID, tblID)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "오류: %v\n", err)
@@ -529,7 +551,7 @@ func runDataInteractive() {
 
 	selectedClassIndices := interactive.MultiSelect("? 지역(분류)을 선택하세요 (공백 구분 번호):", classOptions)
 	if len(selectedClassIndices) == 0 {
-		fmt.Println("분류를 선택해야 합니다.")
+		fmt.Fprintln(os.Stderr, "분류를 선택해야 합니다.")
 		return
 	}
 
@@ -557,7 +579,7 @@ func runDataInteractive() {
 
 	itemIdx, _ := interactive.Select("? 항목을 선택하세요:", itemOptions)
 	if itemIdx < 0 {
-		fmt.Println("항목을 선택해야 합니다.")
+		fmt.Fprintln(os.Stderr, "항목을 선택해야 합니다.")
 		return
 	}
 
@@ -576,7 +598,7 @@ func runDataInteractive() {
 	latestCount := interactive.SelectInt("? 기간: 최근 몇 개 시점? (기본 5):", 5)
 
 	// 9. 데이터 조회
-	fmt.Print("  📊 데이터 조회 중...\n")
+	fmt.Fprint(os.Stderr, "  📊 데이터 조회 중...\n")
 	opts := api.DataOptions{
 		Class1:       class1Value,
 		Item:         itemValue,
@@ -601,10 +623,10 @@ func runDataInteractive() {
 		return
 	}
 
-	fmt.Printf("✓ %d건 조회 완료\n", len(results))
+	fmt.Fprintf(os.Stderr, "✓ %d건 조회 완료\n", len(results))
 
 	// 10. 재사용 명령어 표시
-	fmt.Printf("\n💡 다음에 같은 조회:\n   kosis d %s %s -c1 \"%s\" -i %s -p %s -l %d\n\n",
+	fmt.Fprintf(os.Stderr, "\n💡 다음에 같은 조회:\n   kosis d %s %s -c1 \"%s\" -i %s -p %s -l %d\n\n",
 		orgID, tblID, class1Value, itemValue, periodValue, latestCount)
 
 	// 11. 내보내기 여부
@@ -663,10 +685,10 @@ func runDataInteractive() {
 			formatOpts := output.FormatOptions{Korean: true}
 			err := output.WriteToFile(dataMap, filename, formatOpts)
 			if err != nil {
-				fmt.Printf("파일 저장 오류: %v\n", err)
+				fmt.Fprintf(os.Stderr, "파일 저장 오류: %v\n", err)
 				return
 			}
-			fmt.Printf("✓ 데이터가 %s로 저장되었습니다.\n", filename)
+			fmt.Fprintf(os.Stderr, "✓ 데이터가 %s로 저장되었습니다.\n", filename)
 		}
 	} else {
 		// 내보내기하지 않으면 테이블 형식으로 출력
@@ -682,13 +704,13 @@ func runDataInteractive() {
 
 		formatter, err := output.NewFormatter("table")
 		if err != nil {
-			fmt.Printf("포맷 오류: %v\n", err)
+			fmt.Fprintf(os.Stderr, "포맷 오류: %v\n", err)
 			return
 		}
 		formatOpts := output.FormatOptions{Korean: true}
 		err = formatter.Format(dataMap, formatOpts)
 		if err != nil {
-			fmt.Printf("포맷팅 오류: %v\n", err)
+			fmt.Fprintf(os.Stderr, "포맷팅 오류: %v\n", err)
 			return
 		}
 	}
@@ -716,6 +738,7 @@ func init() {
 	dataCmd.Flags().StringVarP(&formatFlag, "format", "f", "table", "[5단계] 화면 출력 형식: table=정렬표, json=파이프/jq용, csv=쉼표구분, md=Markdown 표")
 	dataCmd.Flags().StringVarP(&outputFlag, "output", "o", "", "[5단계] 파일로 저장. 확장자로 형식 자동 결정: .csv .xlsx .json .db(SQLite) .parquet")
 	dataCmd.Flags().StringVar(&fieldsFlag, "fields", "", "[5단계] 출력할 컬럼만 선택 (쉼표 구분). 예: \"C1_NM,ITM_NM,PRD_DE,DT\" (DT=수치값)")
+	dataCmd.Flags().StringVar(&pivotFlag, "pivot", "", "[5단계] 이 축의 값을 열로 펼쳐 비교표로: C1~C8(분류), ITM(항목), PRD(시점) 또는 분류 이름(시도별)")
 	dataCmd.Flags().BoolVar(&withCodeFlag, "with-code", false, "[5단계] 이름 외에 원본 코드 컬럼(C1~C8, ITM_ID)도 함께 출력. 지도(행정동코드)·DB 결합 시 사용. JSON은 항상 포함")
 	dataCmd.Flags().StringVar(&userIDFlag, "user-id", "", "KOSIS 웹에서 사전 등록한 userStatsId로 조회. 지정 시 --class/--item/--period 생략 가능")
 	dataCmd.Flags().BoolVar(&noAutoSplitFlag, "no-auto-split", false, "4만 셀(API 상한) 초과 시 자동 분할 조회를 끔. 켜두면 초과 요청은 에러로 실패")
@@ -728,4 +751,77 @@ func init() {
 	dataCmd.Flags().StringVar(&dataChartSrc, "source", "", "[6단계] 차트 하단 출처 문구 (예: \"자료: KOSIS\")")
 	dataCmd.Flags().StringVar(&dataChartNote, "note", "", "[6단계] 차트 하단 주석 문구")
 	dataCmd.Flags().BoolVar(&dataOpenFlag, "open", false, "[6단계] 차트 파일 생성 후 기본 브라우저/뷰어로 자동 열기")
+}
+
+// pivotColumn --pivot 인자 → 펼칠 열 라벨과, 함께 빼야 할 열(그 축의 코드 열).
+func pivotColumn(cm *api.ColumnMeta, arg string) (string, map[string]bool, bool) {
+	key := strings.ToUpper(strings.TrimSpace(arg))
+	switch {
+	case key == "ITM" || key == "ITEM" || key == "ITM_NM":
+		key = "ITM_NM"
+	case key == "PRD" || key == "PRD_DE":
+		key = "PRD_DE"
+	case len(key) == 2 && key[0] == 'C' && key[1] >= '1' && key[1] <= '8':
+		key += "_NM"
+	}
+	codeKey := strings.TrimSuffix(key, "_NM")
+	if key == "ITM_NM" {
+		codeKey = "ITM_ID"
+	}
+	for _, c := range cm.Columns {
+		if c.Key == key || c.Label == arg {
+			if c.Label == arg {
+				codeKey = strings.TrimSuffix(c.Key, "_NM")
+				if c.Key == "ITM_NM" {
+					codeKey = "ITM_ID"
+				}
+			}
+			return c.Label, map[string]bool{cm.GetLabel(codeKey): true}, true
+		}
+	}
+	return "", nil, false
+}
+
+// pivotRows pivotCol 의 값마다 열을 만들고 valueCol 값을 채운다. 나머지 열(drop 제외)이 행을 가른다.
+// 반환: 새 행, 새 열 순서, 같은 칸에 겹친 수(첫 값을 남김).
+func pivotRows(rows []map[string]interface{}, cols []string, pivotCol, valueCol string, drop map[string]bool) ([]map[string]interface{}, []string, int) {
+	var keyCols []string
+	for _, c := range cols {
+		if c != pivotCol && c != valueCol && !drop[c] {
+			keyCols = append(keyCols, c)
+		}
+	}
+	var pivots []string
+	seenPivot := map[string]bool{}
+	index := map[string]int{}
+	var out []map[string]interface{}
+	dups := 0
+	for _, r := range rows {
+		pv := fmt.Sprint(r[pivotCol])
+		if !seenPivot[pv] {
+			seenPivot[pv] = true
+			pivots = append(pivots, pv)
+		}
+		parts := make([]string, len(keyCols))
+		for i, c := range keyCols {
+			parts[i] = fmt.Sprint(r[c])
+		}
+		k := strings.Join(parts, "\x00")
+		i, ok := index[k]
+		if !ok {
+			m := map[string]interface{}{}
+			for _, c := range keyCols {
+				m[c] = r[c]
+			}
+			out = append(out, m)
+			i = len(out) - 1
+			index[k] = i
+		}
+		if _, exists := out[i][pv]; exists {
+			dups++
+			continue
+		}
+		out[i][pv] = r[valueCol]
+	}
+	return out, append(keyCols, pivots...), dups
 }

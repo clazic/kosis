@@ -58,8 +58,8 @@ KOSIS 웹에서 사전 등록된 userStatsId가 필요합니다.
 	Run: func(cmd *cobra.Command, args []string) {
 		// 인자 확인
 		if len(args) == 0 {
-			fmt.Println("오류: userStatsId는 필수입니다")
-			fmt.Println()
+			fmt.Fprintln(os.Stderr, "오류: userStatsId는 필수입니다")
+			fmt.Fprintln(os.Stderr)
 			cmd.Help()
 			return
 		}
@@ -68,8 +68,8 @@ KOSIS 웹에서 사전 등록된 userStatsId가 필요합니다.
 
 		// --output 플래그 확인 (필수)
 		if bulkOutputFlag == "" {
-			fmt.Println("오류: -o/--output 플래그는 필수입니다")
-			fmt.Println()
+			fmt.Fprintln(os.Stderr, "오류: -o/--output 플래그는 필수입니다")
+			fmt.Fprintln(os.Stderr)
 			cmd.Help()
 			return
 		}
@@ -77,14 +77,14 @@ KOSIS 웹에서 사전 등록된 userStatsId가 필요합니다.
 		// 설정 로드
 		cfg, err := config.Load()
 		if err != nil {
-			fmt.Printf("오류: %v\n", err)
+			fmt.Fprintf(os.Stderr, "오류: %v\n", err)
 			return
 		}
 
 		// API 클라이언트 생성
 		client, err := api.NewClient(cfg.APIKeys)
 		if err != nil {
-			fmt.Printf("오류: %v\n", err)
+			fmt.Fprintf(os.Stderr, "오류: %v\n", err)
 			return
 		}
 
@@ -98,30 +98,30 @@ KOSIS 웹에서 사전 등록된 userStatsId가 필요합니다.
 			opts.Type = "DSD"
 		}
 
-		fmt.Printf("대용량 통계자료 다운로드 중: %s\n", userStatsID)
-		fmt.Printf("형식: %s\n", opts.Type)
+		fmt.Fprintf(os.Stderr, "대용량 통계자료 다운로드 중: %s\n", userStatsID)
+		fmt.Fprintf(os.Stderr, "형식: %s\n", opts.Type)
 
 		// BigData 호출
 		data, err := client.BigData(userStatsID, opts)
 		if err != nil {
-			fmt.Printf("조회 오류: %v\n", err)
+			fmt.Fprintf(os.Stderr, "조회 오류: %v\n", err)
 			return
 		}
 
 		// 경로 검증: 절대 경로로 변환 후 현재 작업 디렉토리를 벗어나는지 확인
 		absOutput, err := filepath.Abs(bulkOutputFlag)
 		if err != nil {
-			fmt.Printf("경로 변환 오류: %v\n", err)
+			fmt.Fprintf(os.Stderr, "경로 변환 오류: %v\n", err)
 			return
 		}
 		cwd, err := os.Getwd()
 		if err != nil {
-			fmt.Printf("작업 디렉토리 확인 오류: %v\n", err)
+			fmt.Fprintf(os.Stderr, "작업 디렉토리 확인 오류: %v\n", err)
 			return
 		}
 		// ".." 컴포넌트가 포함되어 있거나 작업 디렉토리를 벗어나면 거부
 		if strings.Contains(bulkOutputFlag, "..") || !strings.HasPrefix(absOutput, cwd+string(filepath.Separator)) && absOutput != cwd {
-			fmt.Printf("오류: 출력 경로가 현재 작업 디렉토리를 벗어납니다: %s\n", bulkOutputFlag)
+			fmt.Fprintf(os.Stderr, "오류: 출력 경로가 현재 작업 디렉토리를 벗어납니다: %s\n", bulkOutputFlag)
 			return
 		}
 
@@ -129,14 +129,14 @@ KOSIS 웹에서 사전 등록된 userStatsId가 필요합니다.
 		outputDir := filepath.Dir(absOutput)
 		if outputDir != "." && outputDir != "" {
 			if err := os.MkdirAll(outputDir, 0755); err != nil {
-				fmt.Printf("디렉토리 생성 오류: %v\n", err)
+				fmt.Fprintf(os.Stderr, "디렉토리 생성 오류: %v\n", err)
 				return
 			}
 		}
 
 		// 파일에 저장
 		if err := os.WriteFile(absOutput, data, 0644); err != nil {
-			fmt.Printf("파일 저장 오류: %v\n", err)
+			fmt.Fprintf(os.Stderr, "파일 저장 오류: %v\n", err)
 			return
 		}
 
@@ -146,13 +146,13 @@ KOSIS 웹에서 사전 등록된 userStatsId가 필요합니다.
 		sizeMB := sizeKB / 1024
 
 		// 성공 메시지
-		fmt.Printf("✓ 데이터가 %s로 저장되었습니다.\n", bulkOutputFlag)
+		fmt.Fprintf(os.Stderr, "✓ 데이터가 %s로 저장되었습니다.\n", bulkOutputFlag)
 		if sizeMB > 0 {
-			fmt.Printf("  파일 크기: %d MB\n", sizeMB)
+			fmt.Fprintf(os.Stderr, "  파일 크기: %d MB\n", sizeMB)
 		} else if sizeKB > 0 {
-			fmt.Printf("  파일 크기: %d KB\n", sizeKB)
+			fmt.Fprintf(os.Stderr, "  파일 크기: %d KB\n", sizeKB)
 		} else {
-			fmt.Printf("  파일 크기: %d bytes\n", fileInfo.Size())
+			fmt.Fprintf(os.Stderr, "  파일 크기: %d bytes\n", fileInfo.Size())
 		}
 	},
 }

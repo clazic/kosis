@@ -99,3 +99,19 @@ func TestBackupModifiedSkillFiles(t *testing.T) {
 		t.Errorf("백업 위치: %s", backup)
 	}
 }
+
+func TestPivotRows(t *testing.T) {
+	rows := []map[string]interface{}{
+		{"시도별": "중구", "항목": "생산액", "시점": "2023", "수치값": "1", "비고": "a"},
+		{"시도별": "남구", "항목": "생산액", "시점": "2023", "수치값": "2", "비고": "b"},
+		{"시도별": "중구", "항목": "출하액", "시점": "2023", "수치값": "3"},
+		{"시도별": "중구", "항목": "출하액", "시점": "2023", "수치값": "9"},
+	}
+	out, cols, dups := pivotRows(rows, []string{"시도별", "항목", "시점", "수치값", "비고"}, "시도별", "수치값", map[string]bool{"비고": true})
+	if strings.Join(cols, ",") != "항목,시점,중구,남구" || len(out) != 2 || dups != 1 {
+		t.Fatalf("cols=%v out=%v dups=%d", cols, out, dups)
+	}
+	if out[0]["중구"] != "1" || out[0]["남구"] != "2" || out[1]["중구"] != "3" || out[1]["남구"] != nil {
+		t.Errorf("값: %v", out)
+	}
+}

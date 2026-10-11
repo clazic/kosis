@@ -44,6 +44,10 @@ func (c *Client) Meta(orgID, tblID string, opts MetaOptions) ([]MetaResult, erro
 		body = []byte(bodyStr)
 	}
 
+	if opts.raw != nil {
+		return nil, unmarshalMetaRaw(body, opts.raw)
+	}
+
 	// 응답이 object 구조인지 array 구조인지 판별
 	body = []byte(strings.TrimSpace(string(body)))
 	if len(body) > 0 && body[0] == '{' {
@@ -70,6 +74,39 @@ func (c *Client) Meta(orgID, tblID string, opts MetaOptions) ([]MetaResult, erro
 	}
 
 	return results, nil
+}
+
+// MetaRaw 메타를 API 필드 그대로 돌려준다. 유형마다 필드가 다르다
+// (CMMT: CMMT_NM·CMMT_DC, SOURCE: JOSA_NM·DEPT_NM·DEPT_PHONE, ITM: OBJ_ID·ITM_ID·ITM_NM·UP_ITM_ID·UNIT_NM …).
+func (c *Client) MetaRaw(orgID, tblID, metaType string) ([]map[string]any, error) {
+	var out []map[string]any
+	_, err := c.Meta(orgID, tblID, MetaOptions{Type: metaType, raw: &out})
+	return out, err
+}
+
+func unmarshalMetaRaw(body []byte, out *[]map[string]any) error {
+	body = []byte(strings.TrimSpace(string(body)))
+	if len(body) > 0 && body[0] == '{' { // {"CLASSIFICATIONS":[...], "ITEMS":[...]} → 한 목록으로
+		var apiErr struct {
+			Err    string `json:"err"`
+			ErrMsg string `json:"errMsg"`
+		}
+		if json.Unmarshal(body, &apiErr) == nil && apiErr.Err != "" {
+			return fmt.Errorf("API 오류 [%s]: %s", apiErr.Err, apiErr.ErrMsg)
+		}
+		var obj map[string][]map[string]any
+		if err := json.Unmarshal(body, &obj); err != nil {
+			return fmt.Errorf("응답 파싱 실패: %w", err)
+		}
+		for _, k := range []string{"CLASSIFICATIONS", "ITEMS", "PERIODS"} {
+			*out = append(*out, obj[k]...)
+		}
+		return nil
+	}
+	if err := json.Unmarshal(body, out); err != nil {
+		return fmt.Errorf("응답 파싱 실패: %w", err)
+	}
+	return nil
 }
 
 // MetaSummary retrieves and organizes metadata into classifications, items, and periods.
@@ -117,3 +154,60 @@ func (c *Client) MetaSummary(orgID, tblID string) (*MetaSummaryResult, error) {
 
 	return summary, nil
 }
+
+// CodeRow 분류·항목 코드 한 줄 (m --find 용). Flag 는 kosis d 에 넘길 플래그.
+type CodeRow struct {
+	Flag       string `json:"flag"`   // --class1 … --class8, --item
+	Axis       string `json:"axis"`   // 분류 이름 (시도별, 산업별 …)
+	Code       string `json:"code"`   // d 에 넘길 코드
+	Name       string `json:"name"`   // 이름 (공백 정리)
+	Level      int    `json:"level"`  // 1 = 최상위
+	ParentCode string `json:"parent_code,omitempty"`
+	ParentName string `json:"parent_name,omitempty"`
+	Path       string `json:"path"` // 최상위부터 이름 (A > B > C)
+	Unit       string `json:"unit,omitempty"`
+}
+
+// Codes 분류·항목의 모든 코드를 단계·상위 코드·경로와 함께 펼친다.
+// 분류 순서(OBJ_ID 첫 등장 순)가 --class1, --class2 … 에 대응한다.
+func (s *MetaSummaryResult) Codes() []CodeRow {
+	var out []CodeRow
+	add := func(rows []MetaResult, flagOf func(MetaResult) string) {
+		type key struct{ obj, code string }
+		byCode := map[key]MetaResult{}
+		for _, r := range rows {
+			byCode[key{r.ObjID, r.ItmID}] = r
+		}
+		for _, r := range rows {
+			names := []string{cleanName(r.ItmNM)}
+			level, up := 1, r.UpItmID
+			for seen := 0; up != "" && seen < 20; seen++ { // 20: 순환 방지
+				p, ok := byCode[key{r.ObjID, up}]
+				if !ok {
+					break
+				}
+				names = append([]string{cleanName(p.ItmNM)}, names...)
+				level++
+				up = p.UpItmID
+			}
+			row := CodeRow{Flag: flagOf(r), Axis: r.ObjNM, Code: r.ItmID, Name: cleanName(r.ItmNM),
+				Level: level, ParentCode: r.UpItmID, Path: strings.Join(names, " > "), Unit: r.UnitNM}
+			if p, ok := byCode[key{r.ObjID, r.UpItmID}]; ok {
+				row.ParentName = cleanName(p.ItmNM)
+			}
+			out = append(out, row)
+		}
+	}
+	idx := map[string]int{}
+	add(s.Classifications, func(r MetaResult) string {
+		if _, ok := idx[r.ObjID]; !ok {
+			idx[r.ObjID] = len(idx) + 1
+		}
+		return fmt.Sprintf("--class%d", idx[r.ObjID])
+	})
+	add(s.Items, func(MetaResult) string { return "--item" })
+	return out
+}
+
+// cleanName "울  산" 처럼 이름 안의 겹친 공백을 하나로.
+func cleanName(s string) string { return strings.Join(strings.Fields(s), " ") }

@@ -1,13 +1,14 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/clazic/kosis/internal/api"
 	"github.com/clazic/kosis/internal/config"
 	"github.com/clazic/kosis/internal/interactive"
-	"github.com/clazic/kosis/internal/output"
 	"github.com/spf13/cobra"
 )
 
@@ -20,8 +21,8 @@ var explainCmd = &cobra.Command{
 통계 조사의 작성목적, 조사대상, 조사방법, 조사기간 등
 방법론 정보를 확인합니다.
 
-주의: KOSIS 통계설명 API는 많은 통계표에서 빈 결과를 반환합니다.
-      설명이 없는 경우 kosis m <ORG_ID> <TBL_ID>로 메타데이터를 대신 확인하세요.
+통계표의 주석(m --type CMMT)과 원표·조사설명 페이지 링크도 함께 보여줍니다.
+설명이 없는 통계표도 원표 링크(kosis.kr)는 항상 나옵니다.
 
 사용법:
   kosis explain <ORG_ID> <TBL_ID> [flags]
@@ -45,9 +46,11 @@ var explainCmd = &cobra.Command{
   # 대화형 모드
   kosis explain
 
-출력 항목:
-  작성목적, 작성대상, 작성항목, 작성방법, 조사기간,
-  공표시기, 공표범위, 작성기관, 주요연혁
+출력 항목 (table):
+  통계명, 승인번호, 작성목적, 조사대상 범위, 조사지역, 조사단위, 조사항목, 공표범위,
+  작성주기, 공표시기, 조사기간, 자료수집방법, 근거법령, 주요 용어, 이용시 유의사항, 작성부서,
+  주석, 링크(원표 kosis.kr / 조사설명 narastat.kr — 승인번호가 있을 때)
+  -f json: {org_id, tbl_id, links{table, survey}, notes[], explain{API 필드 전부}}
 
 빈 결과 시 대안:
   kosis m <ORG_ID> <TBL_ID>     메타데이터로 분류/항목/수록정보 확인
@@ -85,7 +88,7 @@ func runExplain(cmd *cobra.Command, args []string) error {
 	}
 
 	if len(keys) == 0 {
-		fmt.Println(config.NoAPIKeyMessage())
+		fmt.Fprintln(os.Stderr, config.NoAPIKeyMessage())
 		return fmt.Errorf("API 키가 설정되지 않았습니다")
 	}
 
@@ -109,7 +112,7 @@ func runExplain(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("검색어가 입력되지 않았습니다")
 		}
 
-		fmt.Print("  검색 중...\n")
+		fmt.Fprint(os.Stderr, "  검색 중...\n")
 		searchResults, err := client.Search(keyword, api.SearchOptions{ResultCount: 20})
 		if err != nil {
 			return fmt.Errorf("검색 실패: %w", err)
@@ -133,47 +136,63 @@ func runExplain(cmd *cobra.Command, args []string) error {
 		tblID = selected.TblID
 	}
 
-	// 통계설명 조회
-	results, err := client.Explain(orgID, tblID)
+	// 통계설명 조회 + 주석(CMMT) + 원표·조사설명 링크
+	expl, err := client.Explain(orgID, tblID)
 	if err != nil {
-		return fmt.Errorf("통계설명 조회 실패: %w", err)
+		fmt.Fprintf(os.Stderr, "경고: 통계설명 조회 실패: %v\n", err)
 	}
-
-	if len(results) == 0 || (len(results) == 1 && results[0].StatsNM == "" && results[0].WritingPurps == "") {
-		fmt.Printf("해당 통계표(%s/%s)의 설명이 없습니다.\n", orgID, tblID)
-		fmt.Println("참고: KOSIS 통계설명 API는 일부 통계표에서만 데이터를 제공합니다.")
-		fmt.Printf("대안: kosis m %s %s 로 메타데이터를 확인하세요.\n", orgID, tblID)
-		return nil
-	}
-
-	// 결과를 맵 형식으로 변환
-	data := make([]map[string]interface{}, len(results))
-	for i, item := range results {
-		data[i] = map[string]interface{}{
-			"ORG_ID":        item.OrgID,
-			"ORG_NM":        item.OrgNM,
-			"TBL_ID":        "",
-			"TBL_NM":        "",
-			"EXPL_NM":       item.StatsNM,
-			"EXPL_CONT":     item.WritingPurps,
-			"SURVEY_TYPE":   item.DataCollect,
-			"SURVEY_PURP":   item.WritingPurps,
-			"SURVEY_METHOD": item.DataCollect,
+	notes := []string{}
+	if cmmt, cerr := client.MetaRaw(orgID, tblID, "CMMT"); cerr == nil {
+		for _, c := range cmmt {
+			if dc := strings.TrimSpace(fmt.Sprint(c["CMMT_DC"])); dc != "" && c["CMMT_DC"] != nil {
+				notes = append(notes, dc)
+			}
 		}
 	}
-
-	// 포맷터 생성
-	formatter, err := output.NewFormatter(explainFormat)
-	if err != nil {
-		return fmt.Errorf("포맷터 생성 실패: %w", err)
+	links := map[string]string{"table": api.TableURL(orgID, tblID)}
+	if u := api.ExplainURL(expl["confmNo"]); u != "" {
+		links["survey"] = u
 	}
 
-	// 포맷팅된 출력
-	if err := formatter.Format(data, output.FormatOptions{
-		Korean: true,
-	}); err != nil {
-		return fmt.Errorf("출력 생성 실패: %w", err)
+	if explainFormat == "json" {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetEscapeHTML(false)
+		enc.SetIndent("", "  ")
+		return enc.Encode(map[string]any{
+			"org_id": orgID, "tbl_id": tblID, "links": links, "notes": notes, "explain": expl,
+		})
 	}
 
+	if len(expl) == 0 {
+		fmt.Fprintf(os.Stderr, "해당 통계표(%s/%s)의 통계설명이 없습니다. 원표 페이지에서 확인하세요.\n", orgID, tblID)
+	}
+	for _, f := range explainFields {
+		if v := expl[f[0]]; v != "" {
+			fmt.Printf("[%s]\n%s\n\n", f[1], v)
+		}
+	}
+	if len(notes) > 0 {
+		fmt.Println("[주석]")
+		for _, n := range notes {
+			fmt.Println(n)
+		}
+		fmt.Println()
+	}
+	fmt.Println("[링크]")
+	fmt.Println("원표      ", links["table"])
+	if links["survey"] != "" {
+		fmt.Println("조사설명  ", links["survey"])
+	}
+	fmt.Fprintf(os.Stderr, "\n(전체 %d개 필드: kosis ex %s %s -f json)\n", len(expl), orgID, tblID)
 	return nil
+}
+
+// explainFields table 출력 순서 [API 필드, 표시 이름]. 나머지 필드는 -f json 에 모두 있다.
+var explainFields = [][2]string{
+	{"statsNm", "통계명"}, {"statsKind", "통계종류"}, {"confmNo", "승인번호"},
+	{"writingPurps", "작성목적"}, {"examinObjrange", "조사대상 범위"}, {"examinObjArea", "조사지역"},
+	{"josaUnit", "조사단위"}, {"josaItm", "조사항목"}, {"pubExtent", "공표범위"},
+	{"statsPeriod", "작성주기"}, {"pubDate", "공표시기"}, {"examinPd", "조사기간"},
+	{"examinTrgetPd", "조사대상기간"}, {"dataCollectMth", "자료수집방법"}, {"basisLaw", "근거법령"},
+	{"mainTermExpl", "주요 용어"}, {"dataUserNote", "이용시 유의사항"}, {"writingTel", "작성부서"},
 }

@@ -115,7 +115,7 @@ kosis config add-key <API_KEY_3>
 | `kosis meta <ORG> <TBL>` | `m` | 메타데이터 (분류/항목/수록정보) |
 | `kosis data <ORG> <TBL>` | `d` | 데이터 조회 |
 | `kosis list` | `ls` | 통계목록 트리 탐색 |
-| `kosis explain <ORG> <TBL>` | `ex` | 통계 조사 설명 |
+| `kosis explain <ORG> <TBL>` | `ex` | 통계 조사 설명·주석·원표/조사설명 링크 (`-f json`) |
 | `kosis rules list [찾을 말]` | - | AI 에이전트용 배포 규칙(references/rules.yaml)·로컬 규칙(~/.kosis/rules.d) 목록 (`--kind`, `-f json`) |
 | `kosis rules add [파일]` | - | 규칙 한 항목(YAML, 파일 생략 시 표준입력)을 ~/.kosis/rules.d 에 저장. 형식 오류면 종료 코드 1, 비슷한 규칙이 있으면 알림 |
 | `kosis rules sync` | `--init <URL>` | ~/.kosis/rules.d 를 비공개 git 저장소와 합치기 (commit → fetch·merge → push). 처음 한 번 `--init`. 같은 파일 충돌 시 종료 코드 1 |

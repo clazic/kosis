@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/clazic/kosis/internal/api"
 	"github.com/clazic/kosis/internal/config"
@@ -90,7 +91,7 @@ func runList(cmd *cobra.Command, args []string) error {
 	}
 
 	if len(keys) == 0 {
-		fmt.Println(config.NoAPIKeyMessage())
+		fmt.Fprintln(os.Stderr, config.NoAPIKeyMessage())
 		return fmt.Errorf("API 키가 설정되지 않았습니다")
 	}
 

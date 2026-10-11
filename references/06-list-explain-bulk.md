@@ -31,12 +31,19 @@ kosis ls -f json                      # JSON 출력
 
 ## 6.2 통계설명 — `explain` (별칭: `ex`)
 
-조사 방법론, 목적, 대상 등을 확인합니다.
+통계표가 속한 조사의 설명(작성목적·조사대상 범위·조사지역·공표범위·주요 용어·이용시 유의사항·승인번호 등),
+통계표 주석(`m --type CMMT`과 같음), 원표·조사설명 페이지 링크를 함께 보여줍니다.
 
 ```bash
 kosis ex 101 DT_1IN1502           # 직접 지정
+kosis ex 101 DT_1FS1101 -f json   # {org_id, tbl_id, links{table, survey}, notes[], explain{API 필드 전부}}
 kosis explain                      # 대화형: 검색 후 선택
 ```
+
+| 링크 | 주소 |
+|---|---|
+| 원표 | `https://kosis.kr/statHtml/statHtml.do?orgId=<ORG>&tblId=<TBL>` (항상) |
+| 조사설명 | `https://www.narastat.kr/metasvc/index.do?confmNo=<승인번호>` (승인번호가 있을 때) |
 
 ---
 

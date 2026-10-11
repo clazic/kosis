@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/clazic/kosis/internal/api"
@@ -105,21 +106,21 @@ var indicatorSearchCmd = &cobra.Command{
 		// Get API keys from config
 		keys, err := config.GetAPIKeys()
 		if err != nil {
-			fmt.Printf("오류: %v\n", err)
+			fmt.Fprintf(os.Stderr, "오류: %v\n", err)
 			return
 		}
 
 		if len(keys) == 0 {
-			fmt.Printf("오류: API 키가 설정되지 않았습니다.\n")
-			fmt.Println()
-			fmt.Println(config.NoAPIKeyMessage())
+			fmt.Fprintf(os.Stderr, "오류: API 키가 설정되지 않았습니다.\n")
+			fmt.Fprintln(os.Stderr)
+			fmt.Fprintln(os.Stderr, config.NoAPIKeyMessage())
 			return
 		}
 
 		// Create API client
 		client, err := api.NewClient(keys)
 		if err != nil {
-			fmt.Printf("클라이언트 생성 실패: %v\n", err)
+			fmt.Fprintf(os.Stderr, "클라이언트 생성 실패: %v\n", err)
 			return
 		}
 
@@ -128,12 +129,12 @@ var indicatorSearchCmd = &cobra.Command{
 			NumOfRows: limit,
 		})
 		if err != nil {
-			fmt.Printf("검색 실패: %v\n", err)
+			fmt.Fprintf(os.Stderr, "검색 실패: %v\n", err)
 			return
 		}
 
 		if len(results) == 0 {
-			fmt.Printf("'%s' 지표 검색 결과가 없습니다.\n", jipyoNm)
+			fmt.Fprintf(os.Stderr, "'%s' 지표 검색 결과가 없습니다.\n", jipyoNm)
 			return
 		}
 
@@ -152,7 +153,7 @@ var indicatorSearchCmd = &cobra.Command{
 		// Format and output
 		formatter, err := output.NewFormatter(format)
 		if err != nil {
-			fmt.Printf("포맷터 생성 실패: %v\n", err)
+			fmt.Fprintf(os.Stderr, "포맷터 생성 실패: %v\n", err)
 			return
 		}
 
@@ -161,11 +162,11 @@ var indicatorSearchCmd = &cobra.Command{
 		}
 
 		if err := formatter.Format(data, opts); err != nil {
-			fmt.Printf("출력 실패: %v\n", err)
+			fmt.Fprintf(os.Stderr, "출력 실패: %v\n", err)
 			return
 		}
 
-		fmt.Printf("\n검색 결과: %d개\n", len(results))
+		fmt.Fprintf(os.Stderr, "\n검색 결과: %d개\n", len(results))
 
 		// Record history
 		history.Add("indicator search "+jipyoNm, len(results))
@@ -208,33 +209,33 @@ var indicatorInfoCmd = &cobra.Command{
 		// Get API keys from config
 		keys, err := config.GetAPIKeys()
 		if err != nil {
-			fmt.Printf("오류: %v\n", err)
+			fmt.Fprintf(os.Stderr, "오류: %v\n", err)
 			return
 		}
 
 		if len(keys) == 0 {
-			fmt.Printf("오류: API 키가 설정되지 않았습니다.\n")
-			fmt.Println()
-			fmt.Println(config.NoAPIKeyMessage())
+			fmt.Fprintf(os.Stderr, "오류: API 키가 설정되지 않았습니다.\n")
+			fmt.Fprintln(os.Stderr)
+			fmt.Fprintln(os.Stderr, config.NoAPIKeyMessage())
 			return
 		}
 
 		// Create API client
 		client, err := api.NewClient(keys)
 		if err != nil {
-			fmt.Printf("클라이언트 생성 실패: %v\n", err)
+			fmt.Fprintf(os.Stderr, "클라이언트 생성 실패: %v\n", err)
 			return
 		}
 
 		// Execute search by ID (API 7-A)
 		results, err := client.IndicatorSearchByID(jipyoID, api.PaginationOptions{})
 		if err != nil {
-			fmt.Printf("조회 실패: %v\n", err)
+			fmt.Fprintf(os.Stderr, "조회 실패: %v\n", err)
 			return
 		}
 
 		if len(results) == 0 {
-			fmt.Printf("지표ID '%s'을 찾을 수 없습니다.\n", jipyoID)
+			fmt.Fprintf(os.Stderr, "지표ID '%s'을 찾을 수 없습니다.\n", jipyoID)
 			return
 		}
 
@@ -255,7 +256,7 @@ var indicatorInfoCmd = &cobra.Command{
 		// Format and output
 		formatter, err := output.NewFormatter(format)
 		if err != nil {
-			fmt.Printf("포맷터 생성 실패: %v\n", err)
+			fmt.Fprintf(os.Stderr, "포맷터 생성 실패: %v\n", err)
 			return
 		}
 
@@ -264,7 +265,7 @@ var indicatorInfoCmd = &cobra.Command{
 		}
 
 		if err := formatter.Format(data, opts); err != nil {
-			fmt.Printf("출력 실패: %v\n", err)
+			fmt.Fprintf(os.Stderr, "출력 실패: %v\n", err)
 			return
 		}
 	},
@@ -323,9 +324,9 @@ var indicatorDataCmd = &cobra.Command{
 			detected := output.DetectFormat(outputFile)
 			if detected == "table" {
 				if !strings.Contains(outputFile, ".") {
-					fmt.Println("파일 저장 실패: 확장자가 없습니다. 지원 형식: .csv, .json, .xlsx, .db, .sqlite, .parquet")
+					fmt.Fprintln(os.Stderr, "파일 저장 실패: 확장자가 없습니다. 지원 형식: .csv, .json, .xlsx, .db, .sqlite, .parquet")
 				} else {
-					fmt.Println("파일 저장 실패: 지원하지 않는 확장자입니다. 지원 형식: .csv, .json, .xlsx, .db, .sqlite, .parquet")
+					fmt.Fprintln(os.Stderr, "파일 저장 실패: 지원하지 않는 확장자입니다. 지원 형식: .csv, .json, .xlsx, .db, .sqlite, .parquet")
 				}
 				return
 			}
@@ -334,21 +335,21 @@ var indicatorDataCmd = &cobra.Command{
 		// Get API keys from config
 		keys, err := config.GetAPIKeys()
 		if err != nil {
-			fmt.Printf("오류: %v\n", err)
+			fmt.Fprintf(os.Stderr, "오류: %v\n", err)
 			return
 		}
 
 		if len(keys) == 0 {
-			fmt.Printf("오류: API 키가 설정되지 않았습니다.\n")
-			fmt.Println()
-			fmt.Println(config.NoAPIKeyMessage())
+			fmt.Fprintf(os.Stderr, "오류: API 키가 설정되지 않았습니다.\n")
+			fmt.Fprintln(os.Stderr)
+			fmt.Fprintln(os.Stderr, config.NoAPIKeyMessage())
 			return
 		}
 
 		// Create API client
 		client, err := api.NewClient(keys)
 		if err != nil {
-			fmt.Printf("클라이언트 생성 실패: %v\n", err)
+			fmt.Fprintf(os.Stderr, "클라이언트 생성 실패: %v\n", err)
 			return
 		}
 
@@ -357,12 +358,12 @@ var indicatorDataCmd = &cobra.Command{
 			NumOfRows: limit,
 		})
 		if err != nil {
-			fmt.Printf("조회 실패: %v\n", err)
+			fmt.Fprintf(os.Stderr, "조회 실패: %v\n", err)
 			return
 		}
 
 		if len(results) == 0 {
-			fmt.Printf("'%s' 지표의 데이터가 없습니다.\n", jipyoNm)
+			fmt.Fprintf(os.Stderr, "'%s' 지표의 데이터가 없습니다.\n", jipyoNm)
 			return
 		}
 
@@ -388,27 +389,27 @@ var indicatorDataCmd = &cobra.Command{
 			detected := output.DetectFormat(outputFile)
 
 			if err := output.WriteToFile(data, outputFile, opts); err != nil {
-				fmt.Printf("파일 저장 실패: %v\n", err)
+				fmt.Fprintf(os.Stderr, "파일 저장 실패: %v\n", err)
 				return
 			}
-			fmt.Printf("저장 완료: %s (%s)\n", outputFile, detected)
-			fmt.Printf("\n조회 결과: %d개\n", len(results))
+			fmt.Fprintf(os.Stderr, "저장 완료: %s (%s)\n", outputFile, detected)
+			fmt.Fprintf(os.Stderr, "\n조회 결과: %d개\n", len(results))
 			history.Add("indicator data "+jipyoNm, len(results))
 			return
 		}
 
 		formatter, err := output.NewFormatter(format)
 		if err != nil {
-			fmt.Printf("포맷터 생성 실패: %v\n", err)
+			fmt.Fprintf(os.Stderr, "포맷터 생성 실패: %v\n", err)
 			return
 		}
 
 		if err := formatter.Format(data, opts); err != nil {
-			fmt.Printf("출력 실패: %v\n", err)
+			fmt.Fprintf(os.Stderr, "출력 실패: %v\n", err)
 			return
 		}
 
-		fmt.Printf("\n조회 결과: %d개\n", len(results))
+		fmt.Fprintf(os.Stderr, "\n조회 결과: %d개\n", len(results))
 	},
 }
 
@@ -452,21 +453,21 @@ var indicatorListCmd = &cobra.Command{
 		// Get API keys from config
 		keys, err := config.GetAPIKeys()
 		if err != nil {
-			fmt.Printf("오류: %v\n", err)
+			fmt.Fprintf(os.Stderr, "오류: %v\n", err)
 			return
 		}
 
 		if len(keys) == 0 {
-			fmt.Printf("오류: API 키가 설정되지 않았습니다.\n")
-			fmt.Println()
-			fmt.Println(config.NoAPIKeyMessage())
+			fmt.Fprintf(os.Stderr, "오류: API 키가 설정되지 않았습니다.\n")
+			fmt.Fprintln(os.Stderr)
+			fmt.Fprintln(os.Stderr, config.NoAPIKeyMessage())
 			return
 		}
 
 		// Create API client
 		client, err := api.NewClient(keys)
 		if err != nil {
-			fmt.Printf("클라이언트 생성 실패: %v\n", err)
+			fmt.Fprintf(os.Stderr, "클라이언트 생성 실패: %v\n", err)
 			return
 		}
 
@@ -474,15 +475,15 @@ var indicatorListCmd = &cobra.Command{
 		// Execute list query (API 7-C)
 		results, err := client.IndicatorList(listID, api.PaginationOptions{})
 		if err != nil {
-			fmt.Printf("조회 실패: %v\n", err)
+			fmt.Fprintf(os.Stderr, "조회 실패: %v\n", err)
 			return
 		}
 
 		if len(results) == 0 {
 			if listID != "" {
-				fmt.Printf("목록ID '%s'에 해당하는 지표가 없습니다.\n", listID)
+				fmt.Fprintf(os.Stderr, "목록ID '%s'에 해당하는 지표가 없습니다.\n", listID)
 			} else {
-				fmt.Printf("지표 목록을 찾을 수 없습니다.\n")
+				fmt.Fprintf(os.Stderr, "지표 목록을 찾을 수 없습니다.\n")
 			}
 			return
 		}
@@ -502,7 +503,7 @@ var indicatorListCmd = &cobra.Command{
 		// Format and output
 		formatter, err := output.NewFormatter(format)
 		if err != nil {
-			fmt.Printf("포맷터 생성 실패: %v\n", err)
+			fmt.Fprintf(os.Stderr, "포맷터 생성 실패: %v\n", err)
 			return
 		}
 
@@ -511,11 +512,11 @@ var indicatorListCmd = &cobra.Command{
 		}
 
 		if err := formatter.Format(data, opts); err != nil {
-			fmt.Printf("출력 실패: %v\n", err)
+			fmt.Fprintf(os.Stderr, "출력 실패: %v\n", err)
 			return
 		}
 
-		fmt.Printf("\n조회 결과: %d개\n", len(results))
+		fmt.Fprintf(os.Stderr, "\n조회 결과: %d개\n", len(results))
 	},
 }
 
