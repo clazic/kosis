@@ -14,11 +14,13 @@ kosis 는 판단하지 않는다. 판단은 kosis 를 쓰는 AI 가 `s`(검색) 
 
 1. **작업 전 READ** — 두 파일을 읽는다.
    - [references/rules.yaml](references/rules.yaml): 배포 규칙 (모든 사용자 공통, 검증된 것만). 작업 순서·검색 요령·시점 형식·오류 대응과 통계표별 검증 코드(`tables`)
-   - `~/.kosis/rules.local.yaml`: 이 컴퓨터의 로컬 규칙 (있으면. 더 최신이다)
+   - `~/.kosis/rules.d/*.yaml`: 이 컴퓨터의 로컬 규칙 (있으면. 더 최신이다) — `kosis rules list [찾을 말]`로 배포·로컬을 함께 볼 수 있다 (`-f json`이면 본문까지)
    - 원하는 표가 `tables`에 있으면 검색·메타를 건너뛰고 그 코드로 바로 조회해도 된다 (`verified`가 오래됐으면 `m`으로 재확인)
-2. **작업 후 WRITE** — s·m·d 를 하며 **새로 확인한 사실**은 `~/.kosis/rules.local.yaml`에 같은 형식으로 추가한다.
+2. **작업 후 WRITE** — s·m·d 를 하며 **새로 확인한 사실**은 `kosis rules add`로 한 항목씩 저장한다 (YAML을 표준입력으로. 파일 이름·형식 검사는 kosis가 한다. 형식이 틀리면 종료 코드 1). `kosis d`가 오류를 내면 원인을 확인한 뒤 꼭 기록한다.
+   - 내용: `kind`(rule|table|concept|breakdown|crosswalk|gap), `title`, `verified`, `evidence` + 종류별 필드 (형식은 `kosis rules --help`)
    - 실제로 실행해 본 것만. `evidence`(무엇을 실행해 무엇을 봤는지)와 `verified`(날짜) 필수. 추측은 쓰지 않는다
    - 기존 규칙이 틀렸으면 지우지 말고 `status: wrong`과 이유를 적는다
+   - 저장한 뒤 `kosis rules sync`로 다른 컴퓨터와 합친다 (`rules.d`가 저장소와 연결된 경우. 처음 연결은 `kosis rules sync --init <비공개 저장소 URL>`)
    - 여러 번 확인된 로컬 규칙은 저장소의 `references/rules.yaml`로 올린다 (PR → 릴리스 → 모든 사용자)
 3. 사람용 설명·사례는 [LEARNINGS.md](LEARNINGS.md)(오답노트)에 있다. 규칙 파일은 같은 지식을 AI 가 바로 쓰도록 구조화한 것이다.
 
@@ -187,6 +189,7 @@ kosis s "미분양" -n 10
 | `ind data <이름>` | `ind d` | `kosis ind d "GDP(명목)"` |
 | `ind list <목록ID>` | `ind ls` | `kosis ind ls I01` (목록ID 필수) |
 | `config set-key/add-key/show` | | `kosis config set-key <KEY>` |
+| `rules list/add/sync/validate` | | `kosis rules list 울산` (배포·로컬 규칙 보기, `-f json`), `kosis rules add < rule.yaml` (로컬 규칙 저장), `kosis rules sync` (여러 컴퓨터 합치기), `kosis rules validate` (형식 점검) |
 | `bookmark add/ls/remove` | `bm` | `kosis bm add 101 DT_1IN1502 --name "인구"` |
 | `history` | `hi` | `kosis hi replay 3` |
 | (인자 없음) | | `kosis` → TUI 대시보드 |

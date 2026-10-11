@@ -4,11 +4,14 @@
 # 사람용 설명은 LEARNINGS.md, 명령 문법은 references/13-reference.md.
 #
 # ── 읽는 법 ──
-# 1. 작업 전에 이 파일과 로컬 규칙 ~/.kosis/rules.local.yaml(있으면)을 읽는다. 로컬이 더 최신이다.
+# 1. 작업 전에 이 파일과 로컬 규칙 ~/.kosis/rules.d/*.yaml(있으면)을 읽는다. 로컬이 더 최신이다.
+#    kosis rules list [찾을 말] 로 둘을 함께 볼 수 있다 (-f json 이면 본문까지).
 # 2. tables 에 원하는 통계표가 있으면 검색·메타를 건너뛰고 바로 써도 된다 (verified 날짜가 오래됐으면 m 으로 재확인).
 #
 # ── 쓰는 법 (로컬 규칙) ──
-# s·m·d 를 하며 새로 확인한 사실은 ~/.kosis/rules.local.yaml 에 같은 형식으로 추가한다.
+# s·m·d 를 하며 새로 확인한 사실은 ~/.kosis/rules.d/ 에 규칙 하나당 파일 하나로 추가한다.
+# - 파일 이름 YYYYMMDD-<8hex>.yaml (ASCII 만). 내용은 kind·title·verified·evidence + 아래 절의 항목 필드.
+#   (table 은 id 대신 table: "ORG/TBL"). 쓴 뒤 kosis rules validate 로 형식 점검.
 # - 실제로 실행해 확인한 것만 적는다. 추측은 적지 않는다 (불확실하면 confidence: guess 로 표시).
 # - evidence 에 무엇을 실행해 무엇을 봤는지 한 줄로 적는다. verified 에 날짜.
 # - 틀린 규칙을 발견하면 지우지 말고 status: wrong 과 이유를 적는다.

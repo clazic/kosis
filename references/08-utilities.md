@@ -33,4 +33,4 @@ kosis config cache-clear         # 전체 삭제
 
 ## 8.4 AI 규칙 파일
 
-AI 에이전트용 규칙은 두 파일입니다: 배포 규칙 `references/rules.yaml`(모든 사용자 공통)과 로컬 규칙 `~/.kosis/rules.local.yaml`(이 컴퓨터에서 AI가 s·m·d 하며 확인한 사실). `~/.kosis`는 `kosis update`로 지워지지 않습니다.
+AI 에이전트용 규칙은 두 파일입니다: 배포 규칙 `references/rules.yaml`(모든 사용자 공통)과 로컬 규칙 `~/.kosis/rules.d/*.yaml`(이 컴퓨터에서 AI가 s·m·d 하며 확인한 사실, 규칙 하나당 파일 하나). `kosis rules list`로 함께 보고, `kosis rules add`(YAML 표준입력)로 로컬 규칙을 저장하고, `kosis rules sync`로 여러 컴퓨터의 로컬 규칙을 비공개 git 저장소 하나로 합치고(처음 한 번 `--init <URL>`), `kosis rules validate`로 형식을 점검합니다. `~/.kosis`는 `kosis update`로 지워지지 않습니다.

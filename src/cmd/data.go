@@ -266,6 +266,7 @@ var dataCmd = &cobra.Command{
 
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "오류: %v\n", err)
+			fmt.Fprintln(os.Stderr, "ℹ 원인을 확인했으면 다음에 같은 실수를 하지 않도록 기록하세요: kosis rules add (kosis rules add --help)")
 			return
 		}
 

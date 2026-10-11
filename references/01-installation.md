@@ -105,4 +105,4 @@ default_format: "table"        # 기본 출력 형식
 cache_ttl_hours: 24            # 캐시 유효 시간
 ```
 
-AI 에이전트가 작업하며 확인한 사실은 `~/.kosis/rules.local.yaml`(로컬 규칙)에 적습니다. 배포 규칙은 스킬의 `references/rules.yaml`입니다 (SKILL.md "규칙" 참고).
+AI 에이전트가 작업하며 확인한 사실은 `~/.kosis/rules.d/`(로컬 규칙, 규칙 하나당 파일 하나)에 적습니다. 배포 규칙은 스킬의 `references/rules.yaml`입니다 (SKILL.md "규칙" 참고).
