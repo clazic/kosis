@@ -3,9 +3,13 @@
 # 사용법: curl -fsSL https://raw.githubusercontent.com/clazic/kosis/master/scripts/install.sh | sh
 #
 # 비대화형(CI) 환경변수:
-#   KOSIS_TARGET=claude|codex|both     (기본 claude)
+#   KOSIS_TARGET=claude,codex,opencode,hermes | all  (쉼표로 여러 개, 기본 claude)
+#     claude   → ~/.claude/skills/kosis   (Claude Code. OpenCode 도 읽음)
+#     codex    → ~/.agents/skills/kosis   (Codex · OpenCode 공통 위치)
+#     opencode → ~/.agents/skills/kosis   (codex 와 같은 곳)
+#     hermes   → ~/.hermes/skills/kosis   (Hermes Agent, 전역만)
 #   KOSIS_CLAUDE_SCOPE=global|project  (기본 global)
-#   KOSIS_CODEX_SCOPE=global|project   (기본 global)
+#   KOSIS_CODEX_SCOPE=global|project   (기본 global, ~/.agents 또는 ./.agents)
 #   KOSIS_VERSION=vX.Y.Z               (기본: 최신 릴리스)
 set -e
 
@@ -57,12 +61,17 @@ echo "  ✓ CLI: ~/.local/bin/kosis"
 
 # ── 2. 스킬: 대상 선택 ──
 if [ "$HAVE_TTY" = 1 ]; then
-  printf "\n설치 대상을 선택하세요:\n  1) Claude\n  2) Codex\n  3) 둘 다\n> " > /dev/tty
+  printf "\n설치 대상을 선택하세요 (여러 개는 쉼표, 예: 1,2):\n  1) Claude Code       ~/.claude/skills\n  2) Codex · OpenCode  ~/.agents/skills\n  3) Hermes            ~/.hermes/skills\n  4) 모두\n> " > /dev/tty
   read TSEL < /dev/tty
-  case "$TSEL" in 1) TARGET=claude ;; 2) TARGET=codex ;; 3) TARGET=both ;; *) TARGET=claude ;; esac
+  TARGET=""
+  for _s in $(echo "$TSEL" | tr ',' ' '); do
+    case "$_s" in 1) TARGET="$TARGET,claude" ;; 2) TARGET="$TARGET,codex" ;; 3) TARGET="$TARGET,hermes" ;; 4) TARGET=all ;; esac
+  done
+  [ -n "$TARGET" ] || TARGET=claude
 else
   TARGET="${KOSIS_TARGET:-claude}"
 fi
+case "$TARGET" in all) TARGET="claude,codex,hermes" ;; both) TARGET="claude,codex" ;; esac
 
 # 범위 질문 (대상별로 개별) — $1: 표시명, $2: 비대화형 기본값
 ask_scope() {
@@ -79,26 +88,33 @@ ask_scope() {
 echo "  스킬 파일 다운로드 중..."
 download "$SKILL_URL" "$TMP/skill.tar.gz"
 
-# 스킬 설치 — $1: 도구(claude/codex), $2: 범위(global/project)
+# 스킬 설치 — $1: 폴더(claude/agents/hermes), $2: 범위(global/project), $3: 표시명
 install_skill() {
-  _tool="$1"; _scope="$2"
+  _dir="$1"; _scope="$2"
   if [ "$_scope" = project ]; then _base="$(pwd)"; else _base="$HOME"; fi
-  _dest="$_base/.$_tool/skills/kosis"
+  _dest="$_base/.$_dir/skills/kosis"
   rm -rf "$_dest"
   mkdir -p "$_dest"
   tar -xzf "$TMP/skill.tar.gz" -C "$_dest"
-  echo "  ✓ 스킬($_tool, $_scope): $_dest"
+  echo "  ✓ 스킬($3, $_scope): $_dest"
 }
 
-case "$TARGET" in
-  claude) install_skill claude "$(ask_scope Claude "$KOSIS_CLAUDE_SCOPE")" ;;
-  codex)  install_skill codex  "$(ask_scope Codex  "$KOSIS_CODEX_SCOPE")" ;;
-  both)
-    install_skill claude "$(ask_scope Claude "$KOSIS_CLAUDE_SCOPE")"
-    install_skill codex  "$(ask_scope Codex  "$KOSIS_CODEX_SCOPE")"
-    ;;
-  *) echo "알 수 없는 대상: $TARGET" >&2; exit 1 ;;
-esac
+DONE=""
+for _t in $(echo "$TARGET" | tr ',' ' '); do
+  case "$_t" in
+    claude) _d=claude ;;
+    codex|opencode|agents) _d=agents ;;
+    hermes) _d=hermes ;;
+    *) echo "알 수 없는 대상: $_t (claude|codex|opencode|hermes|all)" >&2; exit 1 ;;
+  esac
+  case ",$DONE," in *",$_d,"*) continue ;; esac  # codex·opencode 는 같은 폴더 — 한 번만
+  DONE="$DONE,$_d"
+  case "$_d" in
+    claude) install_skill claude "$(ask_scope Claude "$KOSIS_CLAUDE_SCOPE")" "Claude Code" ;;
+    agents) install_skill agents "$(ask_scope "Codex · OpenCode" "$KOSIS_CODEX_SCOPE")" "Codex · OpenCode" ;;
+    hermes) install_skill hermes global "Hermes" ;;
+  esac
+done
 
 # ── 3. PATH 안내 ──
 case ":$PATH:" in

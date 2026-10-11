@@ -29,8 +29,12 @@ $Candidates = @(
   $BinDir,
   (Join-Path $Home_  ".claude\skills\kosis"),
   (Join-Path $Home_  ".codex\skills\kosis"),
+  (Join-Path $Home_  ".agents\skills\kosis"),
+  (Join-Path $Home_  ".hermes\skills\kosis"),
+  (Join-Path $Home_  ".config\opencode\skills\kosis"),
   (Join-Path $Cwd    ".claude\skills\kosis"),
-  (Join-Path $Cwd    ".codex\skills\kosis")
+  (Join-Path $Cwd    ".codex\skills\kosis"),
+  (Join-Path $Cwd    ".agents\skills\kosis")
 )
 $Targets = $Candidates | Where-Object { Test-Path $_ }
 

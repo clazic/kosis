@@ -23,7 +23,7 @@ npm install -g @clazic/kosis
 ```
 
 설치 시 자동으로:
-- `~/.claude/skills/kosis/` 에 스킬 파일 설치 (SKILL.md, references, templates) — 기본 대상은 Claude, `KOSIS_TARGET=codex|both` 환경변수로 변경 가능
+- `~/.claude/skills/kosis/` 에 스킬 파일 설치 (SKILL.md, references, templates) — 기본 대상은 Claude, `KOSIS_TARGET=claude,codex,opencode,hermes` 또는 `all` 로 변경 가능
 - 해당 OS 바이너리 다운로드 후 `~/.local/bin/kosis` 에 배치
 - PATH에 `~/.local/bin`이 없으면 추가 방법 안내 출력
 
@@ -44,10 +44,15 @@ npm install -g @clazic/kosis
 curl -fsSL https://raw.githubusercontent.com/clazic/kosis/master/scripts/install.sh | sh
 ```
 
-실행 시 설치 대상(Claude/Codex/둘 다)과 범위(전역/프로젝트)를 대화형으로 선택합니다. 비대화형(CI) 환경은 `KOSIS_TARGET`, `KOSIS_CLAUDE_SCOPE`, `KOSIS_CODEX_SCOPE` 환경변수로 지정합니다.
+실행 시 설치 대상(Claude Code / Codex·OpenCode / Hermes, 여러 개 선택 가능)과 범위(전역/프로젝트, Hermes는 전역만)를 대화형으로 선택합니다. 비대화형(CI) 환경은 `KOSIS_TARGET`, `KOSIS_CLAUDE_SCOPE`, `KOSIS_CODEX_SCOPE` 환경변수로 지정합니다.
 
 설치 위치:
-- 스킬 파일: `~/.claude/skills/kosis/` (선택에 따라 `~/.codex/skills/kosis/`)
+- 스킬 파일 (선택한 대상마다):
+  | 대상 | 위치 |
+  |---|---|
+  | Claude Code | `~/.claude/skills/kosis/` |
+  | Codex · OpenCode | `~/.agents/skills/kosis/` (두 도구가 같은 곳을 읽음. OpenCode는 `~/.claude/skills`도 읽음) |
+  | Hermes Agent | `~/.hermes/skills/kosis/` |
 - 바이너리: `~/.local/bin/kosis`
 
 PATH가 등록되지 않은 경우 다음을 `~/.zshrc` 또는 `~/.bashrc`에 추가:
@@ -72,10 +77,10 @@ PowerShell에서:
 irm https://raw.githubusercontent.com/clazic/kosis/master/scripts/install.ps1 | iex
 ```
 
-실행 시 설치 대상(Claude/Codex/둘 다)과 범위(전역/프로젝트)를 대화형으로 선택합니다. 비대화형 환경은 `KOSIS_TARGET`, `KOSIS_CLAUDE_SCOPE`, `KOSIS_CODEX_SCOPE` 환경변수로 지정합니다.
+실행 시 설치 대상(Claude Code / Codex·OpenCode / Hermes, 여러 개 선택 가능)과 범위(전역/프로젝트, Hermes는 전역만)를 대화형으로 선택합니다. 비대화형 환경은 `KOSIS_TARGET`, `KOSIS_CLAUDE_SCOPE`, `KOSIS_CODEX_SCOPE` 환경변수로 지정합니다.
 
 설치 위치:
-- 스킬 파일: `%USERPROFILE%\.claude\skills\kosis\` (선택에 따라 `%USERPROFILE%\.codex\skills\kosis\`)
+- 스킬 파일: `%USERPROFILE%\.claude\skills\kosis\`, `%USERPROFILE%\.agents\skills\kosis\`(Codex·OpenCode), `%USERPROFILE%\.hermes\skills\kosis\`(Hermes) 중 선택한 곳
 - 바이너리: `%LOCALAPPDATA%\Programs\kosis\kosis.exe`
 - PATH: 사용자 환경변수에 자동 등록 — **새 터미널부터** `kosis` 명령 인식
 

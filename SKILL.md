@@ -56,7 +56,7 @@ kosis update --check  # 업데이트 확인만 (설치 안 함)
 kosis update --force  # 같은 버전이어도 강제 재설치
 ```
 
-GitHub 최신 릴리스에서 OS별 바이너리와 스킬 파일(SKILL.md, references/, LEARNINGS.md, templates 등)을 함께 내려받아 `~/.claude/skills/kosis`(및 `~/.codex/skills/kosis`)에 반영합니다. macOS/Linux/Windows 모두 지원합니다.
+GitHub 최신 릴리스에서 OS별 바이너리와 스킬 파일(SKILL.md, references/, LEARNINGS.md, templates 등)을 함께 내려받아 설치된 스킬 폴더(`~/.claude/skills/kosis`, Codex·OpenCode용 `~/.agents/skills/kosis`, Hermes용 `~/.hermes/skills/kosis` 중 있는 곳)에 반영합니다. macOS/Linux/Windows 모두 지원합니다.
 
 ---
 
@@ -147,7 +147,7 @@ grep "DT_MLTM_2086" references/kosis-table-params.md
 kosis s "미분양" -n 10
 ```
 
-- **경로 기준**: 위 `references/`는 이 SKILL.md와 같은 디렉토리(설치 시 `~/.claude/skills/kosis/`) 기준.
+- **경로 기준**: 위 `references/`는 이 SKILL.md와 같은 디렉토리(설치 시 `~/.claude/skills/kosis/`, `~/.agents/skills/kosis/`, `~/.hermes/skills/kosis/` 등) 기준.
 - **Windows**: `grep` 대신 `Select-String -Path references\kosis-table-index.md -Pattern "미분양"` 사용.
 - **⚠ 인덱스 누락 주의**: 인덱스는 주제 트리 깊이 2까지만 수집돼 **소비자물가지수·국내총생산·실업률·출생아수 등 핵심 표 다수가 빠져 있다**. grep 0건이 "표 없음"을 뜻하지 않는다 → 치트시트 확인 후 `kosis s`로 폴백. 검색도 0건이면 통계 **조사명**(예 "광업제조업조사")으로 재검색(LEARNINGS.md 참조).
 - **찾은 뒤에는**: params grep으로 코드를 확보했어도 확신이 없으면 `kosis m <ORG> <TBL>`로 확정한다(인덱스 수집일 이후 개편 가능).

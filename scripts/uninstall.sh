@@ -36,8 +36,12 @@ add_target() {
 add_target "$HOME/.local/bin/kosis"
 add_target "$HOME/.claude/skills/kosis"
 add_target "$HOME/.codex/skills/kosis"
+add_target "$HOME/.agents/skills/kosis"
+add_target "$HOME/.hermes/skills/kosis"
+add_target "$HOME/.config/opencode/skills/kosis"
 add_target "$(pwd)/.claude/skills/kosis"
 add_target "$(pwd)/.codex/skills/kosis"
+add_target "$(pwd)/.agents/skills/kosis"
 
 if [ -z "$TARGETS" ]; then
   echo "제거할 항목이 없습니다."
@@ -78,8 +82,12 @@ remove() {
 remove "$HOME/.local/bin/kosis"
 remove "$HOME/.claude/skills/kosis"
 remove "$HOME/.codex/skills/kosis"
+remove "$HOME/.agents/skills/kosis"
+remove "$HOME/.hermes/skills/kosis"
+remove "$HOME/.config/opencode/skills/kosis"
 remove "$(pwd)/.claude/skills/kosis"
 remove "$(pwd)/.codex/skills/kosis"
+remove "$(pwd)/.agents/skills/kosis"
 
 # ── config 처리 ──
 if [ "$PURGE" = 1 ]; then

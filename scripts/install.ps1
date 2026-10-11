@@ -2,7 +2,8 @@
 # 사용법: irm https://raw.githubusercontent.com/clazic/kosis/master/scripts/install.ps1 | iex
 #
 # 비대화형 환경변수:
-#   KOSIS_TARGET=claude|codex|both     (기본 claude)
+#   KOSIS_TARGET=claude,codex,opencode,hermes | all  (쉼표로 여러 개, 기본 claude)
+#     claude → %USERPROFILE%\.claude\skills\kosis, codex·opencode → .agents\skills\kosis, hermes → .hermes\skills\kosis
 #   KOSIS_CLAUDE_SCOPE=global|project  (기본 global)
 #   KOSIS_CODEX_SCOPE=global|project   (기본 global)
 #   KOSIS_VERSION=vX.Y.Z               (기본: 최신 릴리스)
@@ -53,9 +54,15 @@ try {
   if ($env:KOSIS_TARGET) {
     $Target = $env:KOSIS_TARGET
   } else {
-    Write-Host "`n설치 대상을 선택하세요:`n  1) Claude`n  2) Codex`n  3) 둘 다"
-    switch (Read-Host "> ") { "1" { $Target = "claude" } "2" { $Target = "codex" } "3" { $Target = "both" } default { $Target = "claude" } }
+    Write-Host "`n설치 대상을 선택하세요 (여러 개는 쉼표, 예: 1,2):`n  1) Claude Code       ~\.claude\skills`n  2) Codex · OpenCode  ~\.agents\skills`n  3) Hermes            ~\.hermes\skills`n  4) 모두"
+    $sel = @()
+    foreach ($s in ((Read-Host "> ") -split ",")) {
+      switch ($s.Trim()) { "1" { $sel += "claude" } "2" { $sel += "codex" } "3" { $sel += "hermes" } "4" { $sel += "all" } }
+    }
+    $Target = if ($sel.Count -gt 0) { $sel -join "," } else { "claude" }
   }
+  if ($Target -match "all") { $Target = "claude,codex,hermes" }
+  if ($Target -eq "both") { $Target = "claude,codex" }
 
   # 범위 질문 (대상별 개별) — $Name 표시명, $EnvDefault 비대화형 기본값
   function Get-Scope($Name, $EnvDefault) {
@@ -69,24 +76,29 @@ try {
   $SkillTar = Join-Path $Tmp "skill.tar.gz"
   Invoke-WebRequest -Uri $SkillUrl -OutFile $SkillTar -UseBasicParsing
 
-  # 스킬 설치 — $Tool: claude/codex, $Scope: global/project
-  function Install-Skill($Tool, $Scope) {
+  # 스킬 설치 — $Dir: claude/agents/hermes, $Scope: global/project, $Name: 표시명
+  function Install-Skill($Dir, $Scope, $Name) {
     $base = if ($Scope -eq "project") { (Get-Location).Path } else { $env:USERPROFILE }
-    $dest = Join-Path $base ".$Tool\skills\kosis"
+    $dest = Join-Path $base ".$Dir\skills\kosis"
     if (Test-Path $dest) { Remove-Item -Recurse -Force $dest }
     New-Item -ItemType Directory -Force -Path $dest | Out-Null
     tar -xzf $SkillTar -C $dest   # tar: Windows 10 1803+ 기본 내장
-    Write-Host "  OK 스킬($Tool, $Scope): $dest"
+    Write-Host "  OK 스킬($Name, $Scope): $dest"
   }
 
-  switch ($Target) {
-    "claude" { Install-Skill "claude" (Get-Scope "Claude" $env:KOSIS_CLAUDE_SCOPE) }
-    "codex"  { Install-Skill "codex"  (Get-Scope "Codex"  $env:KOSIS_CODEX_SCOPE) }
-    "both" {
-      Install-Skill "claude" (Get-Scope "Claude" $env:KOSIS_CLAUDE_SCOPE)
-      Install-Skill "codex"  (Get-Scope "Codex"  $env:KOSIS_CODEX_SCOPE)
+  $done = @{}
+  foreach ($t in ($Target -split ",")) {
+    $d = switch ($t.Trim()) {
+      "claude" { "claude" } { $_ -in "codex", "opencode", "agents" } { "agents" } "hermes" { "hermes" }
+      default { throw "알 수 없는 대상: $t (claude|codex|opencode|hermes|all)" }
     }
-    default { throw "알 수 없는 대상: $Target" }
+    if ($done[$d]) { continue }  # codex·opencode 는 같은 폴더 — 한 번만
+    $done[$d] = $true
+    switch ($d) {
+      "claude" { Install-Skill "claude" (Get-Scope "Claude" $env:KOSIS_CLAUDE_SCOPE) "Claude Code" }
+      "agents" { Install-Skill "agents" (Get-Scope "Codex · OpenCode" $env:KOSIS_CODEX_SCOPE) "Codex · OpenCode" }
+      "hermes" { Install-Skill "hermes" "global" "Hermes" }
+    }
   }
 } finally {
   Remove-Item -Recurse -Force $Tmp
