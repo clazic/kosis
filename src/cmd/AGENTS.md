@@ -34,7 +34,6 @@ Constraints:
   - `go run . data --help`
   - `go run . explain --help`
   - `go run . indicator --help`
-  - `go run . quick --help`
 - 대표 파싱 검증:
   - `go run . data 101 DT_TEST -c1 11 -i T10 -p M`
 
@@ -44,7 +43,7 @@ Do:
 - help 문자열과 실행 정책을 함께 수정한다.
 - 루트 정규화에 의존하는 short flag가 있으면 help에 그 사실을 일관되게 반영한다.
 - 비대화형 stdin에서 블로킹이 생기지 않는지 확인한다.
-- `search/meta/explain/list`는 탐색 계층, `data`는 조회 계층, `quick`는 실행 계층, `bookmark/history`는 기록 계층으로 구분해 수정한다.
+- `search/meta/explain/list`는 탐색 계층, `data`는 조회 계층, `bookmark/history`는 기록 계층으로 구분해 수정한다.
 - `bulk/config` 같은 운영성 명령은 설정/파일 저장 경로를 실제로 검증한다.
 
 Don't:

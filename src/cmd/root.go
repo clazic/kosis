@@ -36,8 +36,7 @@ KOSIS(국가통계포털) Open API 기반 CLI/TUI 도구입니다.
   chart             데이터를 차트로 시각화 (터미널/PNG/SVG/PDF/HTML/Excel/Mermaid)
 
 편의 명령어:
-  quick    (q)      자연어로 원스텝 조회 (규칙 기반 또는 AI)
-  config            설정 관리 (API 키, AI 도구, 기본 포맷)
+  config            설정 관리 (API 키, 기본 포맷, 캐시)
   bookmark (bm)     즐겨찾기 관리
   history  (hi)     조회 이력 관리
   completion        셸 자동완성 설정
@@ -59,9 +58,6 @@ KOSIS(국가통계포털) Open API 기반 CLI/TUI 도구입니다.
 
   # 4. 데이터 조회
   kosis d 101 DT_1IN1502 -c1 "11" -i T100 -p Y -l 5
-
-  # 또는 자연어 한 줄로
-  kosis q "서울 미분양 최근 6개월"
 
 표준 워크플로우 (단계별 설명):
   1단계. 통계표 찾기 — kosis search "<키워드>"
@@ -85,7 +81,6 @@ KOSIS(국가통계포털) Open API 기반 CLI/TUI 도구입니다.
          분할 조회하며, -o로 파일 저장 / --chart로 시각화까지 한 번에
          처리할 수 있습니다.
 
-  (빠른 길) 위 4단계를 자동으로 수행: kosis quick "서울 미분양 최근 6개월"
   (빠른 길) 핵심 지표만 필요하면 통계표 대신: kosis ind d "GDP"
 
 더 알아보기:
@@ -132,7 +127,7 @@ var rootCmd = &cobra.Command{
 
 func Execute() {
 	rootCmd.Version = appVersion
-	rootCmd.SetArgs(normalizeQuickAIFlag(normalizeClassShortFlags(os.Args[1:])))
+	rootCmd.SetArgs(normalizeClassShortFlags(os.Args[1:]))
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
 	}

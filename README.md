@@ -6,7 +6,6 @@ KOSIS(국가통계포털) OpenAPI CLI/TUI 도구 — 한국 통계 데이터를 
 kosis s "미분양"                              # 통계표 검색
 kosis m 116 DT_MLTM_2086                     # 메타 확인 (분류코드, 수록주기)
 kosis d 116 DT_MLTM_2086 -c1 ALL -i ALL -p Y -l 5   # 데이터 조회
-kosis q "서울 미분양 최근 5년"                # 자연어 한 줄 조회
 ```
 
 ---
@@ -129,12 +128,6 @@ kosis m 116 DT_MLTM_2086
 # 3. 데이터 조회
 kosis d 116 DT_MLTM_2086 -c1 ALL -c2 ALL -i ALL -p Y -l 5
 
-# 자연어 조회
-kosis q "서울 미분양 최근 5년"
-
-# 자연어 조회 (AI: 실제 검색·메타 목록에서 통계표·코드를 골라 조회)
-kosis q "작년까지 최근 5년간 울산에서 태어난 아기 수" --ai
-
 # 차트 생성 (HTML, 브라우저에서 열기)
 kosis d 101 DT_1IN1502 -c1 00 -i T100 -p Y -l 10 --chart line --chart-format html --open
 
@@ -151,7 +144,6 @@ kosis
 | `kosis search <키워드>` | `s` | 통계표 검색 |
 | `kosis meta <ORG> <TBL>` | `m` | 통계표 메타 확인 (분류/항목/주기) |
 | `kosis data <ORG> <TBL>` | `d` | 통계 데이터 조회 |
-| `kosis quick <요청>` | `q` | 자연어 조회 |
 | `kosis chart` | | 차트 시각화 (파이프/파일 입력) |
 | `kosis list` | `ls` | 통계목록 탐색 |
 | `kosis explain <ORG> <TBL>` | `ex` | 통계표 설명 |

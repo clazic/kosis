@@ -85,7 +85,7 @@ kosis config add-key <API_KEY_3>
 
 | 항목 | 경로 | 설명 |
 |------|------|------|
-| 설정 파일 | `~/.kosis/config.yaml` | API 키, AI 공급자, 기본 포맷 |
+| 설정 파일 | `~/.kosis/config.yaml` | API 키, 기본 포맷, 캐시 |
 | 즐겨찾기 | `~/.kosis/bookmarks.yaml` | 저장한 통계표 목록 |
 | 조회 이력 | `~/.kosis/history.yaml` | 최근 100개 조회 기록 |
 | 캐시 | `~/.kosis/cache/` | 메타/검색 캐시 (TTL: 24시간) |
@@ -117,7 +117,6 @@ kosis config add-key <API_KEY_3>
 | `kosis list` | `ls` | 통계목록 트리 탐색 |
 | `kosis explain <ORG> <TBL>` | `ex` | 통계 조사 설명 |
 | `kosis bulk <userStatsId>` | - | 대용량 다운로드 (SDMX/XLS) |
-| `kosis quick <요청>` | `q` | 자연어 원스텝 조회 (`--ai`: AI가 실제 목록에서 선택, `--yes`: 확인 생략) |
 | `kosis indicator search` | `ind s` | 주요지표 검색 |
 | `kosis indicator info <ID>` | `ind info` | 지표 상세 정보 |
 | `kosis indicator data <이름>` | `ind d` | 지표 수치 조회 |
@@ -140,7 +139,6 @@ kosis config add-key <API_KEY_3>
 kosis --help              # 전체 명령어 목록
 kosis data --help         # data 명령어 상세
 kosis ind --help          # 주요지표 명령어 상세
-kosis q --help            # quick 명령어 상세
 kosis config --help       # 설정 명령어 상세
 kosis bulk --help         # 대용량 다운로드 상세
 kosis bm --help           # 즐겨찾기 상세

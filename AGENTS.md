@@ -79,7 +79,6 @@ Constraints:
 - help 검증:
   - `go run . --help`
   - `go run . data --help`
-  - `go run . quick --help`
   - `go run . indicator --help`
 - 대표 파싱 검증:
   - `go run . data 101 DT_TEST -c1 11 -i T10 -p M`
@@ -97,4 +96,4 @@ Don't:
 # Context Map (Action-Based Routing)
 
 - **[CLI 명령어 계층](./src/cmd/AGENTS.md)** — Cobra 명령, help, 플래그, root 진입 경로 수정 시.
-- **[내부 구현 패키지](./src/internal/AGENTS.md)** — API, 출력, NLP, interactive, config 등 세부 로직 수정 시.
+- **[내부 구현 패키지](./src/internal/AGENTS.md)** — API, 출력, interactive, config 등 세부 로직 수정 시.

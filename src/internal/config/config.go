@@ -6,10 +6,8 @@ package config
 import (
 	"errors"
 	"fmt"
-	"net/url"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/spf13/viper"
 )
@@ -23,68 +21,7 @@ type Config struct {
 	APIKeys       []string `mapstructure:"api_keys"`
 	DefaultFormat string   `mapstructure:"default_format"`
 	CacheTTLHours int      `mapstructure:"cache_ttl_hours"`
-	AI            AIConfig `mapstructure:"ai"`
 	UpdateCheck   bool     `mapstructure:"update_check"`
-}
-
-// AIConfig는 quick --ai가 호출할 AI API 공급자 설정입니다.
-type AIConfig struct {
-	Default   string                `mapstructure:"default" yaml:"default"`
-	Providers map[string]AIProvider `mapstructure:"providers" yaml:"providers"`
-}
-
-// AIProvider는 AI API 하나를 나타냅니다.
-// Type: "openai"(기본, Chat Completions — 글생성) | "typesafe"(System One — 선택)
-// 키는 KeyEnv 환경변수 > APIKey(설정 파일) 순으로 찾습니다.
-type AIProvider struct {
-	Type    string `mapstructure:"type" yaml:"type,omitempty"`
-	BaseURL string `mapstructure:"base_url" yaml:"base_url"` // 예: http://host:8642/v1
-	Model   string `mapstructure:"model" yaml:"model"`
-	APIKey  string `mapstructure:"api_key" yaml:"api_key,omitempty"`
-	KeyEnv  string `mapstructure:"key_env" yaml:"key_env,omitempty"`
-}
-
-// ResolveKey는 사용할 API 키를 반환합니다. 없으면 빈 문자열(인증 없는 로컬 서버용).
-func (p AIProvider) ResolveKey() string {
-	if p.KeyEnv != "" {
-		if v := os.Getenv(p.KeyEnv); v != "" {
-			return v
-		}
-	}
-	return p.APIKey
-}
-
-// 공급자 종류.
-const (
-	ProviderOpenAI   = "openai"
-	ProviderTypeSafe = "typesafe"
-)
-
-// DefaultAIProvider 기본 글생성 공급자. o(oc) 머신의 Hermes Agent API 서버를 Tailscale로 호출한다.
-const DefaultAIProvider = "hermes"
-
-// SelectorProvider 후보 중 하나를 고르는 공급자 (TypeSafe Jev). 이름 고정, 주소·키는 ai-add/ai-key로 변경.
-const SelectorProvider = "jev"
-
-// IsTypeSafe Type이 비면 openai로 본다.
-func (p AIProvider) IsTypeSafe() bool { return p.Type == ProviderTypeSafe }
-
-// builtinProviders 설정 파일에 없으면 자동으로 채워지는 공급자.
-// ponytail: 개인 Tailscale 주소가 기본값이다. 다른 환경에선 ai-add로 덮어쓰거나 set-ai로 바꿀 것.
-func builtinProviders() map[string]AIProvider {
-	return map[string]AIProvider{
-		DefaultAIProvider: {
-			BaseURL: "http://100.70.244.98:8642/v1",
-			Model:   "hermes-agent",
-			KeyEnv:  "HERMES_API_KEY",
-		},
-		SelectorProvider: {
-			Type:    ProviderTypeSafe,
-			BaseURL: "https://api.typesafe.ai/v1",
-			Model:   "jev-latest",
-			KeyEnv:  "TYPESAFE_API_KEY",
-		},
-	}
 }
 
 // DefaultConfig는 기본 설정을 반환합니다.
@@ -94,10 +31,6 @@ func DefaultConfig() *Config {
 		DefaultFormat: "table",
 		CacheTTLHours: 24,
 		UpdateCheck:   true,
-		AI: AIConfig{
-			Default:   DefaultAIProvider,
-			Providers: builtinProviders(),
-		},
 	}
 }
 
@@ -141,7 +74,6 @@ func Load() (*Config, error) {
 	v.SetDefault("default_format", defaults.DefaultFormat)
 	v.SetDefault("cache_ttl_hours", defaults.CacheTTLHours)
 	v.SetDefault("update_check", defaults.UpdateCheck)
-	v.SetDefault("ai", defaults.AI)
 
 	// 설정 파일 경로 설정
 	configFile := ConfigFilePath()
@@ -159,30 +91,12 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("설정 파싱 실패: %w", err)
 	}
 
-	normalizeAI(&cfg.AI)
-
 	// 환경변수 KOSIS_API_KEY가 있으면 최우선으로 설정
 	if envKey := os.Getenv("KOSIS_API_KEY"); envKey != "" {
 		cfg.APIKeys = []string{envKey}
 	}
 
 	return cfg, nil
-}
-
-// normalizeAI 내장 공급자를 채우고, 기본값이 등록되지 않은 이름이면 내장 기본값으로 되돌린다.
-// 예전 CLI 방식 설정(ai.tools, default: claude 등)은 여기서 자연스럽게 hermes로 이관된다.
-func normalizeAI(ai *AIConfig) {
-	if ai.Providers == nil {
-		ai.Providers = map[string]AIProvider{}
-	}
-	for name, p := range builtinProviders() {
-		if _, ok := ai.Providers[name]; !ok {
-			ai.Providers[name] = p
-		}
-	}
-	if p, ok := ai.Providers[ai.Default]; !ok || p.IsTypeSafe() {
-		ai.Default = DefaultAIProvider // 선택 전용 공급자는 글생성 기본값이 될 수 없다
-	}
 }
 
 // Save는 설정을 파일에 저장합니다.
@@ -200,7 +114,6 @@ func Save(cfg *Config) error {
 	v.Set("default_format", cfg.DefaultFormat)
 	v.Set("cache_ttl_hours", cfg.CacheTTLHours)
 	v.Set("update_check", cfg.UpdateCheck)
-	v.Set("ai", cfg.AI)
 
 	if err := v.WriteConfig(); err != nil {
 		// WriteConfig가 실패하면 WriteConfigAs 시도
@@ -277,120 +190,6 @@ func SetDefaultKey(key string) error {
 
 	cfg.APIKeys = []string{key}
 	return Save(cfg)
-}
-
-// GetAIProvider는 이름으로 공급자를 찾습니다. name이 비면 기본 공급자를 씁니다.
-func GetAIProvider(name string) (string, AIProvider, error) {
-	cfg, err := Load()
-	if err != nil {
-		return "", AIProvider{}, err
-	}
-	if name == "" {
-		name = cfg.AI.Default
-	}
-	p, ok := cfg.AI.Providers[name]
-	if !ok {
-		return name, AIProvider{}, fmt.Errorf("등록되지 않은 AI 공급자: %s", name)
-	}
-	return name, p, nil
-}
-
-// SetAIDefault는 기본 AI 공급자를 설정합니다.
-func SetAIDefault(name string) error {
-	if name == "" {
-		return errors.New("AI 공급자명은 비워둘 수 없습니다")
-	}
-
-	cfg, err := Load()
-	if err != nil {
-		return err
-	}
-
-	p, exists := cfg.AI.Providers[name]
-	if !exists {
-		return fmt.Errorf("등록되지 않은 AI 공급자: %s", name)
-	}
-	if p.IsTypeSafe() {
-		return fmt.Errorf("'%s'는 선택 전용(typesafe) 공급자라 글생성 기본값으로 쓸 수 없습니다", name)
-	}
-
-	cfg.AI.Default = name
-	return Save(cfg)
-}
-
-// AddAIProvider는 AI 공급자를 추가하거나 같은 이름을 덮어씁니다.
-func AddAIProvider(name string, p AIProvider) error {
-	if name == "" {
-		return errors.New("AI 공급자명은 비워둘 수 없습니다")
-	}
-	u, err := url.Parse(p.BaseURL)
-	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-		return fmt.Errorf("base URL은 http(s)://호스트[:포트]/v1 형식이어야 합니다: %q", p.BaseURL)
-	}
-	if p.Model == "" {
-		return errors.New("모델명은 비워둘 수 없습니다")
-	}
-	switch p.Type {
-	case "", ProviderOpenAI, ProviderTypeSafe:
-	default:
-		return fmt.Errorf("알 수 없는 공급자 종류: %s (openai 또는 typesafe)", p.Type)
-	}
-	if name == SelectorProvider && p.Type != ProviderTypeSafe {
-		return fmt.Errorf("'%s'는 선택기 이름이라 --type typesafe 여야 합니다", SelectorProvider)
-	}
-
-	cfg, err := Load()
-	if err != nil {
-		return err
-	}
-	cfg.AI.Providers[name] = p
-	return Save(cfg)
-}
-
-// SetAIProviderKey는 공급자의 API 키를 설정 파일에 저장합니다.
-func SetAIProviderKey(name, key string) error {
-	if key == "" {
-		return errors.New("API 키는 비워둘 수 없습니다")
-	}
-	cfg, err := Load()
-	if err != nil {
-		return err
-	}
-	p, ok := cfg.AI.Providers[name]
-	if !ok {
-		return fmt.Errorf("등록되지 않은 AI 공급자: %s", name)
-	}
-	p.APIKey = key
-	cfg.AI.Providers[name] = p
-	return Save(cfg)
-}
-
-// RemoveAIProvider는 AI 공급자를 제거합니다. 내장 공급자는 제거할 수 없습니다.
-func RemoveAIProvider(name string) error {
-	if _, builtin := builtinProviders()[name]; builtin {
-		return fmt.Errorf("내장 공급자 '%s'는 제거할 수 없습니다 (ai-add로 주소를 덮어쓸 수 있음)", name)
-	}
-
-	cfg, err := Load()
-	if err != nil {
-		return err
-	}
-
-	if _, exists := cfg.AI.Providers[name]; !exists {
-		return fmt.Errorf("등록되지 않은 AI 공급자: %s", name)
-	}
-
-	delete(cfg.AI.Providers, name)
-	normalizeAI(&cfg.AI) // 기본 공급자를 지웠다면 내장 기본값으로 복귀
-	return Save(cfg)
-}
-
-// MaskKey 키의 앞뒤 4자만 보여준다.
-func MaskKey(key string) string {
-	if len(key) <= 10 {
-		return strings.Repeat("*", len(key))
-	}
-	return key[:4] + "..." + key[len(key)-4:]
 }
 
 // NoAPIKeyMessage는 API 키가 없을 때 표시할 안내 메시지를 반환합니다.
