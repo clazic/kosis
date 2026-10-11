@@ -36,7 +36,7 @@ var updateCmd = &cobra.Command{
 	Long: `kosis를 GitHub 최신 릴리스로 업데이트합니다.
 
 바이너리(OS별)와 스킬 파일(SKILL.md, docs/, LEARNINGS.md, templates 등)을
-함께 내려받아 설치된 스킬 디렉토리(~/.claude, ~/.agents(Codex·OpenCode), ~/.hermes, ~/.config/opencode 의 skills/kosis)에 반영합니다.
+함께 내려받아 설치된 스킬 디렉토리(~/.claude, ~/.agents(Codex·OpenCode), ~/.hermes, ~/.config/opencode, ~/.gemini, ~/.antigravity 의 skills/kosis)에 반영합니다.
 
 바이너리와 스킬 파일은 각각 y/N 확인을 거치며, 설치 직전에 릴리스의
 SHA256SUMS와 대조하여 체크섬을 검증합니다.
@@ -317,7 +317,11 @@ func collectSkillDirs(home string) []string {
 		filepath.Join(home, ".agents", "skills", "kosis"), // Codex · OpenCode
 		filepath.Join(home, ".hermes", "skills", "kosis"), // Hermes Agent
 		filepath.Join(home, ".config", "opencode", "skills", "kosis"),
-		filepath.Join(home, ".codex", "skills", "kosis"), // 이전 Codex 위치
+		filepath.Join(home, ".gemini", "skills", "kosis"),                    // Gemini CLI
+		filepath.Join(home, ".gemini", "config", "skills", "kosis"),          // Gemini (config)
+		filepath.Join(home, ".gemini", "antigravity-ide", "skills", "kosis"), // Antigravity
+		filepath.Join(home, ".antigravity", "skills", "kosis"),               // Antigravity
+		filepath.Join(home, ".codex", "skills", "kosis"),                     // 이전 Codex 위치
 	}
 	// cwd project 스킬
 	if cwd, err := os.Getwd(); err == nil {

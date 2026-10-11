@@ -32,6 +32,10 @@ $Candidates = @(
   (Join-Path $Home_  ".agents\skills\kosis"),
   (Join-Path $Home_  ".hermes\skills\kosis"),
   (Join-Path $Home_  ".config\opencode\skills\kosis"),
+  (Join-Path $Home_  ".gemini\skills\kosis"),
+  (Join-Path $Home_  ".gemini\config\skills\kosis"),
+  (Join-Path $Home_  ".gemini\antigravity-ide\skills\kosis"),
+  (Join-Path $Home_  ".antigravity\skills\kosis"),
   (Join-Path $Cwd    ".claude\skills\kosis"),
   (Join-Path $Cwd    ".codex\skills\kosis"),
   (Join-Path $Cwd    ".agents\skills\kosis")
