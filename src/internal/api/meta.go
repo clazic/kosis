@@ -157,11 +157,11 @@ func (c *Client) MetaSummary(orgID, tblID string) (*MetaSummaryResult, error) {
 
 // CodeRow 분류·항목 코드 한 줄 (m --find 용). Flag 는 kosis d 에 넘길 플래그.
 type CodeRow struct {
-	Flag       string `json:"flag"`   // --class1 … --class8, --item
-	Axis       string `json:"axis"`   // 분류 이름 (시도별, 산업별 …)
-	Code       string `json:"code"`   // d 에 넘길 코드
-	Name       string `json:"name"`   // 이름 (공백 정리)
-	Level      int    `json:"level"`  // 1 = 최상위
+	Flag       string `json:"flag"`  // --class1 … --class8, --item
+	Axis       string `json:"axis"`  // 분류 이름 (시도별, 산업별 …)
+	Code       string `json:"code"`  // d 에 넘길 코드
+	Name       string `json:"name"`  // 이름 (공백 정리)
+	Level      int    `json:"level"` // 1 = 최상위
 	ParentCode string `json:"parent_code,omitempty"`
 	ParentName string `json:"parent_name,omitempty"`
 	Path       string `json:"path"` // 최상위부터 이름 (A > B > C)

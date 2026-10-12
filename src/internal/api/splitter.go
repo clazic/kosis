@@ -243,7 +243,7 @@ func (c *Client) runParallelChunks(chunks []PeriodChunk, concurrency int, progre
 	}
 	c.keyPool = make(chan int, numWorkers)
 	for i := 0; i < numWorkers; i++ {
-		c.keyPool <- i % nKeys
+		c.keyPool <- (c.keyStart + i) % nKeys
 	}
 
 	jobs := make(chan job, len(chunks))

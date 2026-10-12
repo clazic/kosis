@@ -69,3 +69,22 @@ func TestKeyPoolCooldownReturn(t *testing.T) {
 		t.Fatal("cooldownReturn did not return key after cooldown")
 	}
 }
+
+// TestKeyStartSpreads kosis 를 매번 새로 실행해도(= 클라이언트를 새로 만들어도) 0번 키만 쓰지 않아야 한다.
+func TestKeyStartSpreads(t *testing.T) {
+	keys := []string{"k0", "k1", "k2"}
+	first := map[string]int{}
+	for i := 0; i < 300; i++ {
+		c, _ := NewClient(keys)
+		k := c.getNextAPIKey()
+		if p := keys[c.borrowKey()]; p != k {
+			t.Fatalf("일반 요청(%s)과 키 풀(%s)의 시작 키가 다름", k, p)
+		}
+		first[k]++
+	}
+	for _, k := range keys {
+		if first[k] < 50 {
+			t.Fatalf("시작 키가 고르지 않음: %v", first)
+		}
+	}
+}

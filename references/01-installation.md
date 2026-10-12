@@ -88,6 +88,8 @@ kosis config add-key <API_KEY_3>
 kosis config key-list              # 등록된 키 확인
 ```
 
+> 한도는 키 하나당 1분 200건이다. `kosis`는 실행할 때마다 시작 키를 무작위로 고르므로, `kosis`를 여러 번 따로 실행해도 등록한 키가 고루 쓰인다.
+
 > **API 키 발급 절차:**
 > 1. https://kosis.kr/openapi/ 접속
 > 2. 회원가입/로그인

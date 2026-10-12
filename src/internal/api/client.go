@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math/rand/v2"
 	"net/http"
 	"net/url"
 	"os"
@@ -36,6 +37,7 @@ type Client struct {
 	httpClient *http.Client
 	cache      *cache.Cache // 파일 기반 캐시로 변경
 	keyIndex   int
+	keyStart   int // 이 프로세스가 처음 쓸 키. 0 고정이면 kosis 를 여러 번 실행할 때 0번 키만 한도에 걸린다
 	keyIndexMu sync.Mutex
 	keyPool    chan int // 키 풀(설계서 Step 2): 가용 키 인덱스를 버퍼드 채널로 관리(borrow/return)
 }
@@ -46,10 +48,11 @@ func NewClient(apiKeys []string) (*Client, error) {
 		return nil, fmt.Errorf("at least one API key is required")
 	}
 
-	// 키 풀 초기화(설계서 Step 2): 모든 키 인덱스를 버퍼드 채널에 채워둠
+	// 키 풀 초기화(설계서 Step 2): 모든 키 인덱스를 버퍼드 채널에 채워둠 (무작위 시작 키부터)
+	start := rand.IntN(len(apiKeys))
 	keyPool := make(chan int, len(apiKeys))
 	for i := range apiKeys {
-		keyPool <- i
+		keyPool <- (start + i) % len(apiKeys)
 	}
 
 	return &Client{
@@ -68,7 +71,8 @@ func NewClient(apiKeys []string) (*Client, error) {
 			},
 		},
 		cache:    nil, // 나중에 InitCache로 초기화
-		keyIndex: 0,
+		keyIndex: start,
+		keyStart: start,
 	}, nil
 }
 
