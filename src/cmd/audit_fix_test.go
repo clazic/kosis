@@ -176,3 +176,15 @@ func TestCmdClientUsesCache(t *testing.T) {
 func ruleEntry(body map[string]any, status string) rules.Entry {
 	return rules.Entry{Kind: "rule", Status: status, Body: body}
 }
+
+// 10: replay ID 는 입력 전체가 양의 정수 — "501junk" 가 501 로 실행되면 안 된다
+func TestParseHistoryID(t *testing.T) {
+	for _, bad := range []string{"501junk", "1junk", "0", "-1", "", "1.5", "0x10"} {
+		if _, err := parseHistoryID(bad); err == nil {
+			t.Errorf("%q: 오류여야 함", bad)
+		}
+	}
+	if id, err := parseHistoryID("501"); err != nil || id != 501 {
+		t.Errorf("501: %d %v", id, err)
+	}
+}

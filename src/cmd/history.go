@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 
@@ -128,9 +129,9 @@ ID는 history 명령어로 확인할 수 있습니다.
   다시 실행한 명령이 실패하면 그 종료 코드를 그대로 돌려줍니다.`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		var id int
-		if _, err := fmt.Sscanf(args[0], "%d", &id); err != nil {
-			return fmt.Errorf("ID는 숫자여야 합니다 (%v)", err)
+		id, err := parseHistoryID(args[0])
+		if err != nil {
+			return err
 		}
 		cmd.SilenceUsage = true
 
@@ -231,4 +232,13 @@ func init() {
 
 	// historyCmd 플래그
 	historyCmd.Flags().IntP("limit", "n", 10, "표시할 최근 이력 개수. 이력은 최대 100개까지 보관됨")
+}
+
+// parseHistoryID 입력 전체가 양의 정수여야 한다 ("501junk" 처럼 앞 숫자만 읽어 501 을 실행하지 않는다).
+func parseHistoryID(s string) (int, error) {
+	id, err := strconv.Atoi(strings.TrimSpace(s))
+	if err != nil || id < 1 {
+		return 0, fmt.Errorf("ID는 1 이상의 숫자여야 합니다 (받은 값: %q)", s)
+	}
+	return id, nil
 }
