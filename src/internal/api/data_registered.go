@@ -18,10 +18,10 @@ func (c *Client) DataRegistered(userStatsID string, opts DataOptions) ([]DataRow
 
 	// Add period parameters
 	if opts.StartPrdDe != "" {
-		params["startPrdDe"] = opts.StartPrdDe
+		params["startPrdDe"] = NormalizePrdDe(opts.PrdSe, opts.StartPrdDe)
 	}
 	if opts.EndPrdDe != "" {
-		params["endPrdDe"] = opts.EndPrdDe
+		params["endPrdDe"] = NormalizePrdDe(opts.PrdSe, opts.EndPrdDe)
 	}
 	if opts.NewEstPrdCnt != "" {
 		params["newEstPrdCnt"] = opts.NewEstPrdCnt

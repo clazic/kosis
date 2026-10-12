@@ -97,35 +97,53 @@ var rulesListCmd = &cobra.Command{
 	Long: `배포 규칙과 로컬 규칙을 함께 보여줍니다. 로컬이 더 최신입니다.
 
 파라미터:
-  [찾을 말]   제목·근거·본문에 든 말 (공백·대소문자 무시). 생략하면 전부.
+  [찾을 말]   제목·근거·본문 어디든 든 말 (공백·대소문자 무시). 생략하면 전부.
+              본문 전체를 보므로 지역 이름 같은 흔한 말은 관련 없는 규칙도 많이 나온다 —
+              정확히 고르려면 아래 선택자를 쓴다.
 
 플래그:
   --kind <종류>   rule | table | concept | breakdown | crosswalk | gap
+  --id <ID>       규칙 id 또는 표 ID(ORG/TBL) 와 정확히 같은 것만 (예 meta.period-codes, 101/DT_1FS1101)
+  --topic <주제>  rules 의 topic 이 같은 것만 (workflow, search, meta, data, period, answer, output …)
+  --status <상태> wrong(틀린 것으로 표시된 규칙만) | ok(틀림 표시 없는 것만)
   -f json         본문까지 JSON 으로 (AI 가 읽기 좋음)
+
+같은 id 가 로컬과 배포에 모두 있으면 둘 다 나온다 (로컬이 앞). 자동으로 합치거나 덮어쓰지 않으니
+verified 날짜와 status 를 보고 판단한다. 규칙 파일을 읽지 못하면 stderr 에 오류, 종료 코드 1.
 
 표시:
   [배포]/[로컬] 출처, (추정) confidence: guess, (경향) tendency, (틀림) status: wrong
 
 예제:
   kosis rules list 울산
-  kosis rules list --kind rule
-  kosis rules list DT_1FS1101 -f json`,
+  kosis rules list --kind rule --topic period
+  kosis rules list --id 101/DT_1FS1101 -f json
+  kosis rules list --status wrong`,
 	Args: cobra.MaximumNArgs(1),
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		kind, _ := cmd.Flags().GetString("kind")
 		format, _ := cmd.Flags().GetString("format")
+		idF, _ := cmd.Flags().GetString("id")
+		topicF, _ := cmd.Flags().GetString("topic")
+		statusF, _ := cmd.Flags().GetString("status")
+		if statusF != "" && statusF != "wrong" && statusF != "ok" {
+			return fmt.Errorf("--status 는 wrong 또는 ok 입니다 (받은 값: %s)", statusF)
+		}
+		if err := checkFormat(format, "table", "json"); err != nil {
+			return err
+		}
+		cmd.SilenceUsage = true
 		query := ""
 		if len(args) == 1 {
 			query = args[0]
 		}
 		shipped, local, shippedPath, _, err := loadAllRules()
 		if err != nil {
-			fmt.Println("오류:", err)
-			return
+			return fmt.Errorf("규칙 파일을 읽지 못했습니다: %w", err)
 		}
 		var all []rules.Entry
 		for _, e := range append(local, shipped...) { // 로컬 먼저 (더 최신)
-			if (kind == "" || e.Kind == kind) && rules.Matches(e, query) {
+			if (kind == "" || e.Kind == kind) && rules.Matches(e, query) && ruleSelected(e, idF, topicF, statusF) {
 				all = append(all, e)
 			}
 		}
@@ -151,8 +169,7 @@ var rulesListCmd = &cobra.Command{
 			enc := json.NewEncoder(os.Stdout)
 			enc.SetEscapeHTML(false)
 			enc.SetIndent("", "  ")
-			_ = enc.Encode(out)
-			return
+			return enc.Encode(out)
 		}
 		if shippedPath == "" {
 			fmt.Println("⚠ 배포 규칙(references/rules.yaml)을 찾지 못했습니다. 스킬을 설치하거나 KOSIS_RULES_FILE 을 지정하세요.")
@@ -183,7 +200,26 @@ var rulesListCmd = &cobra.Command{
 			fmt.Printf("  배포: %s", shippedPath)
 		}
 		fmt.Printf("  로컬: %s\n", rules.Dir())
+		return nil
 	},
+}
+
+// ruleSelected --id(규칙 id·표 ID 정확히)·--topic·--status(wrong|ok) 선택자.
+func ruleSelected(e rules.Entry, id, topic, status string) bool {
+	str := func(k string) string { v, _ := e.Body[k].(string); return v }
+	if id != "" && str("id") != id && str("table") != id {
+		return false
+	}
+	if topic != "" && str("topic") != topic {
+		return false
+	}
+	switch status {
+	case "wrong":
+		return e.Status == "wrong"
+	case "ok":
+		return e.Status != "wrong"
+	}
+	return true
 }
 
 var rulesAddCmd = &cobra.Command{
@@ -433,4 +469,7 @@ func init() {
 	rulesSyncCmd.Flags().String("init", "", "처음 연결할 비공개 git 저장소 URL")
 	rulesListCmd.Flags().String("kind", "", "종류: rule|table|concept|breakdown|crosswalk|gap")
 	rulesListCmd.Flags().StringP("format", "f", "table", "출력 형식: table | json")
+	rulesListCmd.Flags().String("id", "", "규칙 id 또는 표 ID(ORG/TBL)와 정확히 같은 것만")
+	rulesListCmd.Flags().String("topic", "", "rules 의 topic 이 같은 것만 (workflow, search, meta, data, period, answer, output …)")
+	rulesListCmd.Flags().String("status", "", "wrong=틀림 표시된 것만, ok=틀림 표시 없는 것만")
 }

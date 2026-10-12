@@ -87,6 +87,14 @@ rules:
     evidence: "2026-10-12 실사용 감사 G7·G8 — 새 사실과 틀린 규칙을 기록하지 않음. 2026-10-12 규칙이 'F=5년'으로 틀려 3년 주기 표를 '데이터 없음'으로 오판 — 원인을 찾은 뒤 meta.period-codes 정정"
     verified: "2026-10-12"
 
+  - id: workflow.rules-lookup
+    topic: workflow
+    when: 조회 전에 rules.yaml·LEARNINGS.md 를 참조할 때 (모든 조회 전 필수)
+    do: "처음 한 번은 두 파일을 읽고, 이후 조회마다 그 조회에 해당하는 항목만 다시 찾는다 — kosis rules list --id <ORG/TBL 또는 규칙 id>, --kind table, --topic period 처럼 선택자로. 본문 검색(rules list 울산)은 관련 없는 규칙도 많이 나오니 마지막에. 같은 대화에서 파일 전체를 매번 다시 읽지 않는다"
+    why: 매 조회마다 전체를 읽으면 왕복·컨텍스트만 늘고 필요한 항목은 놓치기 쉽다. 사용자 지시(모든 조회 전 참조)는 '해당 항목 확인'으로 지킨다
+    evidence: "2026-10-12 rules list 울산 → 미분양·출생·물가 규칙까지 본문 일치로 나옴. --id 101/DT_1FS1101 → 그 표 항목만"
+    verified: "2026-10-12"
+
   - id: workflow.rules-source
     topic: workflow
     when: 어느 rules 파일이 적용되는지 확인할 때 (교정한 rules 가 실제로 읽히는지)
@@ -142,16 +150,16 @@ rules:
   - id: search.filters
     topic: search
     when: 검색 결과에 다른 지역·기관·분야 표가 많이 섞일 때
-    do: "--org <기관 코드|이름 일부>, --stat <조사명 일부>, --region <지역 이름> 으로 거른다. 표마다 항목·단위를 보려면 --items (-n 을 작게)"
-    why: KOSIS 검색 API 는 키워드만 받는다. kosis 가 결과를 넉넉히 받아 거른다. --region 은 이름·기관·조사명·분류 경로 글자 매칭이라 전국 시도별 표는 빠진다
-    evidence: "s 출하액 --stat 광업제조업조사 → DT_1FS1103 등 광업제조업조사 표만. s 광업제조업 --org 101 --items → DT_1FJY1102 기업체수(개)"
+    do: "--org <기관 코드|이름 일부> 는 KOSIS 서버에서 거른다(이름은 기관별 목록에서 코드로 바꿈). --stat <조사명 일부>·--region <지역 이름> 은 받은 쪽 안에서만 거르므로 결과가 없거나 적으면 --page 2 … 로 다음 쪽도 본다. stderr '검색 범위'(전체 수·받은 수·거른 뒤 수)를 확인한다. 표마다 항목·단위를 보려면 --items (-n 을 작게)"
+    why: "v0.5.22 까지 --org 도 받은 결과 안에서만 걸러 기관 표가 상위 결과 밖에 있으면 빈 결과였다(false negative). KOSIS 검색 API 는 orgId 를 받는다. --region 은 이름·기관·조사명·분류 경로 글자 매칭이라 전국 시도별 표는 빠진다"
+    evidence: "s 출하액 --stat 광업제조업조사 → DT_1FS1103 등 광업제조업조사 표만. 2026-10-12 공식 API searchNm=생산액&orgId=207 → 울산광역시 표 30행(전체 607), 같은 날 v0.5.22 'kosis s 생산액 --org 울산' 은 빈 결과 → 고친 뒤 기관별 목록에서 울산광역시=207 로 바꿔 서버 필터"
     verified: "2026-10-12"
 
   - id: search.absence-is-not-proof
     topic: search
     when: 검색 결과에서 원하는 표를 못 찾았을 때
     do: "'KOSIS 에 없다' 고 말하지 말고 '이 검색어·필터·결과 수(-n) 범위에서 못 찾았다' 고 말한다. 다른 용어·조사명·--org/--stat 로 다시 찾고, 그래도 없으면 시도 단위처럼 다른 수준의 대안을 제시한다"
-    why: 검색은 표 이름 매칭이고 -n 으로 잘린다. 결과에 없다고 통계가 없는 것은 아니다
+    why: 검색은 한 쪽(-n 개)만 받고 --stat/--region 은 그 안에서만 거른다. 결과에 없다고 통계가 없는 것은 아니다
     evidence: "2026-10-12 101/DT_1FS1104 는 시도 단위 생산액(T07) 표인데 '울산 생산액' 검색 상위 결과로는 구군까지 연결되지 않았다 (실사용 감사 C5·E3·E4)"
     verified: "2026-10-12"
 
@@ -199,9 +207,9 @@ rules:
   - id: meta.find-codes
     topic: meta
     when: 지역·산업·항목 코드를 이름으로 골라야 할 때
-    do: "kosis m <ORG> <TBL> --find \"이름1,이름2\" (공백 무시) 로 찾는다. -f json 이면 [{flag, code, name, level, parent_code, path, unit}] — flag 가 d 에 넘길 플래그(--class1 …, --item)"
-    why: 메타 JSON 을 직접 가공하지 않아도 되고, 어느 축(--class 몇 번)인지 함께 나온다
-    evidence: "m 101 DT_1FS1101 --find 출하액 → --item T04, --find 울주 → --class1 26510 (울산광역시 > 울주군)"
+    do: "kosis m <ORG> <TBL> --find \"이름1,이름2\" (공백 무시) 로 찾는다. 항목만 보려면 --axis item, 한 축만 --axis class2 또는 분류 이름 일부. -f json 이면 [{flag, code, name, level, parent_code, path, unit}] — flag 가 d 에 넘길 플래그(--class1 …, --item). 큰 표는 ITM 전체를 출력하지 말고 이 선택자로 고른다"
+    why: "메타 JSON 을 직접 가공하지 않아도 되고, 어느 축(--class 몇 번, 메타 OBJ_ID_SN 기준)인지 함께 나온다. 코드 고르기는 분류·항목(ITM)만 1번 부른다. --find 등은 --type 없이 또는 --type ITM 과만 쓰고, 다른 --type 과 쓰면 오류(종료 코드 1). v0.5.22 까지는 --type ITM 과 함께 쓰면 조용히 무시돼 전체(1,097행)가 나왔다"
+    evidence: "m 101 DT_1FS1101 --find 출하액 → --item T04, --find 울주 → --class1 26510 (울산광역시 > 울주군). 2026-10-12 --axis item → 7개, --axis class2 → 산업축(--class2), m 118 DT_118N_SAUPM75 --level 1 → 규모별 --class3"
     verified: "2026-10-12"
 
   - id: meta.notes-and-survey
@@ -243,6 +251,14 @@ rules:
     do: 공백을 무시하고 비교한다
     why: "일부 표는 '울  산', '전  국'처럼 글자 사이에 공백이 있다"
     evidence: "101/INH_DT_1K52F01_26, 101/DT_1K52F08 데이터 출력"
+    verified: "2026-10-12"
+
+  - id: meta.item-code-per-table
+    topic: meta
+    when: 다른 표에서 본 항목 코드(T07 등)를 쓰려 할 때
+    do: "항목 코드는 표마다 뜻이 다르다. 표마다 m --axis item 으로 코드·이름·단위를 확인하고 이름으로 맞춘다"
+    why: 같은 조사·같은 코드라도 표가 다르면 다른 항목일 수 있다
+    evidence: "2026-10-12 m --axis item: 101/DT_1FS1104 T07=생산액, 101/DT_1FS1101 T07=유형자산 연말잔액(생산액 항목 없음, 출하액 T04)"
     verified: "2026-10-12"
 
   - id: meta.mixed-axis
@@ -354,9 +370,9 @@ rules:
   - id: period.quarter-format
     topic: period
     when: 분기(Q) 기간을 지정할 때
-    do: "YYYY0Q 형식 (2025년 1분기 = 202501)"
-    why: "YYYYQ(20251) 는 [30] 데이터 없음"
-    evidence: "d 101 DT_1DA7104S -p Q -s 202501 -e 202502 성공 / d 101 INH_1J22003 -p Q -s 20251 → [30]"
+    do: "분기 YYYYQQ (2025년 1분기 = 202501), 반기 YYYYHH (상반기 202401·하반기 202402). 반기 코드는 S(공식)·H 둘 다 되고 결과 PRD_SE 는 S. kosis 는 5자리(20251)를 넣어도 6자리로 바꿔 보낸다(자동 분할 포함)"
+    why: "KOSIS 는 6자리만 받는다 — 5자리(20251)는 [30] 데이터 없음. v0.5.22 까지 문서(SKILL·03·d 도움말)가 20241 로 잘못 적었고, 자동 분할도 5자리로 보내 큰 분기·반기 조회가 [30] 이 될 수 있었다"
+    evidence: "d 101 DT_1DA7104S -p Q -s 202501 -e 202502 성공 / d 101 INH_1J22003 -p Q -s 20251 → [30]. 2026-10-12 API 직접: 301/DT_200Y108 Q 202401 성공·20241 [30], 101/DT_1ES3A02S prdSe=S·H 모두 성공(결과 S), 202401 성공·20241 [30]"
     verified: "2026-10-12"
 
   - id: period.month-year-format
@@ -399,6 +415,14 @@ rules:
     evidence: "2026-10-12 실사용 감사 D7·G2 — 두 표의 공통 최신 2024 를 '모든 관련 통계 최신' 처럼 표현"
     verified: "2026-10-12"
 
+  - id: period.item-latest-differs
+    topic: period
+    when: 여러 항목을 한 번에 최신 시점(-l 1 등)으로 조회할 때
+    do: "표의 수록 기간(m --type PRD)은 표 전체 기준이다. 항목마다 마지막 시점이 다를 수 있으니 요청한 항목이 결과에 모두 있는지 확인한다 (kosis d 는 빠진 항목을 stderr 에 경고). 빠진 항목은 -s <표 시작> -e <표 끝> 으로 그 항목만 조회해 실제 마지막 시점을 찾고, 답에 항목별 시점을 따로 적는다. -l 1 은 표의 최근 시점이라 그 항목이 끝난 표에선 [30]"
+    why: "최신 연도 조회에서 한 항목만 조용히 빠져, 그 항목이 없는 것으로 오해하거나 다른 지표로 대신 답하기 쉽다"
+    evidence: "2026-10-12 207/DT_2071F01(울산 연보, 수록 1994~2024): -l 1 로 종사자수+생산액 → 종사자수 2024 6행만, 생산액 없음. 생산액만 -s 2008 -e 2024 → 2008~2013 만 있음. 생산액만 -l 1 → [30]"
+    verified: "2026-10-12"
+
   - id: period.empty-may-be-unpublished
     topic: period
     when: 특정 값이 [30] 데이터 없음일 때
@@ -411,9 +435,9 @@ rules:
   - id: output.stdout-data-only
     topic: workflow
     when: -f json/csv 결과를 프로그램(Python·jq)으로 읽을 때
-    do: stdout 만 읽는다. 결과 수·안내·오류는 stderr 로 나온다 (2>/dev/null 로 버려도 된다). 결과가 없으면 json 은 []
+    do: "stdout 만 읽는다. 결과 수·안내·경고·오류는 stderr 로 나온다 (2>/dev/null 로 버려도 된다). 결과가 없으면 json 은 []. 인자·형식 오류나 조회 실패는 종료 코드 1 이니 종료 코드를 먼저 본다 (s·m·d·ex·ls·rules list)"
     why: "v0.5.16 부터 안내문을 stdout 에서 뺐다. 이전 버전은 '검색 결과: N개' 가 JSON 뒤에 붙어 파싱이 깨졌다"
-    evidence: "kosis s 울산 -n 2 -f json 2>/dev/null | python3 -c 'import json,sys; json.load(sys.stdin)' 성공"
+    evidence: "kosis s 울산 -n 2 -f json 2>/dev/null | python3 -c 'import json,sys; json.load(sys.stdin)' 성공. 2026-10-12 v0.5.22 까지 s -n -1 은 panic(exit 2), s -f nonsense·m 101·d 조회 실패·깨진 rules 의 rules list 는 exit 0 (rules list 는 오류를 stdout 에) → 모두 stderr·exit 1 로 정정"
     verified: "2026-10-12"
 
   - id: output.shapes
@@ -445,7 +469,7 @@ rules:
     when: 표의 값을 답할 때
     do: "표마다 조사명, 조사 범위(예 10명 이상 사업체), 제외 대상(예 특정 산업 제외), 시점, 단위를 함께 적는다. 근거는 kosis ex 와 m --type CMMT. '전체'·'합계'는 그 조사 범위 안의 합계라고 쓴다"
     why: "'전체' 를 지역 전 산업·전 사업체로 오해하기 쉽다"
-    evidence: "ex 101 DT_1FS1101 → 10인 이상 사업체. m 118 DT_118N_SAUPM75 --type CMMT → O 공공행정 산업 제외, 자영업자만 사업체 제외 (2026-10-12)"
+    evidence: "ex 101 DT_1FS1101·DT_1FS1104 → 광업·제조업 10인 이상 사업체. ex 118 DT_118N_SAUPM75 → 자영업자(+무급가족종사자)로만 된 사업체·공무원 재직기관·O 공공행정 산업 제외, 2020년 기준 자료부터 일정한 물리적 장소가 없는 사업체 제외 — 이 표의 '전체'는 도시 전체 모든 고용이 아니다 (2026-10-12)"
     verified: "2026-10-12"
 
   - id: answer.suppressed-missing

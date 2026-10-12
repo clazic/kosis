@@ -220,6 +220,7 @@ func normalizeClassShortFlags(args []string) []string {
 }
 
 func init() {
+	rootCmd.SetErrPrefix("오류:") // RunE 오류도 d 의 '오류:' 와 같은 표기 (stderr)
 	defaultHelp := rootCmd.HelpFunc()
 	rootCmd.SetHelpFunc(rootHelpFunc(defaultHelp))
 }

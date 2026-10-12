@@ -99,3 +99,17 @@ func TestNormalizePrdSeMultiYear(t *testing.T) {
 		}
 	}
 }
+
+// TestNormalizePrdDe 분기·반기는 YYYYQQ·YYYYHH 로 보낸다 (실측: 301/DT_200Y108 Q 202401 성공·20241 [30],
+// 101/DT_1ES3A02S 반기 202401 성공·20241 [30]). 분할 계산이 만든 5자리도 여기서 바뀐다.
+func TestNormalizePrdDe(t *testing.T) {
+	cases := []struct{ se, in, want string }{
+		{"Q", "20241", "202401"}, {"분기", "20244", "202404"}, {"H", "20242", "202402"}, {"S", "20241", "202401"}, {"반기", "20251", "202501"},
+		{"Q", "202401", "202401"}, {"Y", "2024", "2024"}, {"M", "202401", "202401"}, {"Q", "", ""},
+	}
+	for _, c := range cases {
+		if got := NormalizePrdDe(c.se, c.in); got != c.want {
+			t.Errorf("NormalizePrdDe(%q,%q)=%q want %q", c.se, c.in, got, c.want)
+		}
+	}
+}

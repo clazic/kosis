@@ -52,10 +52,10 @@ func buildDataParams(orgID, tblID string, opts DataOptions) map[string]string {
 
 	// Add period parameters
 	if opts.StartPrdDe != "" {
-		params["startPrdDe"] = opts.StartPrdDe
+		params["startPrdDe"] = NormalizePrdDe(opts.PrdSe, opts.StartPrdDe)
 	}
 	if opts.EndPrdDe != "" {
-		params["endPrdDe"] = opts.EndPrdDe
+		params["endPrdDe"] = NormalizePrdDe(opts.PrdSe, opts.EndPrdDe)
 	}
 	if opts.NewEstPrdCnt != "" {
 		params["newEstPrdCnt"] = opts.NewEstPrdCnt
@@ -141,6 +141,8 @@ func NormalizePrdSe(prdSe string) string {
 		return "Q"
 	case "반기", "H", "h":
 		return "H"
+	case "S", "s": // 공식 문서의 반기 코드. KOSIS 는 H 와 S 를 모두 받고 결과는 S
+		return "S"
 	case "F", "f":
 		return "F"
 	case "A":
@@ -152,6 +154,20 @@ func NormalizePrdSe(prdSe string) string {
 		return "F"
 	}
 	return prdSe
+}
+
+// NormalizePrdDe 분기·반기 시점을 API 형식 YYYYQQ·YYYYHH 로 (예 20241 → 202401).
+// KOSIS 는 6자리만 받고 5자리는 [30]. 분할 계산은 5자리로 하므로 보내기 직전에 한 번 바꾼다.
+func NormalizePrdDe(prdSe, de string) string {
+	switch NormalizePrdSe(prdSe) {
+	case "Q", "H", "S":
+		if len(de) == 5 {
+			if _, err := strconv.Atoi(de); err == nil {
+				return de[:4] + "0" + de[4:]
+			}
+		}
+	}
+	return de
 }
 
 // DataWithPeriods handles non-continuous periods by making multiple requests.

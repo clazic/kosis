@@ -81,8 +81,9 @@ var dataCmd = &cobra.Command{
   ─────────────────────────────────────────────────
   prdSe=년     Y 또는 "년"  2024            -p Y -l 5
   prdSe=월     M 또는 "월"  202401          -p M -s 202401 -e 202412
-  prdSe=분기   Q 또는 "분기" 20241          -p Q -l 4
-  prdSe=반기   H 또는 "반기" 20241          -p H -l 2
+  prdSe=분기   Q 또는 "분기" 202401         -p Q -s 202401 -e 202404  (YYYYQQ)
+  prdSe=반기   H·S 또는 "반기" 202401       -p H -s 202401 -e 202402  (YYYYHH)
+  (분기·반기에 20241 처럼 5자리를 넣어도 6자리로 바꿔 보냅니다)
   prdSe=2·3·5년 등 F 또는 "3년" 2015          -p F -l 3   (여러 해 주기는 모두 F)
 
 값 지정 규칙:
@@ -162,8 +163,9 @@ var dataCmd = &cobra.Command{
 		if len(args) < 2 {
 			fmt.Fprintln(os.Stderr, "오류: ORG_ID와 TBL_ID는 필수입니다")
 			fmt.Fprintln(os.Stderr)
+			cmd.SetOut(os.Stderr) // 도움말도 stderr — stdout 은 데이터만
 			cmd.Help()
-			return
+			os.Exit(1)
 		}
 
 		// 사용자가 --format을 명시하지 않았으면 config의 default_format 적용
@@ -184,32 +186,37 @@ var dataCmd = &cobra.Command{
 		if userIDFlag == "" && (class1Flag == "" || itemFlag == "" || periodFlag == "") {
 			fmt.Fprintln(os.Stderr, "오류: -c1/--class1, --item, --period는 필수입니다 (또는 --user-id 사용)")
 			fmt.Fprintln(os.Stderr)
+			cmd.SetOut(os.Stderr) // 도움말도 stderr — stdout 은 데이터만
 			cmd.Help()
-			return
+			os.Exit(1)
 		}
 		if hasLatest && latestFlag <= 0 {
 			fmt.Fprintln(os.Stderr, "오류: --latest는 1 이상의 정수여야 합니다.")
 			fmt.Fprintln(os.Stderr)
+			cmd.SetOut(os.Stderr) // 도움말도 stderr — stdout 은 데이터만
 			cmd.Help()
-			return
+			os.Exit(1)
 		}
 		if (startFlag == "") != (endFlag == "") {
 			fmt.Fprintln(os.Stderr, "오류: --start와 --end는 함께 사용해야 합니다.")
 			fmt.Fprintln(os.Stderr)
+			cmd.SetOut(os.Stderr) // 도움말도 stderr — stdout 은 데이터만
 			cmd.Help()
-			return
+			os.Exit(1)
 		}
 		if hasPeriods && (hasLatest || hasRange) {
 			fmt.Fprintln(os.Stderr, "오류: --periods는 --latest 또는 --start/--end와 함께 사용할 수 없습니다.")
 			fmt.Fprintln(os.Stderr)
+			cmd.SetOut(os.Stderr) // 도움말도 stderr — stdout 은 데이터만
 			cmd.Help()
-			return
+			os.Exit(1)
 		}
 		if hasLatest && hasRange {
 			fmt.Fprintln(os.Stderr, "오류: --latest와 --start/--end는 함께 사용할 수 없습니다.")
 			fmt.Fprintln(os.Stderr)
+			cmd.SetOut(os.Stderr) // 도움말도 stderr — stdout 은 데이터만
 			cmd.Help()
-			return
+			os.Exit(1)
 		}
 
 		// 조회 전 검사: parquet 은 열이 API 키로 고정이라 피벗 열을 담을 수 없다
@@ -222,7 +229,7 @@ var dataCmd = &cobra.Command{
 		client, err := NewAPIClient()
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "오류: %v\n", err)
-			return
+			os.Exit(1)
 		}
 
 		// 표의 분류 축 수만큼 --classN 이 있어야 한다 (빠지면 API 는 [20] objL 만 돌려준다)
@@ -291,7 +298,7 @@ var dataCmd = &cobra.Command{
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "오류: %v\n", err)
 			fmt.Fprintln(os.Stderr, "ℹ 원인을 확인했으면 다음에 같은 실수를 하지 않도록 기록하세요: kosis rules add (kosis rules add --help)")
-			return
+			os.Exit(1)
 		}
 
 		// 메타 조회하여 실제 컬럼명 가져오기
@@ -309,6 +316,15 @@ var dataCmd = &cobra.Command{
 				colMeta = colMetaFull
 				if len(results) > 0 {
 					colMeta = colMetaFull.FilterByData(results)
+				}
+				if miss := missingItems(summary.Items, itemFlag, results); len(miss) > 0 {
+					fmt.Fprintf(os.Stderr, "⚠ 요청한 항목 중 이 시점 범위에 값이 하나도 없는 항목: %s\n", strings.Join(miss, ", "))
+					// -l N 은 표의 최근 시점이라 그 항목이 끝난 표에선 [30] — 수록 기간 전체로 안내한다
+					span := ""
+					if len(summary.Periods) > 0 {
+						span = fmt.Sprintf(" -s %s -e %s", summary.Periods[0].StrtPrdDe, summary.Periods[0].EndPrdDe)
+					}
+					fmt.Fprintf(os.Stderr, "  항목마다 수록 시점이 다를 수 있습니다 (표의 최신 시점 ≠ 그 항목의 최신 시점). 그 항목이 있는 시점 확인: kosis d %s %s … -i <코드>%s (-l 1 은 표의 최근 시점이라 비어 있을 수 있음)\n", orgID, tblID, span)
 				}
 			}
 		}
@@ -406,7 +422,7 @@ var dataCmd = &cobra.Command{
 			chartType, err := chart.ParseChartType(dataChartFlag)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "오류: %v\n", err)
-				return
+				os.Exit(1)
 			}
 
 			chartFmt := chart.FormatTerminal
@@ -414,14 +430,14 @@ var dataCmd = &cobra.Command{
 				chartFmt, err = chart.ParseChartFormat(dataChartFmtFlag)
 				if err != nil {
 					fmt.Fprintf(os.Stderr, "오류: %v\n", err)
-					return
+					os.Exit(1)
 				}
 			}
 
 			seriesList, axisInfo := chart.ExtractSeriesWithAxis(dataMap)
 			if len(seriesList) == 0 {
 				fmt.Fprintln(os.Stderr, "오류: 차트를 생성할 수 있는 데이터가 없습니다")
-				return
+				os.Exit(1)
 			}
 
 			chartOpts := chart.Options{
@@ -468,7 +484,7 @@ var dataCmd = &cobra.Command{
 			err = output.WriteToFile(dataMap, outputFlag, formatOpts)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "파일 저장 오류: %v\n", err)
-				return
+				os.Exit(1)
 			}
 			fmt.Fprintf(os.Stderr, "✓ 데이터가 %s로 저장되었습니다.\n", outputFlag)
 		} else {
@@ -778,7 +794,7 @@ func init() {
 	dataCmd.Flags().StringVar(&class8Flag, "class8", "", "[1단계] 분류8 코드. meta [분류] 여덟 번째 항목. -c8로 축약")
 	dataCmd.Flags().StringVarP(&itemFlag, "item", "i", "", "[2단계] 항목 코드. meta의 [항목] 코드를 그대로 사용. ALL=전체, \"T10+T20\"=복수 (한글 이름 사용 시 에러 21)")
 	dataCmd.Flags().StringVarP(&periodFlag, "period", "p", "", "[3단계] 수록주기. meta [수록정보]의 prdSe 값에 대응: Y=년, M=월, Q=분기, H=반기, F=2년 이상 여러 해(2·3·4·5년…) (불일치 시 에러 30)")
-	dataCmd.Flags().StringVarP(&startFlag, "start", "s", "", "[4단계] 시작 시점. --end와 함께 연속 범위 지정. 주기별 형식: 연=2020, 월=202401, 분기/반기=20241")
+	dataCmd.Flags().StringVarP(&startFlag, "start", "s", "", "[4단계] 시작 시점. --end와 함께 연속 범위 지정. 주기별 형식: 연=2020, 월=202401, 분기=202401(YYYYQQ), 반기=202401(YYYYHH)")
 	dataCmd.Flags().StringVarP(&endFlag, "end", "e", "", "[4단계] 종료 시점. --start와 짝으로 사용 (예: -s 2020 -e 2024)")
 	dataCmd.Flags().IntVarP(&latestFlag, "latest", "l", 0, "[4단계] 최근 N개 시점만 조회. --start/--end와 혼용 불가. 시점 플래그 미지정 시 최근 1개")
 	dataCmd.Flags().StringVar(&periodsFlag, "periods", "", "[4단계] 비연속 시점 골라 조회 (쉼표 구분). 예: \"2020,2022,2025\" 또는 \"202401,202407\"")
@@ -972,4 +988,42 @@ func needCodeColumns(format, outputPath string, withCode bool, fields string) bo
 // outputUsesAPIKeys 출력 열 이름을 API 키로 바꿀지 — --api-keys 이거나, 열이 API 키로 고정된 parquet 파일.
 func outputUsesAPIKeys(apiKeys bool, outputPath string) bool {
 	return apiKeys || (outputPath != "" && output.DetectFormat(outputPath) == "parquet")
+}
+
+// missingItems 요청한 항목(ALL 이면 메타의 모든 항목) 중 결과에 한 행도 없는 항목 "코드 이름(단위)".
+// 결과가 하나도 없으면(그 자체가 오류로 보고됨) 따지지 않는다.
+func missingItems(metaItems []api.MetaResult, itemFlag string, rows []api.DataRow) []string {
+	if len(rows) == 0 || itemFlag == "" {
+		return nil
+	}
+	got := map[string]bool{}
+	for _, r := range rows {
+		got[r.ItmID] = true
+	}
+	name := map[string]string{}
+	var want []string
+	for _, m := range metaItems {
+		n := m.ItmNM
+		if m.UnitNM != "" {
+			n += "(" + m.UnitNM + ")"
+		}
+		name[m.ItmID] = n
+		if strings.EqualFold(itemFlag, "ALL") {
+			want = append(want, m.ItmID)
+		}
+	}
+	if !strings.EqualFold(itemFlag, "ALL") {
+		for _, c := range strings.Split(itemFlag, "+") {
+			if c = strings.TrimSpace(c); c != "" {
+				want = append(want, c)
+			}
+		}
+	}
+	var out []string
+	for _, c := range want {
+		if !got[c] {
+			out = append(out, strings.TrimSpace(c+" "+name[c]))
+		}
+	}
+	return out
 }

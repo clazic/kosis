@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/clazic/kosis/internal/api"
-	"github.com/clazic/kosis/internal/config"
 	"github.com/clazic/kosis/internal/interactive"
 	"github.com/clazic/kosis/internal/output"
 	"github.com/spf13/cobra"
@@ -37,8 +36,12 @@ var metaCmd = &cobra.Command{
   --find <이름>            이름으로 코드 찾기 (쉼표로 여러 개, 공백 무시) — 지역·산업·항목 모두
   --under <코드>           그 코드 바로 아래 코드들 (예: --under 26 → 울산의 구·군)
   --level <N>              그 단계 코드만 (1=최상위, 예: 산업 대분류)
-                           셋은 함께 쓸 수 있고, 결과 끝에 d 에 넣을 "코드+코드" 가 나옵니다
+  --axis <축>              그 축의 코드만: item(항목), class1…class8, 또는 분류 이름 일부(예 산업)
+                           넷은 함께 쓸 수 있고, 결과 끝에 d 에 넣을 "코드+코드" 가 나옵니다
                            -f json: [{flag, axis, code, name, level, parent_code, parent_name, path, unit}]
+                           분류·항목(ITM)만 1번 조회합니다. --type 없이 또는 --type ITM 과 함께만 쓸 수 있고
+                           다른 --type 과 함께 쓰면 오류(종료 코드 1). flag 의 축 번호는 메타 OBJ_ID_SN 기준
+  --obj <OBJ_ID>           --type ITM 원본에서 이 분류(예 A) 또는 ITEM(항목)만 받기 (KOSIS objId)
   --type <type>            메타 유형 (기본: 요약)
                            ITM  = 분류/항목
                            PRD  = 수록정보 (시점 범위, 주기)
@@ -69,6 +72,12 @@ var metaCmd = &cobra.Command{
   # 수록정보만 확인 (시점 범위 파악)
   kosis m 101 DT_1IN1502 --type PRD
 
+  # 항목만 (코드·이름·단위) — 큰 표도 짧게
+  kosis m 101 DT_1FS1101 --axis item
+
+  # 이름으로 항목 코드 찾기
+  kosis m 101 DT_1FS1101 --find 출하액 -f json
+
   # 대화형 모드 (검색 → 선택 → 메타 확인)
   kosis meta
 
@@ -80,190 +89,163 @@ var metaCmd = &cobra.Command{
 
 주의:
   - 분류/항목에 한글 이름을 사용하면 에러 21 발생 → 반드시 코드 사용
-  - prdSe=5년 인 통계표에 -p Y를 쓰면 에러 30 발생 → -p F 사용
+  - prdSe=2년·3년·5년 등 여러 해 주기 통계표에 -p Y를 쓰면 에러 30 발생 → -p F 사용
+  - 인자·형식·플래그 조합이 틀리거나 조회가 실패하면 stderr 에 오류, 종료 코드 1 (stdout 비움)
+  - 검색·메타 응답은 캐시에 둡니다 (config cache_ttl_hours, 기본 24시간). 새로 받으려면 kosis config cache-clear
 
 관련 명령어:
   kosis search <키워드>            먼저 검색하여 ORG_ID, TBL_ID 확인
   kosis data <ORG_ID> <TBL_ID>    확인된 코드로 데이터 조회
   kosis explain <ORG_ID> <TBL_ID> 통계 조사 방법론 확인`,
 	Args: cobra.MaximumNArgs(2),
-	Run: func(cmd *cobra.Command, args []string) {
-		// 대화형 모드: 인자가 0개일 때만 입력받기
-		var orgID, tblID string
+	RunE: runMeta,
+}
 
-		if len(args) == 0 {
-			// 검색어 입력
-			keyword := interactive.Prompt("? 검색어를 입력하세요:")
-			if keyword == "" {
-				fmt.Fprintln(os.Stderr, "검색어가 입력되지 않았습니다.")
-				return
-			}
+func runMeta(cmd *cobra.Command, args []string) error {
+	metaType, _ := cmd.Flags().GetString("type")
+	format, _ := cmd.Flags().GetString("format")
+	findF, _ := cmd.Flags().GetString("find")
+	underF, _ := cmd.Flags().GetString("under")
+	levelF, _ := cmd.Flags().GetInt("level")
+	axisF, _ := cmd.Flags().GetString("axis")
+	objF, _ := cmd.Flags().GetString("obj")
+	metaType = strings.ToUpper(metaType)
+	selecting := findF != "" || underF != "" || levelF > 0 || axisF != ""
 
-			// 설정 로드
-			cfg, err := config.Load()
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "오류: %v\n", err)
-				return
-			}
+	// 인자 검사는 API 를 부르기 전에 (실패는 stderr·종료 코드 1)
+	if len(args) == 1 {
+		return fmt.Errorf("ORG_ID와 TBL_ID를 모두 입력하세요 (예: kosis meta 101 DT_1IN1502)")
+	}
+	if err := checkFormat(format, "table", "json"); err != nil {
+		return err
+	}
+	if levelF < 0 {
+		return fmt.Errorf("--level 은 1 이상입니다 (받은 값: %d)", levelF)
+	}
+	if selecting && metaType != "" && metaType != "ITM" {
+		return fmt.Errorf("--find/--under/--level/--axis 는 분류·항목 코드에만 씁니다 — --type %s 와 함께 쓸 수 없습니다 (--type 을 빼거나 ITM)", metaType)
+	}
+	if objF != "" && (metaType != "ITM" || selecting) {
+		return fmt.Errorf("--obj 는 --type ITM 원본 출력에만 씁니다 (코드 고르기는 --axis)")
+	}
+	cmd.SilenceUsage = true
 
-			// API 클라이언트 생성
-			client, err := api.NewClient(cfg.APIKeys)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "오류: %v\n", err)
-				return
-			}
-
-			// 검색 실행
-			fmt.Fprint(os.Stderr, "  📋 검색 중...\n")
-			searchOpts := api.SearchOptions{ResultCount: 20}
-			searchResults, err := client.Search(keyword, searchOpts)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "오류: %v\n", err)
-				return
-			}
-
-			if len(searchResults) == 0 {
-				fmt.Fprintln(os.Stderr, "검색 결과가 없습니다.")
-				return
-			}
-
-			// 통계표 선택 옵션 구성
-			var tableOptions []string
-			for _, r := range searchResults {
-				tableOptions = append(tableOptions, fmt.Sprintf("%s (%s/%s)", r.TblNM, r.OrgID, r.TblID))
-			}
-
-			// 통계표 선택
-			selectedIdx, _ := interactive.Select("? 통계표를 선택하세요:", tableOptions)
-			if selectedIdx < 0 {
-				fmt.Fprintln(os.Stderr, "통계표를 선택해야 합니다.")
-				return
-			}
-
-			selectedTable := searchResults[selectedIdx]
-			orgID = selectedTable.OrgID
-			tblID = selectedTable.TblID
-		} else if len(args) == 1 {
-			fmt.Fprintln(os.Stderr, "오류: ORG_ID와 TBL_ID를 모두 입력하세요. (예: kosis meta 101 DT_1IN1502)")
-			fmt.Fprintln(os.Stderr)
-			cmd.Help()
-			return
-		} else {
-			orgID = args[0]
-			tblID = args[1]
+	var orgID, tblID string
+	if len(args) == 0 {
+		keyword := interactive.Prompt("? 검색어를 입력하세요:")
+		if keyword == "" {
+			return fmt.Errorf("검색어가 입력되지 않았습니다")
 		}
-		metaType, _ := cmd.Flags().GetString("type")
-		format, _ := cmd.Flags().GetString("format")
-
-		// Get API keys from config
-		keys, err := config.GetAPIKeys()
+		client, err := newCmdClient()
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "오류: %v\n", err)
-			return
+			return err
 		}
-
-		if len(keys) == 0 {
-			fmt.Fprintf(os.Stderr, "오류: API 키가 설정되지 않았습니다.\n")
-			fmt.Fprintln(os.Stderr)
-			fmt.Fprintln(os.Stderr, config.NoAPIKeyMessage())
-			return
-		}
-
-		// Create API client
-		client, err := api.NewClient(keys)
+		fmt.Fprint(os.Stderr, "  📋 검색 중...\n")
+		searchResults, err := client.Search(keyword, api.SearchOptions{ResultCount: 20})
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "클라이언트 생성 실패: %v\n", err)
-			return
+			return err
 		}
+		if len(searchResults) == 0 {
+			return fmt.Errorf("검색 결과가 없습니다")
+		}
+		var tableOptions []string
+		for _, r := range searchResults {
+			tableOptions = append(tableOptions, fmt.Sprintf("%s (%s/%s)", r.TblNM, r.OrgID, r.TblID))
+		}
+		selectedIdx, _ := interactive.Select("? 통계표를 선택하세요:", tableOptions)
+		if selectedIdx < 0 {
+			return fmt.Errorf("통계표를 선택해야 합니다")
+		}
+		orgID, tblID = searchResults[selectedIdx].OrgID, searchResults[selectedIdx].TblID
+	} else {
+		orgID, tblID = args[0], args[1]
+	}
 
-		// If --type is empty, show summary
-		if metaType == "" {
-			summary, err := client.MetaSummary(orgID, tblID)
+	client, err := newCmdClient()
+	if err != nil {
+		return err
+	}
+
+	// 코드 고르기: type=ITM 1번만 부른다 (수록정보 PRD 는 필요 없음). --axis item 이면 항목만 받는다.
+	if selecting {
+		obj := ""
+		if strings.EqualFold(axisF, "item") {
+			obj = "ITEM"
+		}
+		rows, err := client.MetaCodes(orgID, tblID, obj)
+		if err != nil {
+			return fmt.Errorf("메타데이터 조회 실패: %w", err)
+		}
+		return printCodeRows(rows, findF, underF, levelF, axisF, format)
+	}
+
+	if metaType == "" {
+		summary, err := client.MetaSummary(orgID, tblID)
+		if err != nil {
+			return fmt.Errorf("메타데이터 조회 실패: %w", err)
+		}
+		if format == "json" {
+			data := []map[string]interface{}{{
+				"ORG_ID":          orgID,
+				"TBL_ID":          tblID,
+				"CLASSIFICATIONS": summary.Classifications,
+				"ITEMS":           summary.Items,
+				"PERIODS":         summary.Periods,
+			}}
+			formatter, err := output.NewFormatter(format)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "메타데이터 조회 실패: %v\n", err)
-				return
+				return err
 			}
-
-			findF, _ := cmd.Flags().GetString("find")
-			underF, _ := cmd.Flags().GetString("under")
-			levelF, _ := cmd.Flags().GetInt("level")
-			if findF != "" || underF != "" || levelF > 0 {
-				printCodeRows(summary.Codes(), findF, underF, levelF, format)
-				return
+			if err := formatter.Format(data, output.FormatOptions{}); err != nil {
+				return fmt.Errorf("출력 실패: %w", err)
 			}
-
-			if format == "json" {
-				data := []map[string]interface{}{
-					{
-						"ORG_ID":          orgID,
-						"TBL_ID":          tblID,
-						"CLASSIFICATIONS": summary.Classifications,
-						"ITEMS":           summary.Items,
-						"PERIODS":         summary.Periods,
-					},
-				}
-				formatter, err := output.NewFormatter(format)
-				if err != nil {
-					fmt.Fprintf(os.Stderr, "포맷터 생성 실패: %v\n", err)
-					return
-				}
-				if err := formatter.Format(data, output.FormatOptions{}); err != nil {
-					fmt.Fprintf(os.Stderr, "출력 실패: %v\n", err)
-				}
-				return
-			}
-
-			// Display summary in a formatted way
-			displayMetaSummary(summary)
-			return
+			return nil
 		}
+		displayMetaSummary(summary)
+		return nil
+	}
 
-		// Retrieve specific meta type — 유형마다 필드가 달라 API 필드를 그대로 출력한다
-		results, err := client.MetaRaw(orgID, tblID, metaType)
-		if err != nil && strings.Contains(err.Error(), "[30]") { // 그 유형의 메타 없음
-			results, err = nil, nil
+	// 유형마다 필드가 달라 API 필드를 그대로 출력한다
+	results, err := client.MetaRawObj(orgID, tblID, metaType, objF)
+	if err != nil && strings.Contains(err.Error(), "[30]") { // 그 유형의 메타 없음
+		results, err = nil, nil
+	}
+	if err != nil {
+		return fmt.Errorf("메타데이터 조회 실패: %w", err)
+	}
+	if len(results) == 0 {
+		fmt.Fprintf(os.Stderr, "'%s' 타입의 메타데이터가 없습니다.\n", metaType)
+		if format == "json" {
+			fmt.Println("[]")
 		}
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "메타데이터 조회 실패: %v\n", err)
-			return
-		}
+		return nil
+	}
 
-		if len(results) == 0 {
-			fmt.Fprintf(os.Stderr, "'%s' 타입의 메타데이터가 없습니다.\n", metaType)
-			if format == "json" {
-				fmt.Println("[]")
-			}
-			return
-		}
-
-		var columns []string
-		seenCol := map[string]bool{}
-		for _, r := range results {
-			for k := range r {
-				if !seenCol[k] {
-					seenCol[k] = true
-					columns = append(columns, k)
-				}
+	var columns []string
+	seenCol := map[string]bool{}
+	for _, r := range results {
+		for k := range r {
+			if !seenCol[k] {
+				seenCol[k] = true
+				columns = append(columns, k)
 			}
 		}
-		sort.Strings(columns)
+	}
+	sort.Strings(columns)
 
-		formatter, err := output.NewFormatter(format)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "포맷터 생성 실패: %v\n", err)
-			return
-		}
-		data := make([]map[string]interface{}, len(results))
-		for i, r := range results {
-			data[i] = r
-		}
-		if err := formatter.Format(data, output.FormatOptions{Columns: columns}); err != nil {
-			fmt.Fprintf(os.Stderr, "출력 실패: %v\n", err)
-			return
-		}
-
-		fmt.Fprintf(os.Stderr, "\n결과: %d개\n", len(results))
-	},
+	formatter, err := output.NewFormatter(format)
+	if err != nil {
+		return err
+	}
+	data := make([]map[string]interface{}, len(results))
+	for i, r := range results {
+		data[i] = r
+	}
+	if err := formatter.Format(data, output.FormatOptions{Columns: columns}); err != nil {
+		return fmt.Errorf("출력 실패: %w", err)
+	}
+	fmt.Fprintf(os.Stderr, "\n결과: %d개\n", len(results))
+	return nil
 }
 
 func init() {
@@ -274,6 +256,8 @@ func init() {
 	metaCmd.Flags().String("find", "", "이름으로 코드 찾기 (쉼표로 여러 개, 공백 무시. 예: \"울산,울주\")")
 	metaCmd.Flags().String("under", "", "이 코드 바로 아래 코드들 (예: --under 26 → 울산의 구·군)")
 	metaCmd.Flags().Int("level", 0, "이 단계의 코드만 (1=최상위. 예: 산업 대분류)")
+	metaCmd.Flags().String("axis", "", "이 축의 코드만: item(항목), class1…class8, 또는 분류 이름 일부(예 산업)")
+	metaCmd.Flags().String("obj", "", "--type ITM 원본에서 이 분류 OBJ_ID(예 A) 또는 ITEM 만 받기")
 }
 
 // displayMetaSummary displays metadata summary in a formatted way
@@ -339,7 +323,7 @@ func displayMetaSummary(summary *api.MetaSummaryResult) {
 }
 
 // printCodeRows --find·--under·--level 로 거른 코드 목록과, 플래그별로 d 에 바로 넣을 "a+b+c".
-func printCodeRows(rows []api.CodeRow, find, under string, level int, format string) {
+func printCodeRows(rows []api.CodeRow, find, under string, level int, axis, format string) error {
 	var names []string
 	for _, n := range strings.Split(find, ",") {
 		if n = strings.Join(strings.Fields(n), ""); n != "" {
@@ -352,6 +336,9 @@ func printCodeRows(rows []api.CodeRow, find, under string, level int, format str
 			continue
 		}
 		if level > 0 && r.Level != level {
+			continue
+		}
+		if axis != "" && !axisMatches(r, axis) {
 			continue
 		}
 		if len(names) > 0 {
@@ -375,12 +362,14 @@ func printCodeRows(rows []api.CodeRow, find, under string, level int, format str
 		if out == nil {
 			out = []api.CodeRow{}
 		}
-		_ = enc.Encode(out)
-		return
+		if len(out) == 0 {
+			fmt.Fprintln(os.Stderr, "맞는 코드가 없습니다. kosis m <ORG> <TBL> 로 전체를 보세요.")
+		}
+		return enc.Encode(out)
 	}
 	if len(out) == 0 {
 		fmt.Fprintln(os.Stderr, "맞는 코드가 없습니다. kosis m <ORG> <TBL> 로 전체를 보세요.")
-		return
+		return nil
 	}
 	data := make([]map[string]interface{}, len(out))
 	for i, r := range out {
@@ -389,10 +378,11 @@ func printCodeRows(rows []api.CodeRow, find, under string, level int, format str
 	}
 	formatter, err := output.NewFormatter("table")
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "포맷터 생성 실패: %v\n", err)
-		return
+		return err
 	}
-	_ = formatter.Format(data, output.FormatOptions{Columns: []string{"플래그", "분류", "코드", "이름", "단계", "상위", "경로"}})
+	if err := formatter.Format(data, output.FormatOptions{Columns: []string{"플래그", "분류", "코드", "이름", "단계", "상위", "경로"}}); err != nil {
+		return fmt.Errorf("출력 실패: %w", err)
+	}
 	var flags []string
 	codes := map[string][]string{}
 	for _, r := range out {
@@ -405,4 +395,17 @@ func printCodeRows(rows []api.CodeRow, find, under string, level int, format str
 	for _, f := range flags {
 		fmt.Printf("  %s \"%s\"\n", f, strings.Join(codes[f], "+"))
 	}
+	return nil
+}
+
+// axisMatches --axis 값: item, class1…class8(플래그 이름), 또는 분류 이름 일부(공백 무시).
+func axisMatches(r api.CodeRow, axis string) bool {
+	a := strings.ToLower(strings.TrimPrefix(axis, "--"))
+	if a == "item" {
+		return r.Flag == "--item"
+	}
+	if strings.HasPrefix(a, "class") {
+		return r.Flag == "--"+a
+	}
+	return r.Flag != "--item" && strings.Contains(squash(r.Axis), squash(axis))
 }

@@ -16,6 +16,7 @@ type SearchResult struct {
 	StrtPrdDe string `json:"STRT_PRD_DE"`
 	EndPrdDe  string `json:"END_PRD_DE"`
 	RecTblSe  string `json:"REC_TBL_SE"`
+	StatDBCnt string `json:"STAT_DB_CNT"` // 이 검색어(와 orgId)에 걸린 전체 표 수 — 받은 개수가 아님
 }
 
 // MetaResult represents metadata result from statisticsData.getMeta API.
@@ -281,15 +282,17 @@ type ErrorResponse struct {
 
 // SearchOptions contains optional search parameters.
 type SearchOptions struct {
-	Sort        string
-	StartCount  int
+	Sort        string // RANK(정확도, 기본) | DATE(최신)
+	StartCount  int    // 페이지 번호 (1부터)
 	ResultCount int
+	OrgID       string // 기관 코드 — 서버에서 거른다
 }
 
 // MetaOptions contains optional metadata parameters.
 type MetaOptions struct {
-	Type string
-	raw  *[]map[string]any // MetaRaw 용: API 필드 그대로 받기
+	Type  string
+	ObjID string            // type=ITM 에서 이 분류(OBJ_ID)·항목(ITEM)만
+	raw   *[]map[string]any // MetaRaw 용: API 필드 그대로 받기
 }
 
 // DataOptions contains optional data query parameters.

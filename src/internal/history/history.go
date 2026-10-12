@@ -8,7 +8,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
+	"unicode"
 
 	"github.com/clazic/kosis/internal/config"
 	"gopkg.in/yaml.v3"
@@ -22,6 +24,9 @@ type HistoryEntry struct {
 	Command     string `yaml:"command"`
 	Timestamp   string `yaml:"timestamp"`
 	ResultCount int    `yaml:"result_count"`
+	// Args 실행 인자 그대로 (공백 든 검색어·필터 보존). 없으면(옛 항목) Command 를 공백으로 나눠 재실행한다 —
+	// 옛 항목의 공백 든 검색어는 원래 인자로 되돌릴 수 없다 (한계).
+	Args []string `yaml:"args,omitempty"`
 }
 
 // History는 이력 항목들의 전체 목록을 나타냅니다.
@@ -85,6 +90,33 @@ func Save(entries []HistoryEntry) error {
 // ID는 자동으로 할당되고, Timestamp는 현재 시각으로 설정됩니다.
 // 이력 수가 maxHistoryEntries(100)을 초과하면 가장 오래된 항목을 삭제합니다.
 func Add(command string, resultCount int) error {
+	return add(command, nil, resultCount)
+}
+
+// AddArgs 실행 인자를 그대로 남긴다. Command 는 사람이 읽고 셸에 붙여 넣을 수 있게 인용한 문자열.
+func AddArgs(args []string, resultCount int) error {
+	return add(QuoteArgs(args), args, resultCount)
+}
+
+// QuoteArgs 표시용 명령 문자열. 안전한 글자(문자·숫자·- _ . / : = + , @ %)로만 된 인자는 그대로,
+// 그 밖(공백·따옴표·백틱·$·줄바꿈·역슬래시·# 등)이 하나라도 있으면 작은따옴표로 감싼다 (안의 작은따옴표는 닫고·이스케이프하고·다시 연다).
+// POSIX 셸에 붙여 넣어도 글자 그대로 전달된다. 재실행(replay)은 이 문자열이 아니라 Args 를 쓴다.
+func QuoteArgs(args []string) string {
+	out := make([]string, len(args))
+	for i, a := range args {
+		if a == "" || strings.IndexFunc(a, unsafeShellRune) >= 0 {
+			a = "'" + strings.ReplaceAll(a, "'", `'\''`) + "'"
+		}
+		out[i] = a
+	}
+	return strings.Join(out, " ")
+}
+
+func unsafeShellRune(r rune) bool {
+	return !unicode.IsLetter(r) && !unicode.IsDigit(r) && !strings.ContainsRune("-_./:=+,@%", r)
+}
+
+func add(command string, args []string, resultCount int) error {
 	if command == "" {
 		return errors.New("명령어는 비워둘 수 없습니다")
 	}
@@ -105,6 +137,7 @@ func Add(command string, resultCount int) error {
 		Command:     command,
 		Timestamp:   time.Now().Format("2006-01-02T15:04:05"),
 		ResultCount: resultCount,
+		Args:        args,
 	}
 
 	entries = append(entries, newEntry)

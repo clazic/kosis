@@ -76,6 +76,9 @@ func NewClient(apiKeys []string) (*Client, error) {
 	}, nil
 }
 
+// CacheEnabled 검색·메타 응답을 파일 캐시에 두는지 (NewAPIClient 로 만들면 true).
+func (c *Client) CacheEnabled() bool { return c.cache != nil }
+
 // InitCache는 파일 기반 캐시를 초기화합니다.
 // 설정이 로드된 후 호출되어야 합니다.
 func (c *Client) InitCache(cacheDir string, ttlHours int) error {

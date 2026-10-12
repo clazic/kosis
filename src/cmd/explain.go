@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/clazic/kosis/internal/api"
-	"github.com/clazic/kosis/internal/config"
 	"github.com/clazic/kosis/internal/interactive"
 	"github.com/spf13/cobra"
 )
@@ -81,21 +80,10 @@ func runExplain(cmd *cobra.Command, args []string) error {
 		tblID = args[1]
 	}
 
-	// API 키 가져오기
-	keys, err := config.GetAPIKeys()
+	// API 클라이언트 (검색·메타·목록·설명 응답은 캐시)
+	client, err := newCmdClient()
 	if err != nil {
-		return fmt.Errorf("설정 로드 실패: %w", err)
-	}
-
-	if len(keys) == 0 {
-		fmt.Fprintln(os.Stderr, config.NoAPIKeyMessage())
-		return fmt.Errorf("API 키가 설정되지 않았습니다")
-	}
-
-	// API 클라이언트 생성
-	client, err := api.NewClient(keys)
-	if err != nil {
-		return fmt.Errorf("클라이언트 생성 실패: %w", err)
+		return err
 	}
 
 	if len(args) == 0 {

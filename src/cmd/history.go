@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -118,27 +119,34 @@ ID는 history 명령어로 확인할 수 있습니다.
   kosis hi replay 3
 
   # 이전 데이터 조회를 다시 실행
-  kosis hi replay 1`,
+  kosis hi replay 1
+
+참고:
+  args 가 저장된 기록(새 검색 기록)은 실행 인자 그대로 공백 든 검색어·필터까지 그대로 다시 실행합니다
+  (셸을 거치지 않음). args 가 없는 옛 기록은 명령 문자열을 공백으로 나누므로 공백 든 검색어는 원래대로 되지 않습니다.
+  "재실행: …" 안내는 stderr, stdout 은 다시 실행한 명령의 출력만. 없는 ID 는 종료 코드 1,
+  다시 실행한 명령이 실패하면 그 종료 코드를 그대로 돌려줍니다.`,
 	Args: cobra.ExactArgs(1),
-	Run: func(cmd *cobra.Command, args []string) {
-		idStr := args[0]
+	RunE: func(cmd *cobra.Command, args []string) error {
 		var id int
-		if _, err := fmt.Sscanf(idStr, "%d", &id); err != nil {
-			fmt.Printf("오류: ID는 숫자여야 합니다 (%v)\n", err)
-			return
+		if _, err := fmt.Sscanf(args[0], "%d", &id); err != nil {
+			return fmt.Errorf("ID는 숫자여야 합니다 (%v)", err)
 		}
+		cmd.SilenceUsage = true
 
 		entry, err := history.GetByID(id)
 		if err != nil {
-			fmt.Printf("오류: %v\n", err)
-			return
+			return err
 		}
 
-		fmt.Printf("재실행: kosis %s\n\n", entry.Command)
+		// 안내는 stderr — stdout 은 다시 실행한 명령의 출력만 (예 -f json 파싱)
+		fmt.Fprintf(os.Stderr, "재실행: kosis %s\n\n", entry.Command)
 
-		// 저장된 명령어를 파싱하여 다시 실행
-		// 명령어 문자열을 cobra 명령어로 변환하여 실행
-		cmdParts := strings.Fields(entry.Command)
+		// 저장된 인자 그대로 다시 실행 (셸을 거치지 않는다). 옛 항목은 Args 가 없어 공백으로 나눈다.
+		cmdParts := entry.Args
+		if len(cmdParts) == 0 {
+			cmdParts = strings.Fields(entry.Command)
+		}
 
 		// 새 프로세스로 재실행하여 cobra 상태 오염 방지
 		replayCmd := exec.Command(os.Args[0], cmdParts...)
@@ -146,8 +154,13 @@ ID는 history 명령어로 확인할 수 있습니다.
 		replayCmd.Stdout = os.Stdout
 		replayCmd.Stderr = os.Stderr
 		if err := replayCmd.Run(); err != nil {
-			fmt.Printf("명령어 실행 실패: %v\n", err)
+			var exitErr *exec.ExitError
+			if errors.As(err, &exitErr) { // 자식이 이미 오류를 stderr 에 썼다 — 종료 코드만 그대로
+				os.Exit(exitErr.ExitCode())
+			}
+			return fmt.Errorf("명령어 실행 실패: %w", err)
 		}
+		return nil
 	},
 }
 

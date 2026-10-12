@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -22,6 +23,9 @@ func (c *Client) Meta(orgID, tblID string, opts MetaOptions) ([]MetaResult, erro
 	// Add optional type parameter
 	if opts.Type != "" {
 		params["type"] = opts.Type
+	}
+	if opts.ObjID != "" {
+		params["objId"] = opts.ObjID
 	}
 
 	body, err := c.request("statisticsData.do?method=getMeta", params, false)
@@ -79,9 +83,32 @@ func (c *Client) Meta(orgID, tblID string, opts MetaOptions) ([]MetaResult, erro
 // MetaRaw 메타를 API 필드 그대로 돌려준다. 유형마다 필드가 다르다
 // (CMMT: CMMT_NM·CMMT_DC, SOURCE: JOSA_NM·DEPT_NM·DEPT_PHONE, ITM: OBJ_ID·ITM_ID·ITM_NM·UP_ITM_ID·UNIT_NM …).
 func (c *Client) MetaRaw(orgID, tblID, metaType string) ([]map[string]any, error) {
+	return c.MetaRawObj(orgID, tblID, metaType, "")
+}
+
+// MetaRawObj MetaRaw 에 objId(type=ITM 에서 분류 OBJ_ID 또는 ITEM 하나만)를 더한 것.
+func (c *Client) MetaRawObj(orgID, tblID, metaType, objID string) ([]map[string]any, error) {
 	var out []map[string]any
-	_, err := c.Meta(orgID, tblID, MetaOptions{Type: metaType, raw: &out})
+	_, err := c.Meta(orgID, tblID, MetaOptions{Type: metaType, ObjID: objID, raw: &out})
 	return out, err
+}
+
+// MetaCodes 분류·항목 코드만 (type=ITM 1번 호출 — 수록정보 PRD 는 부르지 않는다).
+// objID 를 주면 그 분류(OBJ_ID) 또는 항목(ITEM)만 받는다.
+func (c *Client) MetaCodes(orgID, tblID, objID string) ([]CodeRow, error) {
+	rows, err := c.Meta(orgID, tblID, MetaOptions{Type: "ITM", ObjID: objID})
+	if err != nil {
+		return nil, err
+	}
+	s := &MetaSummaryResult{}
+	for _, r := range rows {
+		if r.ObjID == "ITEM" {
+			s.Items = append(s.Items, r)
+		} else {
+			s.Classifications = append(s.Classifications, r)
+		}
+	}
+	return s.Codes(), nil
 }
 
 func unmarshalMetaRaw(body []byte, out *[]map[string]any) error {
@@ -198,10 +225,16 @@ func (s *MetaSummaryResult) Codes() []CodeRow {
 			out = append(out, row)
 		}
 	}
+	// 축 번호는 메타의 OBJ_ID_SN (= objL 번호). 없으면 나온 순서.
+	// 축 하나만 받은 경우(objId)에도 원래 번호를 지키려면 순서로 매기면 안 된다.
 	idx := map[string]int{}
 	add(s.Classifications, func(r MetaResult) string {
 		if _, ok := idx[r.ObjID]; !ok {
-			idx[r.ObjID] = len(idx) + 1
+			if n, err := strconv.Atoi(strings.TrimSpace(r.ObjIDSN)); err == nil && n > 0 {
+				idx[r.ObjID] = n
+			} else {
+				idx[r.ObjID] = len(idx) + 1
+			}
 		}
 		return fmt.Sprintf("--class%d", idx[r.ObjID])
 	})

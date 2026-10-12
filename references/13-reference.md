@@ -6,13 +6,19 @@
 |-----------|------------|------|------|
 | `-c1`~`-c8` | objL1~objL8 | 분류1~8 값 | `-c1 "00+11"` |
 | `-i, --item` | itmId | 항목 코드 | `-i ALL` |
-| `-p, --period` | prdSe | 수록주기 | `-p Y` (Y/M/Q/H) |
-| `-s, --start` | startPrdDe | 시작 시점 | `-s 2015` |
+| `-p, --period` | prdSe | 수록주기 | `-p Y` (Y/M/Q/H·S/F — F 는 2년 이상 여러 해, 메타 이름 `3년` 등도 됨) |
+| `-s, --start` | startPrdDe | 시작 시점 (분기 YYYYQQ·반기 YYYYHH, 5자리도 6자리로 바꿔 보냄) | `-s 2015`, `-s 202401` |
 | `-e, --end` | endPrdDe | 종료 시점 | `-e 2024` |
 | `-l, --latest` | newEstPrdCnt | 최근 N개 시점 | `-l 5` |
 | `--periods` | (클라이언트 처리) | 비연속 시점 | `--periods "2020,2022"` |
 | `--fields` | (클라이언트 필터링) | 출력 필드 선택 | `--fields "C1,C1_NM,DT"` |
 | `--with-code` | (클라이언트 처리) | 코드 컬럼(C1~C8, ITM_ID) 함께 출력 | `--with-code` |
+| `s --org` | orgId | 표를 만든 기관 — 서버에서 거름. 이름은 기관별 목록(`ls --view MT_OTITLE`)에서 코드로 바꿈(맞는 기관 5개 넘으면 오류) | `--org 101`, `--org 울산` |
+| `s --page` / `--sort` | startCount / sort | 쪽 번호(1부터) / RANK(정확도)·DATE(최신) | `--page 2 --sort DATE` |
+| `s --stat` / `--region` | (클라이언트 필터링) | 받은 쪽 안에서만 거름 — 빈 결과면 `--page` 로 다음 쪽 | `--stat 광업제조업조사` |
+| `m --find` / `--under` / `--level` / `--axis` | type=ITM (1회) | 코드 고르기. `--axis item`·`class2`·분류 이름 일부. `--type` 없이 또는 `--type ITM` 과만 (다른 type 과 쓰면 exit 1). 축 번호는 OBJ_ID_SN | `--axis item`, `--find 출하액` |
+| `m --type ITM --obj` | objId | ITM 원본에서 한 분류(OBJ_ID) 또는 ITEM 만 | `--type ITM --obj ITEM` |
+| `rules list --id` / `--topic` / `--status` | (로컬 처리) | 규칙 id·표 ID 정확히 / topic / wrong·ok | `--id 101/DT_1FS1101` |
 | `--pivot` | (클라이언트 처리) | 한 축의 값을 열로 펼친 비교표 (C1~C8, ITM, PRD, 분류 이름). ITM 이면 열 이름 `항목명(단위)` — 항목마다 단위가 달라도 한 행. parquet 저장과 함께 쓰면 exit 1 | `--pivot C1` |
 | `--api-keys` | (클라이언트 처리) | 열 이름을 API 키로 (표마다 같은 키: C1, C1_NM … ITM_NM, PRD_DE, DT, UNIT_NM). table·json·csv·md·xlsx·db 모두 같은 이름. `--fields`(한국어·API 키)·`--pivot`(C1·분류 이름)과 함께 써도 된다 | `--api-keys -f json` |
 | `--user-id` | userStatsId | 사전 등록 통계표 | `--user-id "myid/..."` |
@@ -52,6 +58,7 @@ KOSIS API는 레코드마다 **코드 키**와 **이름 키**를 함께 반환�
 | 30 | 데이터 미존재 | 해당 조건에 데이터 없음 | 시점/분류/항목 값 재확인 |
 | 31 | 4만 셀 초과 | 요청 범위 과다 | 범위 축소 또는 자동 분할 사용 |
 | 32 | 통계표 미제공 | API 미제공 통계표 | 다른 통계표 사용 |
+| 40 | 1분간 호출가능건수(200건) 초과 | **키 하나당** 1분 200건 (2026-10-12 실측) | 1분 쉬고 재시도, 반복 작업은 키를 늘린다(`config add-key`) |
 
 ### 자주 겪는 문제
 
@@ -105,8 +112,10 @@ kosis config add-key <API_KEY_3>
 - **meta 필수**: 통계표 코드를 모르면 데이터 조회 불가, `meta`로 먼저 확인
 - **4만 셀 제한**: `ALL` 사용 시 초과 가능 → 자동 분할 처리 (API 키 추가 시 병렬)
 - **HTTPS 전용**: HTTP 미지원 (2026.02.05부터 HTTP 종료)
-- **분당 호출 제한**: 분당 1,000번 이내, 초과 시 429 에러 (자동 재시도)
-- **캐시 정책**: 메타/검색 결과만 캐시, 데이터는 항상 실시간 조회
+- **분당 호출 제한**: 키 하나당 1분 200건 — 넘으면 `[40]` (2026-10-12 실측. 예전 "분당 1,000번"은 틀린 설명). HTTP 429 는 자동 재시도
+- **캐시 정책**: 검색·메타·목록·설명만 캐시(기본 24시간, `cache_ttl_hours`), 데이터(`d`)는 항상 실시간. 새 메타가 필요하면 `kosis config cache-clear`
+- **종료 코드·출력**: 인자·형식 오류와 조회 실패는 stderr 에 오류, 종료 코드 1 (`s`·`m`·`d`·`ex`·`ls`·`rules list`). stdout 은 데이터만 — 안내·경고(검색 범위, 빠진 항목)는 stderr
+- **빠진 항목 경고**: `d` 는 요청한 항목 중 결과가 한 행도 없는 항목을 stderr 에 알린다 (항목마다 마지막 시점이 다를 수 있음 — rules `period.item-latest-differs`)
 - **Windows 경로**: 파일 저장 시 경로 구분자 주의 (`/` 대신 `\`)
 - **인코딩**: 출력 데이터는 UTF-8, Windows CMD에서 한글 깨짐 시 `chcp 65001` 실행
 
@@ -121,7 +130,7 @@ kosis config add-key <API_KEY_3>
 | `kosis data <ORG> <TBL>` | `d` | 데이터 조회 |
 | `kosis list` | `ls` | 통계목록 트리 탐색 |
 | `kosis explain <ORG> <TBL>` | `ex` | 통계 조사 설명·주석·원표/조사설명 링크 (`-f json`) |
-| `kosis rules list [찾을 말]` | - | AI 에이전트용 배포 규칙(references/rules.yaml)·로컬 규칙(~/.kosis/rules.d) 목록 (`--kind`, `-f json`) |
+| `kosis rules list [찾을 말]` | - | AI 에이전트용 배포 규칙(references/rules.yaml)·로컬 규칙(~/.kosis/rules.d) 목록 (`--kind`, `--id`, `--topic`, `--status`, `-f json`). 같은 id 가 로컬·배포에 있으면 둘 다(로컬 먼저) |
 | `kosis rules add [파일]` | - | 규칙 한 항목(YAML, 파일 생략 시 표준입력)을 ~/.kosis/rules.d 에 저장. 형식 오류면 종료 코드 1, 비슷한 규칙이 있으면 알림 |
 | `kosis rules sync` | `--init <URL>` | ~/.kosis/rules.d 를 비공개 git 저장소와 합치기 (commit → fetch·merge → push). 처음 한 번 `--init`. 같은 파일 충돌 시 종료 코드 1 |
 | `kosis rules log [찾을 말]` | `-n`, `-f json` | rules.d 변경 이력 (최근 순, 맨 위 미동기화 변경) |

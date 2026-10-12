@@ -23,3 +23,15 @@ func TestCodes(t *testing.T) {
 		t.Errorf("플래그·단위: %+v %+v", rows[2], rows[3])
 	}
 }
+
+// TestCodesKeepsObjSN 축 하나만 받아도(objId) 원래 축 번호(OBJ_ID_SN)를 지킨다.
+func TestCodesKeepsObjSN(t *testing.T) {
+	s := &MetaSummaryResult{Classifications: []MetaResult{
+		{ObjID: "B", ObjNM: "산업별", ObjIDSN: "2", ItmID: "C", ItmNM: "제조업"},
+		{ObjID: "C", ObjNM: "규모별", ObjIDSN: "3", ItmID: "S1", ItmNM: "1~4인"},
+	}}
+	rows := s.Codes()
+	if rows[0].Flag != "--class2" || rows[1].Flag != "--class3" {
+		t.Errorf("OBJ_ID_SN 무시: %+v", rows)
+	}
+}

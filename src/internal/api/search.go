@@ -52,6 +52,9 @@ func (c *Client) doSearch(keyword string, opts SearchOptions) ([]SearchResult, e
 	if opts.Sort != "" {
 		params["sort"] = opts.Sort
 	}
+	if opts.OrgID != "" {
+		params["orgId"] = opts.OrgID
+	}
 	if opts.StartCount > 0 {
 		params["startCount"] = fmt.Sprintf("%d", opts.StartCount)
 	}
