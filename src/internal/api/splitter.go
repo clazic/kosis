@@ -947,7 +947,7 @@ func (c *Client) calcLatestStart(end string, n int, prdSe string) string {
 
 // sortByPeriod PRD_DE(시점) 기준으로 오름차순 정렬
 func sortByPeriod(rows []DataRow) {
-	sort.Slice(rows, func(i, j int) bool {
+	sort.SliceStable(rows, func(i, j int) bool { // 같은 시점 안에서는 API 가 준 분류 순서를 지킨다
 		return rows[i].PrdDe < rows[j].PrdDe
 	})
 }

@@ -195,8 +195,49 @@ type CodeRow struct {
 	Unit       string `json:"unit,omitempty"`
 }
 
+// Axis 분류 축 하나: N 은 d 의 -cN·objLN·결과의 CN 번호.
+type Axis struct {
+	ObjID, Name string
+	N           int
+}
+
+// Axes 분류 축을 나온 순서대로. 번호는 메타의 OBJ_ID_SN (= objL 번호), 없으면 나온 순서.
+// 축 번호가 2부터 시작하는 표가 있다 (1번 축 없음) — 순서로 매기면 열·플래그가 어긋난다.
+// SN 이 비거나 겹치면 그 축만 쓰이지 않은 가장 작은 번호를 받는다 (번호가 겹치면 열·플래그가 섞인다).
+func (s *MetaSummaryResult) Axes() []Axis {
+	var out []Axis
+	seen := map[string]bool{}
+	used := map[int]bool{}
+	for _, c := range s.Classifications {
+		if c.ObjID == "" || seen[c.ObjID] {
+			continue
+		}
+		seen[c.ObjID] = true
+		n, err := strconv.Atoi(strings.TrimSpace(c.ObjIDSN))
+		if err != nil || n < 1 || used[n] {
+			n = 1
+			for used[n] {
+				n++
+			}
+		}
+		used[n] = true
+		out = append(out, Axis{ObjID: c.ObjID, Name: c.ObjNM, N: n})
+	}
+	return out
+}
+
+// HasAxis 표에 n 번 분류 축이 있는지 (축 정보가 없으면 false).
+func (s *MetaSummaryResult) HasAxis(n int) bool {
+	for _, a := range s.Axes() {
+		if a.N == n {
+			return true
+		}
+	}
+	return false
+}
+
 // Codes 분류·항목의 모든 코드를 단계·상위 코드·경로와 함께 펼친다.
-// 분류 순서(OBJ_ID 첫 등장 순)가 --class1, --class2 … 에 대응한다.
+// 축 번호(Axes, OBJ_ID_SN 기준)가 --class1, --class2 … 에 대응한다.
 func (s *MetaSummaryResult) Codes() []CodeRow {
 	var out []CodeRow
 	add := func(rows []MetaResult, flagOf func(MetaResult) string) {
@@ -225,19 +266,11 @@ func (s *MetaSummaryResult) Codes() []CodeRow {
 			out = append(out, row)
 		}
 	}
-	// 축 번호는 메타의 OBJ_ID_SN (= objL 번호). 없으면 나온 순서.
-	// 축 하나만 받은 경우(objId)에도 원래 번호를 지키려면 순서로 매기면 안 된다.
 	idx := map[string]int{}
-	add(s.Classifications, func(r MetaResult) string {
-		if _, ok := idx[r.ObjID]; !ok {
-			if n, err := strconv.Atoi(strings.TrimSpace(r.ObjIDSN)); err == nil && n > 0 {
-				idx[r.ObjID] = n
-			} else {
-				idx[r.ObjID] = len(idx) + 1
-			}
-		}
-		return fmt.Sprintf("--class%d", idx[r.ObjID])
-	})
+	for _, a := range s.Axes() {
+		idx[a.ObjID] = a.N
+	}
+	add(s.Classifications, func(r MetaResult) string { return fmt.Sprintf("--class%d", idx[r.ObjID]) })
 	add(s.Items, func(MetaResult) string { return "--item" })
 	return out
 }

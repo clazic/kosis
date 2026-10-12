@@ -14,14 +14,18 @@
 | `--fields` | (클라이언트 필터링) | 출력 필드 선택 | `--fields "C1,C1_NM,DT"` |
 | `--with-code` | (클라이언트 처리) | 코드 컬럼(C1~C8, ITM_ID) 함께 출력 | `--with-code` |
 | `s --org` | orgId | 표를 만든 기관 — 서버에서 거름. 이름은 기관별 목록(`ls --view MT_OTITLE`)에서 코드로 바꿈(맞는 기관 5개 넘으면 오류) | `--org 101`, `--org 울산` |
-| `s --page` / `--sort` | startCount / sort | 쪽 번호(1부터) / RANK(정확도)·DATE(최신) | `--page 2 --sort DATE` |
+| `s --page` / `--sort` | startCount / sort | 쪽 번호(1부터) / RANK(정확도)·DATE(최신 — 검색어 관련도가 거의 반영되지 않아 엉뚱한 표가 앞에 올 수 있다) | `--page 2 --sort DATE` |
 | `s --stat` / `--region` | (클라이언트 필터링) | 받은 쪽 안에서만 거름 — 빈 결과면 `--page` 로 다음 쪽 | `--stat 광업제조업조사` |
 | `s <검색어…>` | searchNm | 따옴표 없이 여러 단어를 줘도 한 검색어로 합친다 (`kosis s 1인당 지역내총생산`) | |
 | `m --find` / `--under` / `--level` / `--axis` | type=ITM (1회) | 코드 고르기. `--axis item`·`class2`·분류 이름 일부. `--type` 없이 또는 `--type ITM` 과만 (다른 type 과 쓰면 exit 1). 축 번호는 OBJ_ID_SN. 맞는 코드가 없으면 exit 1. `--find` 는 공백·`~`/`-`·`ㆍ`/`·` 차이 무시 | `--axis item`, `--find 출하액`, `--find 15~29` |
 | `m --type ITM --obj` | objId | ITM 원본에서 한 분류(OBJ_ID) 또는 ITEM 만 | `--type ITM --obj ITEM` |
 | `rules list --id` / `--topic` / `--status` | (로컬 처리) | 규칙 id·표 ID 정확히 / topic / wrong·ok | `--id 101/DT_1FS1101` |
 | `--pivot` | (클라이언트 처리) | 한 축의 값을 열로 펼친 비교표 (C1~C8, ITM, PRD, 분류 이름). ITM 이면 열 이름 `항목명(단위)` — 항목마다 단위가 달라도 한 행. parquet 저장과 함께 쓰면 exit 1 | `--pivot C1` |
-| `d --sort` / `--top` | (클라이언트 처리) | 수치값으로 정렬 desc·asc(숫자 아닌 값은 맨 뒤, 같은 값은 원래 순서), `--top N` 은 정렬 뒤 앞 N행. `--top` 만 쓰거나 `--pivot` 과 함께 쓰면 exit 1. 합계 행도 함께 정렬된다 | `--sort desc --top 3` |
+| `d --sort` / `--top` | (클라이언트 처리) | 수치값으로 정렬 desc·asc(숫자 아닌 값은 맨 뒤, 같은 값은 원래 순서), `--top N` 은 정렬 뒤 앞 N행(경계 동률은 함께, stderr 안내). `--top` 만 쓰거나 `--pivot` 과 함께 쓰면 exit 1. 합계 행도 함께 정렬된다 | `--sort desc --top 3` |
+| `d --no-total` | (클라이언트 처리) | 여러 코드를 준 축(ALL·*·+)에서 이름이 전국·계·합계·총계·소계·전체인 행을 뺀다. 고정 축은 안 봄. 이름이 다른 합계(예 '광업 및 제조업')는 못 잡음 | `-c2 ALL --no-total --sort desc --top 3` |
+| `d --change` | (클라이언트 처리) | 같은 계열(분류 코드·항목) 안에서 `증감`·`증감률(%)` 열 추가 (`--api-keys` 면 DT_CHG·DT_CHG_PCT). yoy=연도만 1 뺀 시점(202608→202508), prev=직전 시점. 비교 시점도 받아야 함(월 yoy `-l 13`). 정렬·`--top` 전에 계산. `--pivot` 과 함께 쓰면 exit 1 | `--change yoy -l 13` |
+| `d --ratio` | (클라이언트 처리) | 같은 축 두 코드의 비율 `비율(%)` 열 (분자/분모 ×100, `--api-keys` 면 DT_RATIO_PCT). 축은 결과에서 찾고, 다른 축·시점이 같은 행끼리 나눈다. 분모 코드도 조회에 넣어야 한다. 분자 `ALL` 이면 그 축 모든 행을 분모 대비 %로. 고른 축은 stderr 에 알림. parquet 저장과 함께 쓰면 exit 1 | `-i T1+T2 --ratio T2/T1`, `-c1 ALL --ratio ALL/<합계코드>` |
+| `d -p` 검사 | (조회 전) | 표에 없는 주기를 주면 exit 1 + 있는 주기 목록 (KOSIS 는 월간 표에 Y 를 주면 월별 행을 오류 없이 돌려준다) | |
 | (열 이름) | LST_CHN_DE | v0.5.25 부터 `최종수정일` (예전 `비고`). `--fields 비고` 는 계속 받는다 | `--fields 시점,수치값,최종수정일` |
 | `--api-keys` | (클라이언트 처리) | 열 이름을 API 키로 (표마다 같은 키: C1, C1_NM … ITM_NM, PRD_DE, DT, UNIT_NM). table·json·csv·md·xlsx·db 모두 같은 이름. `--fields`(한국어·API 키)·`--pivot`(C1·분류 이름)과 함께 써도 된다 | `--api-keys -f json` |
 | `--user-id` | userStatsId | 사전 등록 통계표 | `--user-id "myid/..."` |

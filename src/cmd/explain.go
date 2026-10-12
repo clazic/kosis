@@ -3,6 +3,7 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"html"
 	"os"
 	"strings"
 
@@ -126,16 +127,22 @@ func runExplain(cmd *cobra.Command, args []string) error {
 
 	// 통계설명 조회 + 주석(CMMT) + 원표·조사설명 링크
 	expl, err := client.Explain(orgID, tblID)
+	if err != nil && strings.Contains(err.Error(), "[30]") {
+		err = nil // 통계설명이 없는 표 — 실패가 아니다 (주석·링크는 아래에 나온다)
+	}
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "경고: 통계설명 조회 실패: %v\n", err)
 	}
 	notes := []string{}
 	if cmmt, cerr := client.MetaRaw(orgID, tblID, "CMMT"); cerr == nil {
 		for _, c := range cmmt {
-			if dc := strings.TrimSpace(fmt.Sprint(c["CMMT_DC"])); dc != "" && c["CMMT_DC"] != nil {
+			if dc := unescapeText(strings.TrimSpace(fmt.Sprint(c["CMMT_DC"]))); dc != "" && c["CMMT_DC"] != nil {
 				notes = append(notes, dc)
 			}
 		}
+	}
+	for k, v := range expl {
+		expl[k] = unescapeText(v)
 	}
 	links := map[string]string{"table": api.TableURL(orgID, tblID)}
 	if u := api.ExplainURL(expl["confmNo"]); u != "" {
@@ -183,4 +190,16 @@ var explainFields = [][2]string{
 	{"statsPeriod", "작성주기"}, {"pubDate", "공표시기"}, {"examinPd", "조사기간"},
 	{"examinTrgetPd", "조사대상기간"}, {"dataCollectMth", "자료수집방법"}, {"basisLaw", "근거법령"},
 	{"mainTermExpl", "주요 용어"}, {"dataUserNote", "이용시 유의사항"}, {"writingTel", "작성부서"},
+}
+
+// unescapeText KOSIS 설명·주석의 HTML 엔티티(&lt; 와 두 번 인코딩된 &amp;lt;)를 글자로 되돌리고 태그(<b> 등)는 지운다.
+func unescapeText(s string) string {
+	for i := 0; i < 3 && strings.Contains(s, "&"); i++ {
+		u := html.UnescapeString(s)
+		if u == s {
+			break
+		}
+		s = u
+	}
+	return htmlTag.ReplaceAllString(s, "")
 }

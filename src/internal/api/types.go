@@ -75,31 +75,25 @@ func (s *MetaSummaryResult) BuildColumnMetaWithCode() *ColumnMeta {
 func (s *MetaSummaryResult) buildColumnMeta(withCode bool) *ColumnMeta {
 	cm := &ColumnMeta{}
 
-	// 분류 그룹: ObjID 등장 순서대로 C1~C8 매핑
-	seen := map[string]bool{}
-	classIdx := 1
-	for _, c := range s.Classifications {
-		if c.ObjID != "" && !seen[c.ObjID] {
-			seen[c.ObjID] = true
-			label := c.ObjNM
-			if label == "" {
-				label = fmt.Sprintf("분류%d", classIdx)
-			}
-			if withCode {
-				cm.Columns = append(cm.Columns, ColumnDef{
-					Key:   fmt.Sprintf("C%d", classIdx),
-					Label: label + " 코드",
-				})
-			}
-			cm.Columns = append(cm.Columns, ColumnDef{
-				Key:   fmt.Sprintf("C%d_NM", classIdx),
-				Label: label,
-			})
-			classIdx++
-			if classIdx > 8 {
-				break
-			}
+	// 분류 축: 축 번호(OBJ_ID_SN) → C{N}. 번호가 2부터인 표도 결과의 C2 에 맞는다
+	for _, a := range s.Axes() {
+		if a.ObjID == "" || a.N > 8 {
+			continue
 		}
+		label := a.Name
+		if label == "" {
+			label = fmt.Sprintf("분류%d", a.N)
+		}
+		if withCode {
+			cm.Columns = append(cm.Columns, ColumnDef{
+				Key:   fmt.Sprintf("C%d", a.N),
+				Label: label + " 코드",
+			})
+		}
+		cm.Columns = append(cm.Columns, ColumnDef{
+			Key:   fmt.Sprintf("C%d_NM", a.N),
+			Label: label,
+		})
 	}
 
 	// 항목

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -218,6 +219,9 @@ func runMeta(cmd *cobra.Command, args []string) error {
 	}
 	if len(results) == 0 {
 		fmt.Fprintf(os.Stderr, "'%s' 타입의 메타데이터가 없습니다.\n", metaType)
+		if strings.EqualFold(metaType, "UNIT") {
+			fmt.Fprintf(os.Stderr, "  단위는 kosis m %s %s --axis item 의 [단위] 또는 d 결과의 단위 칸, 항목 이름 괄호에서 봅니다\n", orgID, tblID)
+		}
 		if format == "json" {
 			fmt.Println("[]")
 		}
@@ -242,6 +246,14 @@ func runMeta(cmd *cobra.Command, args []string) error {
 	}
 	data := make([]map[string]interface{}, len(results))
 	for i, r := range results {
+		for k, v := range r { // 주석 등에 섞인 HTML 태그·엔티티(<b>, &lt;)를 글자로
+			if str, ok := v.(string); ok && format != "json" { // json 은 API 원문 그대로, 표 출력만 읽기 좋게
+				if strings.ContainsAny(str, "<&") {
+					str = unescapeText(str) // 엔티티 풀고 태그 제거
+				}
+				r[k] = strings.Join(strings.Fields(str), " ") // 줄바꿈이 표를 깨뜨린다
+			}
+		}
 		data[i] = r
 	}
 	if err := formatter.Format(data, output.FormatOptions{Columns: columns}); err != nil {
@@ -266,6 +278,19 @@ func init() {
 // summaryAxisMax 요약에서 한 축을 다 보여 줄 최대 코드 수. 넘으면 최상위 코드만 보여 준다
 // (AI 가 읽을 출력이 수백·수천 줄로 불어나지 않게). 전체는 --axis·--under·--find 로 본다.
 const summaryAxisMax = 50
+
+// depth 축 안에서 몇 단계 아래인지 (최상위 0). 이름을 들여 써 상하위 관계를 보이게 한다.
+func depth(c api.MetaResult, byID map[string]api.MetaResult) int {
+	d := 0
+	for up := c.UpItmID; up != "" && d < 10; d++ { // 10: 순환 방지
+		p, ok := byID[up]
+		if !ok {
+			break
+		}
+		up = p.UpItmID
+	}
+	return d
+}
 
 // summaryLevels 큰 축에서 최상위부터 한 단계씩, summaryAxisMax 를 넘지 않을 때까지 펼친 코드 (원래 순서 유지).
 func summaryLevels(g []api.MetaResult) []api.MetaResult {
@@ -315,6 +340,9 @@ func displayMetaSummary(summary *api.MetaSummaryResult, orgID, tblID string) {
 			axes[c.ObjID] = true
 		}
 		fmt.Printf("[분류] d 의 -c1, -c2 … 에 사용 (축 %d개, 코드 %d개)\n", len(axes), len(summary.Classifications))
+		if len(summary.Axes()) > 0 && !summary.HasAxis(1) {
+			fmt.Println("  (1번 축이 없다 — d 는 -c1 을 ALL 로 채운다)")
+		}
 		flagOf := map[string]string{} // OBJ_ID → -cN. Codes 는 Classifications 를 같은 순서로 한 행씩 만든다
 		codes := summary.Codes()
 		for i, c := range summary.Classifications {
@@ -336,6 +364,10 @@ func displayMetaSummary(summary *api.MetaSummaryResult, orgID, tblID string) {
 			show := g
 			if len(g) > summaryAxisMax {
 				show = summaryLevels(g)
+			}
+			byID := map[string]api.MetaResult{}
+			for _, c := range g {
+				byID[c.ItmID] = c
 			}
 			kids := map[string]int{} // 상위 코드 → 하위 코드 수
 			for _, c := range g {
@@ -369,7 +401,7 @@ func displayMetaSummary(summary *api.MetaSummaryResult, orgID, tblID string) {
 						hidden = fmt.Sprintf("  (하위 %d개 중 %d개 표시: --under %s)", n, visible, code)
 					}
 				}
-				fmt.Printf("    %-16s %s%s\n", code, name, hidden)
+				fmt.Printf("    %-16s %s%s%s\n", code, strings.Repeat("  ", depth(c, byID)), name, hidden)
 			}
 			if len(show) < len(g) {
 				fmt.Printf("    … 이 축 코드 %d개 중 %d개만 표시. 하위: kosis m %s %s --under <코드> / 이름: --find <이름> / 전체: --axis %q\n",
@@ -421,6 +453,9 @@ func displayMetaSummary(summary *api.MetaSummaryResult, orgID, tblID string) {
 	}
 }
 
+// htmlTag 메타 문자열 안의 HTML 태그 (<b>, </b>, <br/> …).
+var htmlTag = regexp.MustCompile(`</?[a-zA-Z][^<>]*>`)
+
 // errNoCodeMatch 찾는 코드가 없을 때 — grep 처럼 종료 코드 1 이라 AI·스크립트가 실패를 알아챈다.
 var errNoCodeMatch = errors.New("맞는 코드가 없습니다 (--find·--under·--level·--axis 조건). 이름을 더 짧게(일부만) 해서 --find 하거나 --axis <축> 으로 그 축 전체를 보세요")
 
@@ -430,6 +465,36 @@ var findFold = strings.NewReplacer("~", "-", "～", "-", "〜", "-", "–", "-",
 // normFindName --find 비교용: 공백을 지우고 표기가 다른 같은 기호를 하나로 ("15~29" = "15 - 29세").
 func normFindName(s string) string {
 	return findFold.Replace(strings.Join(strings.Fields(s), ""))
+}
+
+// noMatch 걸러서 남은 코드가 없을 때의 오류 — 무엇이 문제인지 구분해 다음 할 일을 준다.
+func noMatch(rows []api.CodeRow, under string, level int, axis string) error {
+	if under != "" { // "하위 없음"과 "없는 코드"
+		for _, r := range rows {
+			if r.Code == under {
+				return fmt.Errorf("코드 %s(%s) 아래에는 하위 코드가 없습니다 — 가장 아래 단계입니다. 그 코드를 그대로 -c 에 쓰세요", under, r.Name)
+			}
+		}
+		return fmt.Errorf("코드 %s 가 이 표에 없습니다. 이름으로 찾기: --find <이름>", under)
+	}
+	if level > 0 { // 그 축에 있는 단계
+		cnt := map[int]int{}
+		for _, r := range rows {
+			if axis == "" || axisMatches(r, axis) {
+				cnt[r.Level]++
+			}
+		}
+		var lv []string
+		for l := 1; l <= 20; l++ {
+			if cnt[l] > 0 {
+				lv = append(lv, fmt.Sprintf("%d단계 %d개", l, cnt[l]))
+			}
+		}
+		if len(lv) > 0 {
+			return fmt.Errorf("--level %d 에 맞는 코드가 없습니다. 있는 단계: %s", level, strings.Join(lv, ", "))
+		}
+	}
+	return errNoCodeMatch
 }
 
 // printCodeRows --find·--under·--level 로 거른 코드 목록과, 플래그별로 d 에 바로 넣을 "a+b+c".
@@ -476,12 +541,12 @@ func printCodeRows(rows []api.CodeRow, find, under string, level int, axis, form
 			return err
 		}
 		if len(out) == 0 {
-			return errNoCodeMatch
+			return noMatch(rows, under, level, axis)
 		}
 		return nil
 	}
 	if len(out) == 0 {
-		return errNoCodeMatch
+		return noMatch(rows, under, level, axis)
 	}
 	data := make([]map[string]interface{}, len(out))
 	for i, r := range out {

@@ -325,3 +325,282 @@ func TestSummaryAxisFlagsByObjID(t *testing.T) {
 		t.Errorf("축 번호:\n%s", out)
 	}
 }
+
+// RSI R5: 요청 주기보다 더 최근까지 있는 주기 안내
+func TestNewerCycle(t *testing.T) {
+	sum := &api.MetaSummaryResult{Periods: []api.MetaResult{
+		{PrdSe: "월", EndPrdDe: "2026.09"}, {PrdSe: "년", EndPrdDe: "2025"},
+	}}
+	if got := newerCycle(sum, "Y"); !strings.Contains(got, "-p M") {
+		t.Errorf("Y: %q", got)
+	}
+	if got := newerCycle(sum, "M"); got != "" {
+		t.Errorf("M 은 이미 최신: %q", got)
+	}
+}
+
+// RSI R5: --under 가 가장 아래 코드면 '하위 없음', 없는 코드면 '없는 코드'
+func TestUnderLeafMessage(t *testing.T) {
+	rows := []api.CodeRow{{Flag: "--class1", Code: "11110", Name: "종로구", Level: 2, ParentCode: "11"}}
+	if err := printCodeRows(rows, "", "11110", 0, "", "table"); err == nil || !strings.Contains(err.Error(), "하위 코드가 없습니다") {
+		t.Errorf("leaf: %v", err)
+	}
+	if err := printCodeRows(rows, "", "99", 0, "", "table"); err == nil || !strings.Contains(err.Error(), "이 표에 없습니다") {
+		t.Errorf("missing: %v", err)
+	}
+}
+
+// RSI R5: 개편으로 중간에 끊긴 옛 코드
+func TestCodesEndedEarly(t *testing.T) {
+	rows := []api.DataRow{{C1: "46110", PrdDe: "202606"}, {C1: "12110", PrdDe: "202607"}, {C1: "11", PrdDe: "202607"}}
+	got := codesEndedEarly([]string{"46110+11"}, rows)
+	if len(got) != 1 || got[0] != "-c1 46110(~202606)" {
+		t.Errorf("got %v", got)
+	}
+	if got := codesEndedEarly([]string{"ALL"}, rows); got != nil {
+		t.Errorf("ALL: %v", got)
+	}
+}
+
+// RSI R5: 여러 기관 검색 결과는 번갈아 합친다
+func TestInterleave(t *testing.T) {
+	a := []api.SearchResult{{TblID: "a1"}, {TblID: "a2"}, {TblID: "a3"}}
+	b := []api.SearchResult{{TblID: "b1"}}
+	got := interleave([][]api.SearchResult{a, b})
+	ids := []string{}
+	for _, r := range got {
+		ids = append(ids, r.TblID)
+	}
+	if strings.Join(ids, ",") != "a1,b1,a2,a3" {
+		t.Errorf("got %v", ids)
+	}
+}
+
+// RSI R6: --change — 계열별 yoy(연도-1 같은 시점)·prev(직전 시점), 소수 자리 유지
+func TestComputeChanges(t *testing.T) {
+	rows := []api.DataRow{
+		{C1: "0", ItmID: "T", PrdDe: "202508", DT: "28967"}, {C1: "0", ItmID: "T", PrdDe: "202607", DT: "29136.1"},
+		{C1: "0", ItmID: "T", PrdDe: "202608", DT: "29151"}, {C1: "1", ItmID: "T", PrdDe: "202608", DT: "5"},
+	}
+	yoy := computeChanges(rows, true)
+	if c := yoy[rowKey(rows[2])]; c[0] != "184" || c[1] != "0.64" {
+		t.Errorf("yoy: %v", c)
+	}
+	if _, ok := yoy[rowKey(rows[3])]; ok {
+		t.Error("다른 계열과 비교하면 안 됨")
+	}
+	prev := computeChanges(rows, false)
+	if c := prev[rowKey(rows[2])]; c[0] != "14.9" {
+		t.Errorf("prev: %v", c)
+	}
+}
+
+// RSI R6: 표에 있는 주기 (연간 A = Y, 반기 H = S)
+func TestCyclesOf(t *testing.T) {
+	have := cyclesOf(&api.MetaSummaryResult{Periods: []api.MetaResult{{PrdSe: "월"}, {PrdSe: "반기"}, {PrdSe: "3년"}}})
+	if !have["M"] || !have["S"] || !have["H"] || !have["F"] || have["Y"] {
+		t.Errorf("%v", have)
+	}
+}
+
+// RSI R7: --no-total — 여러 코드 축의 합계 행만 빼고, 고정 축은 건드리지 않는다
+func TestDropTotals(t *testing.T) {
+	rows := []api.DataRow{
+		{C1: "00", C1NM: "전  국", C2: "0", C2NM: "계"}, {C1: "11", C1NM: "서울특별시", C2: "0", C2NM: "계"},
+		{C1: "0", C1NM: "전체 산업", C2: "0", C2NM: "계"},
+	}
+	got := dropTotals(rows, []string{"ALL", "0"})
+	if len(got) != 1 || got[0].C1 != "11" {
+		t.Errorf("got %+v", got)
+	}
+}
+
+// RSI R7: 키 표시는 뒤 4자만, 짧은 키는 전부 가림
+func TestMaskKey(t *testing.T) {
+	if got := maskKey("abcdefghijklmnop1234"); got != "…1234" {
+		t.Errorf("got %q", got)
+	}
+	if got := maskKey("short"); got != "****" {
+		t.Errorf("got %q", got)
+	}
+}
+
+// RSI R7: ex 의 HTML 엔티티 (두 번 인코딩 포함)
+func TestUnescapeText(t *testing.T) {
+	// 엔티티는 글자로, 영문 HTML 태그는 지우고, 한글 꺾쇠(<참고>)는 남긴다
+	if got := unescapeText("a &amp;lt;b&amp;gt;굵게&lt;/b&gt; &lt;참고&gt;"); got != "a 굵게 <참고>" {
+		t.Errorf("got %q", got)
+	}
+}
+
+// RSI R8: 마지막 시점 값이 모두 비면 그 시점 (X 는 값이 있는 것)
+func TestEmptyLatest(t *testing.T) {
+	if got := emptyLatest([]api.DataRow{{PrdDe: "2024", DT: "80.8"}, {PrdDe: "2025", DT: "-"}}); got != "2025" {
+		t.Errorf("got %q", got)
+	}
+	if got := emptyLatest([]api.DataRow{{PrdDe: "2025", DT: "X"}, {PrdDe: "2025", DT: "-"}}); got != "" {
+		t.Errorf("X: %q", got)
+	}
+}
+
+// RSI R8: --level 이 없는 단계면 있는 단계를 알려 준다
+func TestNoMatchLevels(t *testing.T) {
+	rows := []api.CodeRow{{Flag: "--class1", Axis: "시도별", Code: "00", Level: 1}}
+	if err := noMatch(rows, "", 2, ""); err == nil || !strings.Contains(err.Error(), "1단계 1개") {
+		t.Errorf("%v", err)
+	}
+}
+
+// RSI R9: 축 번호가 2부터인 표 — 열은 C2, 누락 검사도 번호 기준, 1번 축 없음
+func TestAxisNumberFromSN(t *testing.T) {
+	sum := &api.MetaSummaryResult{Classifications: []api.MetaResult{{ObjID: "B", ObjNM: "분배지표별", ObjIDSN: "2", ItmID: "10"}}}
+	cm := sum.BuildColumnMeta()
+	if cm.Columns[0].Key != "C2_NM" {
+		t.Errorf("열 키: %s", cm.Columns[0].Key)
+	}
+	if hasAxis(sum, 1) || !hasAxis(sum, 2) {
+		t.Error("hasAxis")
+	}
+	if got := missingClassFlags(sum, []string{"ALL", ""}); len(got) != 1 || got[0] != "--class2(분배지표별)" {
+		t.Errorf("missing: %v", got)
+	}
+	if got := missingClassFlags(sum, []string{"", "10"}); len(got) != 0 {
+		t.Errorf("1번 축은 없으니 요구하지 않음: %v", got)
+	}
+	d := strings.Join(diagnoseCodes(sum, []string{"90"}, "", "101", "X"), "\n")
+	if !strings.Contains(d, "그 번호의 축이 없음") {
+		t.Errorf("diagnose: %s", d)
+	}
+}
+
+// RSI R10: 긴 코드의 끝만 쓴 경우 진짜 코드를 제안
+func TestDiagnoseSuffixHint(t *testing.T) {
+	sum := &api.MetaSummaryResult{Classifications: []api.MetaResult{{ObjID: "B", ObjNM: "월", ObjIDSN: "1", ItmID: "13102112880M00"}}}
+	got := strings.Join(diagnoseCodes(sum, []string{"M00"}, "", "132", "X"), "\n")
+	if !strings.Contains(got, "혹시 13102112880M00") {
+		t.Errorf("%s", got)
+	}
+}
+
+// RSI R10: 주석에 '누계'가 있는 표
+func TestNotesSayCumulative(t *testing.T) {
+	if !notesSayCumulative([]map[string]interface{}{{"CMMT_DC": "당해년도 해당 월까지의 누계"}}) {
+		t.Error("누계 못 찾음")
+	}
+	if notesSayCumulative([]map[string]interface{}{{"CMMT_DC": "잠정치"}}) {
+		t.Error("오탐")
+	}
+}
+
+// RSI R11: 연간 마지막 시점이 월간 끝과 같은 해이고 12월이 아니면 부분 연도 안내
+func TestPartialYear(t *testing.T) {
+	sum := &api.MetaSummaryResult{Periods: []api.MetaResult{{PrdSe: "월", EndPrdDe: "2026.08"}, {PrdSe: "년", EndPrdDe: "2026"}}}
+	if got := partialYear(sum, "Y", []api.DataRow{{PrdDe: "2026"}}); !strings.Contains(got, "2026") {
+		t.Errorf("got %q", got)
+	}
+	if got := partialYear(sum, "Y", []api.DataRow{{PrdDe: "2025"}}); got != "" {
+		t.Errorf("2025 는 완결: %q", got)
+	}
+	q := &api.MetaSummaryResult{Periods: []api.MetaResult{{PrdSe: "분기", EndPrdDe: "2026 2/4"}}}
+	if got := partialYear(q, "Y", []api.DataRow{{PrdDe: "2026"}}); got == "" {
+		t.Error("분기 2/4 면 부분 연도")
+	}
+}
+
+// RSI R12: --ratio — 같은 축 두 코드, 다른 축·시점이 같은 행끼리
+func TestComputeRatios(t *testing.T) {
+	rows := []api.DataRow{
+		{C1: "26", ItmID: "T2", PrdDe: "2024", DT: "568107"}, {C1: "26", ItmID: "T1", PrdDe: "2024", DT: "116775"},
+		{C1: "11", ItmID: "T2", PrdDe: "2024", DT: "100"}, {C1: "11", ItmID: "T1", PrdDe: "2024", DT: "50"},
+	}
+	got, err := computeRatios(rows, "T2", "T1")
+	if err != nil || got[rowKey(rows[0])] != "486.50" || got[rowKey(rows[2])] != "200.00" {
+		t.Errorf("%v %v", got, err)
+	}
+	if _, err := computeRatios(rows, "T9", "T1"); err == nil {
+		t.Error("없는 코드는 오류")
+	}
+}
+
+// RSI R12: --top 경계 동률은 함께
+func TestSortTopTies(t *testing.T) {
+	rows := []api.DataRow{{C1: "a", DT: "3.4"}, {C1: "b", DT: "3.3"}, {C1: "c", DT: "3.3"}, {C1: "d", DT: "3.2"}}
+	if got := sortTop(rows, true, 2); len(got) != 3 {
+		t.Errorf("동률 포함 3행 기대: %d", len(got))
+	}
+}
+
+// RSI R13: --ratio ALL/00 — 그 축 모든 행을 분모 대비 %
+func TestComputeRatiosAll(t *testing.T) {
+	rows := []api.DataRow{{C1: "00", ItmID: "T1", PrdDe: "2024", DT: "200"}, {C1: "26", ItmID: "T1", PrdDe: "2024", DT: "300"}}
+	got, err := computeRatios(rows, "ALL", "00")
+	if err != nil || got[rowKey(rows[1])] != "150.00" || got[rowKey(rows[0])] != "100.00" {
+		t.Errorf("%v %v", got, err)
+	}
+}
+
+// 리뷰2: --top 경계 값이 숫자가 아니면 늘리지 않고, 숫자는 값으로 비교
+func TestSortTopBoundary(t *testing.T) {
+	rows := []api.DataRow{{DT: "5"}, {DT: "-"}, {DT: "-"}, {DT: "-"}}
+	if got := sortTop(rows, true, 2); len(got) != 2 {
+		t.Errorf("비숫자 경계: %d", len(got))
+	}
+	rows = []api.DataRow{{DT: "3.30"}, {DT: "3.3"}, {DT: "1"}}
+	if got := sortTop(rows, true, 1); len(got) != 2 {
+		t.Errorf("3.30=3.3 동률: %d", len(got))
+	}
+}
+
+// 리뷰2: SN 이 겹치거나 비면 쓰이지 않은 번호
+func TestAxesCollision(t *testing.T) {
+	sum := &api.MetaSummaryResult{Classifications: []api.MetaResult{
+		{ObjID: "A", ObjIDSN: "2"}, {ObjID: "B"}, {ObjID: "C", ObjIDSN: "2"}, {ObjID: ""},
+	}}
+	ax := sum.Axes()
+	got := map[int]bool{}
+	for _, a := range ax {
+		if got[a.N] {
+			t.Errorf("번호 중복 %d", a.N)
+		}
+		got[a.N] = true
+	}
+	if len(ax) != 3 || ax[0].N != 2 {
+		t.Errorf("%+v", ax)
+	}
+}
+
+// 리뷰2: 쉼표·+ 섞인 코드, 공백
+func TestJoinCodes(t *testing.T) {
+	if got := joinCodes("T1 ,T2+T3"); got != "T1+T2+T3" {
+		t.Errorf("%q", got)
+	}
+	if got := joinCodes("T1+T2"); got != "T1+T2" {
+		t.Errorf("쉼표 없으면 그대로: %q", got)
+	}
+}
+
+// 리뷰2: 반기 부분 연도, 6자리 분기 끝
+func TestPartialYearHalfAndNumeric(t *testing.T) {
+	h := &api.MetaSummaryResult{Periods: []api.MetaResult{{PrdSe: "반기", EndPrdDe: "2026 1/2"}}}
+	if partialYear(h, "Y", []api.DataRow{{PrdDe: "2026"}}) == "" {
+		t.Error("반기 1/2 면 부분 연도")
+	}
+	q := &api.MetaSummaryResult{Periods: []api.MetaResult{{PrdSe: "분기", EndPrdDe: "202604"}}}
+	if got := partialYear(q, "Y", []api.DataRow{{PrdDe: "2026"}}); got != "" {
+		t.Errorf("202604 는 4분기 — 완결: %q", got)
+	}
+}
+
+// 리뷰2: 합계 이름 — 전산업 잡고, '전체가구 중 1인가구' 는 안 잡음
+func TestTotalNameRegex(t *testing.T) {
+	for _, n := range []string{"전산업", "전산업(A~U)", "합계(전국)", "전체", "전체가구", "계"} {
+		if !totalName.MatchString(n) {
+			t.Errorf("못 잡음: %s", n)
+		}
+	}
+	for _, n := range []string{"전체가구중1인가구", "서울특별시", "제조업"} {
+		if totalName.MatchString(n) {
+			t.Errorf("오탐: %s", n)
+		}
+	}
+}

@@ -68,11 +68,7 @@ API 키, 출력 형식, 캐시 등의 설정을 관리합니다.
 		fmt.Printf("API 키 개수: %d개\n", len(cfg.APIKeys))
 		if len(cfg.APIKeys) > 0 {
 			for i, key := range cfg.APIKeys {
-				// 키의 일부만 표시 (보안)
-				shortKey := key
-				if len(key) > 10 {
-					shortKey = key[:4] + "..." + key[len(key)-4:]
-				}
+				shortKey := maskKey(key)
 				fmt.Printf("  [%d] %s\n", i, shortKey)
 			}
 		}
@@ -209,11 +205,7 @@ var keyListCmd = &cobra.Command{
 
 		fmt.Println("=== 등록된 API 키 ===")
 		for i, key := range cfg.APIKeys {
-			// 키의 일부만 표시 (보안)
-			shortKey := key
-			if len(key) > 15 {
-				shortKey = key[:4] + "..." + key[len(key)-4:]
-			}
+			shortKey := maskKey(key)
 			fmt.Printf("[%d] %s\n", i, shortKey)
 		}
 	},
@@ -241,10 +233,7 @@ var showCmd = &cobra.Command{
 		fmt.Println("=== KOSIS 설정 (YAML) ===")
 		fmt.Printf("api_keys:\n")
 		for i, key := range cfg.APIKeys {
-			shortKey := key
-			if len(key) > 15 {
-				shortKey = key[:4] + "..." + key[len(key)-4:]
-			}
+			shortKey := maskKey(key)
 			fmt.Printf("  - \"%s\"  # [%d]\n", shortKey, i)
 		}
 		fmt.Printf("default_format: %s\n", cfg.DefaultFormat)
@@ -488,4 +477,12 @@ func init() {
 	configCmd.AddCommand(cacheClearCmd)
 	configCmd.AddCommand(cacheSizeCmd)
 	configCmd.AddCommand(cacheCleanCmd)
+}
+
+// maskKey 키 표시용: 뒤 4자만 (구분용). 8자 이하이면 전부 가린다 — AI 대화·로그에 키 조각이 남지 않게.
+func maskKey(key string) string {
+	if len(key) <= 8 {
+		return "****"
+	}
+	return "…" + key[len(key)-4:]
 }

@@ -107,30 +107,33 @@ var indicatorSearchCmd = &cobra.Command{
 		keys, err := config.GetAPIKeys()
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "오류: %v\n", err)
-			return
+			os.Exit(1)
 		}
 
 		if len(keys) == 0 {
 			fmt.Fprintf(os.Stderr, "오류: API 키가 설정되지 않았습니다.\n")
 			fmt.Fprintln(os.Stderr)
 			fmt.Fprintln(os.Stderr, config.NoAPIKeyMessage())
-			return
+			os.Exit(1)
 		}
 
 		// Create API client
 		client, err := api.NewClient(keys)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "클라이언트 생성 실패: %v\n", err)
-			return
+			os.Exit(1)
 		}
 
 		// Execute search by name (API 7-B)
 		results, err := client.IndicatorSearchByName(jipyoNm, api.PaginationOptions{
 			NumOfRows: limit,
 		})
+		if err != nil && strings.Contains(err.Error(), "[30]") { // 결과 없음 — s 와 같이 오류 아님
+			results, err = nil, nil
+		}
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "검색 실패: %v\n", err)
-			return
+			os.Exit(1)
 		}
 
 		if len(results) == 0 {
@@ -154,7 +157,7 @@ var indicatorSearchCmd = &cobra.Command{
 		formatter, err := output.NewFormatter(format)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "포맷터 생성 실패: %v\n", err)
-			return
+			os.Exit(1)
 		}
 
 		opts := output.FormatOptions{
@@ -163,7 +166,7 @@ var indicatorSearchCmd = &cobra.Command{
 
 		if err := formatter.Format(data, opts); err != nil {
 			fmt.Fprintf(os.Stderr, "출력 실패: %v\n", err)
-			return
+			os.Exit(1)
 		}
 
 		fmt.Fprintf(os.Stderr, "\n검색 결과: %d개\n", len(results))
@@ -210,33 +213,33 @@ var indicatorInfoCmd = &cobra.Command{
 		keys, err := config.GetAPIKeys()
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "오류: %v\n", err)
-			return
+			os.Exit(1)
 		}
 
 		if len(keys) == 0 {
 			fmt.Fprintf(os.Stderr, "오류: API 키가 설정되지 않았습니다.\n")
 			fmt.Fprintln(os.Stderr)
 			fmt.Fprintln(os.Stderr, config.NoAPIKeyMessage())
-			return
+			os.Exit(1)
 		}
 
 		// Create API client
 		client, err := api.NewClient(keys)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "클라이언트 생성 실패: %v\n", err)
-			return
+			os.Exit(1)
 		}
 
 		// Execute search by ID (API 7-A)
 		results, err := client.IndicatorSearchByID(jipyoID, api.PaginationOptions{})
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "조회 실패: %v\n", err)
-			return
+			os.Exit(1)
 		}
 
 		if len(results) == 0 {
 			fmt.Fprintf(os.Stderr, "지표ID '%s'을 찾을 수 없습니다.\n", jipyoID)
-			return
+			os.Exit(1)
 		}
 
 		// Convert results to []map[string]interface{}
@@ -257,7 +260,7 @@ var indicatorInfoCmd = &cobra.Command{
 		formatter, err := output.NewFormatter(format)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "포맷터 생성 실패: %v\n", err)
-			return
+			os.Exit(1)
 		}
 
 		opts := output.FormatOptions{
@@ -266,7 +269,7 @@ var indicatorInfoCmd = &cobra.Command{
 
 		if err := formatter.Format(data, opts); err != nil {
 			fmt.Fprintf(os.Stderr, "출력 실패: %v\n", err)
-			return
+			os.Exit(1)
 		}
 	},
 }
@@ -336,21 +339,21 @@ var indicatorDataCmd = &cobra.Command{
 		keys, err := config.GetAPIKeys()
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "오류: %v\n", err)
-			return
+			os.Exit(1)
 		}
 
 		if len(keys) == 0 {
 			fmt.Fprintf(os.Stderr, "오류: API 키가 설정되지 않았습니다.\n")
 			fmt.Fprintln(os.Stderr)
 			fmt.Fprintln(os.Stderr, config.NoAPIKeyMessage())
-			return
+			os.Exit(1)
 		}
 
 		// Create API client
 		client, err := api.NewClient(keys)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "클라이언트 생성 실패: %v\n", err)
-			return
+			os.Exit(1)
 		}
 
 		// Execute data query (API 7-D)
@@ -359,7 +362,7 @@ var indicatorDataCmd = &cobra.Command{
 		})
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "조회 실패: %v\n", err)
-			return
+			os.Exit(1)
 		}
 
 		if len(results) == 0 {
@@ -390,7 +393,7 @@ var indicatorDataCmd = &cobra.Command{
 
 			if err := output.WriteToFile(data, outputFile, opts); err != nil {
 				fmt.Fprintf(os.Stderr, "파일 저장 실패: %v\n", err)
-				return
+				os.Exit(1)
 			}
 			fmt.Fprintf(os.Stderr, "저장 완료: %s (%s)\n", outputFile, detected)
 			fmt.Fprintf(os.Stderr, "\n조회 결과: %d개\n", len(results))
@@ -401,12 +404,12 @@ var indicatorDataCmd = &cobra.Command{
 		formatter, err := output.NewFormatter(format)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "포맷터 생성 실패: %v\n", err)
-			return
+			os.Exit(1)
 		}
 
 		if err := formatter.Format(data, opts); err != nil {
 			fmt.Fprintf(os.Stderr, "출력 실패: %v\n", err)
-			return
+			os.Exit(1)
 		}
 
 		fmt.Fprintf(os.Stderr, "\n조회 결과: %d개\n", len(results))
@@ -454,21 +457,21 @@ var indicatorListCmd = &cobra.Command{
 		keys, err := config.GetAPIKeys()
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "오류: %v\n", err)
-			return
+			os.Exit(1)
 		}
 
 		if len(keys) == 0 {
 			fmt.Fprintf(os.Stderr, "오류: API 키가 설정되지 않았습니다.\n")
 			fmt.Fprintln(os.Stderr)
 			fmt.Fprintln(os.Stderr, config.NoAPIKeyMessage())
-			return
+			os.Exit(1)
 		}
 
 		// Create API client
 		client, err := api.NewClient(keys)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "클라이언트 생성 실패: %v\n", err)
-			return
+			os.Exit(1)
 		}
 
 		// If no listID provided, use empty string (API will handle it)
@@ -476,7 +479,7 @@ var indicatorListCmd = &cobra.Command{
 		results, err := client.IndicatorList(listID, api.PaginationOptions{})
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "조회 실패: %v\n", err)
-			return
+			os.Exit(1)
 		}
 
 		if len(results) == 0 {
@@ -504,7 +507,7 @@ var indicatorListCmd = &cobra.Command{
 		formatter, err := output.NewFormatter(format)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "포맷터 생성 실패: %v\n", err)
-			return
+			os.Exit(1)
 		}
 
 		opts := output.FormatOptions{
@@ -513,7 +516,7 @@ var indicatorListCmd = &cobra.Command{
 
 		if err := formatter.Format(data, opts); err != nil {
 			fmt.Fprintf(os.Stderr, "출력 실패: %v\n", err)
-			return
+			os.Exit(1)
 		}
 
 		fmt.Fprintf(os.Stderr, "\n조회 결과: %d개\n", len(results))

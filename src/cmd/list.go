@@ -2,6 +2,8 @@ package cmd
 
 import (
 	"fmt"
+	"os"
+	"strings"
 
 	"github.com/clazic/kosis/internal/api"
 	"github.com/clazic/kosis/internal/output"
@@ -82,6 +84,10 @@ func init() {
 }
 
 func runList(cmd *cobra.Command, args []string) error {
+	if strings.EqualFold(listView, "MT_OTITLE") && listParent != "A" {
+		// 기관별 뷰는 KOSIS 가 --parent 를 무시하고 같은 기관 목록을 준다 (2026-10-13 실측: --parent 112 → 183개 기관)
+		fmt.Fprintf(os.Stderr, "ℹ 기관별 뷰(MT_OTITLE)는 기관 목록만 줍니다 — 그 기관의 표는 kosis s <검색어> --org %s\n", listParent)
+	}
 	// API 클라이언트 (검색·메타·목록·설명 응답은 캐시)
 	client, err := newCmdClient()
 	if err != nil {

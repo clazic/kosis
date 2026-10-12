@@ -151,7 +151,7 @@ func runSearch(cmd *cobra.Command, args []string) error {
 		fetch = min(max(limit*10, 300), 1000)
 	}
 
-	var results []api.SearchResult
+	var perOrg [][]api.SearchResult
 	total := 0
 	for _, org := range orgIDs {
 		rs, err := client.Search(keyword, api.SearchOptions{ResultCount: fetch, StartCount: page, Sort: sortF, OrgID: org})
@@ -165,8 +165,9 @@ func runSearch(cmd *cobra.Command, args []string) error {
 			n, _ := strconv.Atoi(rs[0].StatDBCnt)
 			total += n
 		}
-		results = append(results, rs...)
+		perOrg = append(perOrg, rs)
 	}
+	results := interleave(perOrg) // 기관이 여럿이면 번갈아 — -n 으로 자를 때 첫 기관이 다 차지하지 않게
 	fetched := len(results)
 	if clientFilter {
 		results = filterSearch(results, "", statF, regionF)
@@ -388,4 +389,24 @@ func searchItems(fetch func(org, tbl string) ([]api.MetaResult, error), rs []api
 	}
 	wg.Wait()
 	return out, errs
+}
+
+// interleave 기관별 결과를 한 개씩 번갈아 합친다 (기관 하나면 그대로).
+func interleave(groups [][]api.SearchResult) []api.SearchResult {
+	if len(groups) == 1 {
+		return groups[0]
+	}
+	var out []api.SearchResult
+	for i := 0; ; i++ {
+		added := false
+		for _, g := range groups {
+			if i < len(g) {
+				out = append(out, g[i])
+				added = true
+			}
+		}
+		if !added {
+			return out
+		}
+	}
 }
