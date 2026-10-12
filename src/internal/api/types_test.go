@@ -86,3 +86,16 @@ func TestBuildColumnMetaWithCode(t *testing.T) {
 		t.Error("코드 컬럼 C1은 이름 컬럼 C1_NM보다 앞에 와야 함")
 	}
 }
+
+// TestNormalizePrdSeMultiYear 2·3·4·5년 주기는 모두 F (실측: 117/DT_117071_004 3년, 202/DT_BS2020_3_157 2년,
+// 380/DT_380002_A001A 4년, 154/DT_154001_006 5년 모두 -p F 로만 조회됨, Y·IR 은 [30]).
+func TestNormalizePrdSeMultiYear(t *testing.T) {
+	for in, want := range map[string]string{
+		"2년": "F", "3년": "F", " 4년 ": "F", "5년": "F", "10년": "F", "F": "F",
+		"년": "Y", "1년": "1년", "Y": "Y", "월": "M", "분기": "Q", "부정기": "부정기",
+	} {
+		if got := NormalizePrdSe(in); got != want {
+			t.Errorf("NormalizePrdSe(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

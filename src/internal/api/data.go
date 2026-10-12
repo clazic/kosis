@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -129,7 +130,7 @@ func normalizeDataKeys(s string) string {
 }
 
 // NormalizePrdSe converts Korean/user-friendly period codes to KOSIS API codes.
-// 메타 API는 한글(년, 월, 분기, 반기, 5년 등)로 반환하지만, 데이터 API는 영문 코드를 요구합니다.
+// 메타 API는 한글(년, 월, 분기, 반기, 2년·3년·5년 등)로 반환하지만, 데이터 API는 영문 코드를 요구합니다.
 func NormalizePrdSe(prdSe string) string {
 	switch strings.TrimSpace(prdSe) {
 	case "년", "연", "Y", "y":
@@ -140,14 +141,17 @@ func NormalizePrdSe(prdSe string) string {
 		return "Q"
 	case "반기", "H", "h":
 		return "H"
-	case "5년", "F", "f":
+	case "F", "f":
 		return "F"
 	case "A":
 		// 일부 통계표에서 PRD_SE가 "A"로 반환되지만, 실제 API 코드는 다를 수 있음
 		return "Y"
-	default:
-		return prdSe
 	}
+	// 2년·3년·4년… 여러 해 주기는 모두 F (KOSIS F = 다년, 5년만이 아니다)
+	if n, err := strconv.Atoi(strings.TrimSuffix(strings.TrimSpace(prdSe), "년")); err == nil && n >= 2 {
+		return "F"
+	}
+	return prdSe
 }
 
 // DataWithPeriods handles non-continuous periods by making multiple requests.

@@ -83,7 +83,7 @@ var dataCmd = &cobra.Command{
   prdSe=월     M 또는 "월"  202401          -p M -s 202401 -e 202412
   prdSe=분기   Q 또는 "분기" 20241          -p Q -l 4
   prdSe=반기   H 또는 "반기" 20241          -p H -l 2
-  prdSe=5년    F 또는 "5년"  2015           -p F -l 3
+  prdSe=2·3·5년 등 F 또는 "3년" 2015          -p F -l 3   (여러 해 주기는 모두 F)
 
 값 지정 규칙:
   ALL                      전체 선택
@@ -134,7 +134,7 @@ var dataCmd = &cobra.Command{
   - 분류/항목에 한글 이름 사용 금지 → 코드만 사용 (에러 21)
   - 검색어에 연도 포함 금지 (search에서)
   - 존재하지 않는 시점 요청 시 에러 30 → -l 5로 먼저 가용 시점 확인
-  - prdSe=5년 통계표에 -p Y 사용 시 에러 30 → -p F 사용
+  - prdSe=2년·3년·4년·5년 통계표에 -p Y 사용 시 에러 30 → -p F 사용
   - ALL 사용 시 4만 셀 초과 가능 → 자동 분할 처리됨
   - 코드는 kosis m --find/--under/--level 결과를 그대로 (짐작 금지 — 에러 21). + 나열 개수 제한은 확인되지 않음 (84개 실측 성공)
   - 분류 축이 N개인 표는 --class1 ~ --classN 모두 필요 (빠지면 빠진 플래그를 알려 줌)
@@ -777,7 +777,7 @@ func init() {
 	dataCmd.Flags().StringVar(&class7Flag, "class7", "", "[1단계] 분류7 코드. meta [분류] 일곱 번째 항목. -c7로 축약")
 	dataCmd.Flags().StringVar(&class8Flag, "class8", "", "[1단계] 분류8 코드. meta [분류] 여덟 번째 항목. -c8로 축약")
 	dataCmd.Flags().StringVarP(&itemFlag, "item", "i", "", "[2단계] 항목 코드. meta의 [항목] 코드를 그대로 사용. ALL=전체, \"T10+T20\"=복수 (한글 이름 사용 시 에러 21)")
-	dataCmd.Flags().StringVarP(&periodFlag, "period", "p", "", "[3단계] 수록주기. meta [수록정보]의 prdSe 값에 대응: Y=년, M=월, Q=분기, H=반기, F=5년 (불일치 시 에러 30)")
+	dataCmd.Flags().StringVarP(&periodFlag, "period", "p", "", "[3단계] 수록주기. meta [수록정보]의 prdSe 값에 대응: Y=년, M=월, Q=분기, H=반기, F=2년 이상 여러 해(2·3·4·5년…) (불일치 시 에러 30)")
 	dataCmd.Flags().StringVarP(&startFlag, "start", "s", "", "[4단계] 시작 시점. --end와 함께 연속 범위 지정. 주기별 형식: 연=2020, 월=202401, 분기/반기=20241")
 	dataCmd.Flags().StringVarP(&endFlag, "end", "e", "", "[4단계] 종료 시점. --start와 짝으로 사용 (예: -s 2020 -e 2024)")
 	dataCmd.Flags().IntVarP(&latestFlag, "latest", "l", 0, "[4단계] 최근 N개 시점만 조회. --start/--end와 혼용 불가. 시점 플래그 미지정 시 최근 1개")
