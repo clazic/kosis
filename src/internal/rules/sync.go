@@ -59,9 +59,20 @@ func Sync(dir, initURL string) (SyncResult, error) {
 		return r, ErrNoRemote
 	}
 	r.Remote = remote
+	// 임시 파일과 숨김 폴더(다른 도구가 만든 상태 폴더 등)는 올리지 않는다
 	ignore := filepath.Join(dir, ".gitignore")
-	if _, err := os.Stat(ignore); err != nil {
-		if err := os.WriteFile(ignore, []byte(".rule-*.tmp\n"), 0o600); err != nil {
+	cur, _ := os.ReadFile(filepath.Join(dir, ".gitignore"))
+	text := string(cur)
+	for _, pat := range []string{".rule-*.tmp", ".*/"} {
+		if !strings.Contains("\n"+text, "\n"+pat+"\n") {
+			if text != "" && !strings.HasSuffix(text, "\n") {
+				text += "\n"
+			}
+			text += pat + "\n"
+		}
+	}
+	if text != string(cur) {
+		if err := os.WriteFile(ignore, []byte(text), 0o600); err != nil {
 			return r, err
 		}
 	}

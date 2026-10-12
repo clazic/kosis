@@ -57,6 +57,9 @@ var dataCmd = &cobra.Command{
   --fields <필드목록>      출력 필드 선택 ("C1_NM,ITM_NM,PRD_DE,DT")
   --pivot <축>             그 축의 값을 열로 펼친 비교표 (C1~C8, ITM, PRD 또는 분류 이름)
                            예: --pivot C1 → 지역이 열, --pivot PRD → 시점이 열
+                           --pivot ITM → 열 이름이 "항목명(단위)" (항목마다 단위가 달라도 한 행)
+                           -o *.parquet 와 함께 쓸 수 없음 (parquet 열은 API 키로 고정)
+  --api-keys               열 이름을 API 키(C1, C1_NM, ITM_NM, PRD_DE, DT …)로 — 표마다 같은 이름
 
 차트 플래그:
   --chart <타입>           차트 생성: line, bar, pie
@@ -133,7 +136,8 @@ var dataCmd = &cobra.Command{
   - 존재하지 않는 시점 요청 시 에러 30 → -l 5로 먼저 가용 시점 확인
   - prdSe=5년 통계표에 -p Y 사용 시 에러 30 → -p F 사용
   - ALL 사용 시 4만 셀 초과 가능 → 자동 분할 처리됨
-  - 분류 코드 10개 이상 + 나열 금지 → ALL 또는 "접두사*" 사용
+  - 코드는 kosis m --find/--under/--level 결과를 그대로 (짐작 금지 — 에러 21). + 나열 개수 제한은 확인되지 않음 (84개 실측 성공)
+  - 분류 축이 N개인 표는 --class1 ~ --classN 모두 필요 (빠지면 빠진 플래그를 알려 줌)
 
 자주 쓰는 통계표:
   인구          kosis d 101 DT_1IN1502 -c1 00 -i T100 -p Y -l 5
@@ -208,11 +212,29 @@ var dataCmd = &cobra.Command{
 			return
 		}
 
+		// 조회 전 검사: parquet 은 열이 API 키로 고정이라 피벗 열을 담을 수 없다
+		if pivotFlag != "" && outputFlag != "" && output.DetectFormat(outputFlag) == "parquet" {
+			fmt.Fprintln(os.Stderr, "오류: parquet 은 열이 고정(C1…DT)이라 --pivot 결과를 담을 수 없습니다 — .csv·.xlsx·.json 으로 저장하세요")
+			os.Exit(1)
+		}
+
 		// API 클라이언트 생성 (캐시 초기화 포함)
 		client, err := NewAPIClient()
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "오류: %v\n", err)
 			return
+		}
+
+		// 표의 분류 축 수만큼 --classN 이 있어야 한다 (빠지면 API 는 [20] objL 만 돌려준다)
+		if userIDFlag == "" {
+			if summary, merr := client.MetaSummary(orgID, tblID); merr == nil {
+				given := []string{class1Flag, class2Flag, class3Flag, class4Flag, class5Flag, class6Flag, class7Flag, class8Flag}
+				if missing := missingClassFlags(summary, given); len(missing) > 0 {
+					fmt.Fprintf(os.Stderr, "오류: 이 표는 분류 축이 %d개라 다음 플래그도 필요합니다: %s\n", axisCount(summary), strings.Join(missing, ", "))
+					fmt.Fprintf(os.Stderr, "  코드 확인: kosis m %s %s (또는 --find·--under·--level), 축 전체는 ALL\n", orgID, tblID)
+					os.Exit(1)
+				}
+			}
 		}
 
 		// 플래그에서 옵션 생성
@@ -279,7 +301,7 @@ var dataCmd = &cobra.Command{
 			if summary, err := client.MetaSummary(orgID, tblID); err == nil {
 				// JSON 출력, --with-code, --fields 중 하나면 코드 컬럼(C1~C8, ITM_ID)을 포함한다.
 				// (table/csv 기본 출력은 기존대로 이름 컬럼만 — 하위호환 유지)
-				if formatFlag == "json" || withCodeFlag || fieldsFlag != "" {
+				if needCodeColumns(formatFlag, outputFlag, withCodeFlag, fieldsFlag) {
 					colMetaFull = summary.BuildColumnMetaWithCode()
 				} else {
 					colMetaFull = summary.BuildColumnMeta()
@@ -299,6 +321,8 @@ var dataCmd = &cobra.Command{
 				for _, col := range colMeta.Columns {
 					m[col.Label] = row.GetField(col.Key)
 				}
+			} else if apiKeysFlag {
+				m = apiKeyRow(row) // 폴백(메타 없음·--user-id) + --api-keys: API 키 그대로
 			} else {
 				// 폴백: 기존 고정 키
 				m["분류값명1"] = row.C1NM
@@ -321,12 +345,15 @@ var dataCmd = &cobra.Command{
 
 		// 포맷 옵션 생성 - 동적 컬럼 순서 지정
 		formatOpts := output.FormatOptions{
-			Korean: true,
+			Korean:  !apiKeysFlag,
+			RawKeys: apiKeysFlag,
 		}
 		if colMeta != nil {
 			for _, col := range colMeta.Columns {
 				formatOpts.Columns = append(formatOpts.Columns, col.Label)
 			}
+		} else if apiKeysFlag {
+			formatOpts.Columns = apiKeyColumns(dataMap)
 		}
 
 		// --fields가 있으면 사용자 지정 컬럼으로 덮어쓰기
@@ -363,7 +390,12 @@ var dataCmd = &cobra.Command{
 			}
 			drop[colMetaFull.GetLabel("LST_CHN_DE")] = true // 행마다 달라 열로 펼치면 행이 갈라진다
 			var dups int
-			dataMap, formatOpts.Columns, dups = pivotRows(dataMap, formatOpts.Columns, pcol, colMetaFull.GetLabel("DT"), drop)
+			unitCol := ""
+			if pcol == colMetaFull.GetLabel("ITM_NM") { // 항목마다 단위가 다르면 단위가 행을 가른다 → 열 이름에 붙인다
+				unitCol = colMetaFull.GetLabel("UNIT_NM")
+				drop[unitCol] = true
+			}
+			dataMap, formatOpts.Columns, dups = pivotRows(dataMap, formatOpts.Columns, pcol, colMetaFull.GetLabel("DT"), drop, unitCol)
 			if dups > 0 {
 				fmt.Fprintf(os.Stderr, "경고: 같은 칸에 값이 %d번 겹쳐 첫 값만 남겼습니다 — --fields 로 나눌 축을 남기세요\n", dups)
 			}
@@ -417,6 +449,20 @@ var dataCmd = &cobra.Command{
 			return
 		}
 
+		// --api-keys: --fields·--pivot 을 한국어 라벨로 다 처리한 뒤, 출력 직전에 열 이름만 API 키로 바꾼다
+		// (라벨이 아닌 열 — 피벗으로 생긴 값 열 등 — 은 그대로)
+		if outputUsesAPIKeys(apiKeysFlag, outputFlag) && colMetaFull != nil {
+			toKey := map[string]string{}
+			for _, cm := range []*api.ColumnMeta{colMetaFull, colMeta} {
+				if cm != nil {
+					for _, c := range cm.Columns {
+						toKey[c.Label] = c.Key
+					}
+				}
+			}
+			dataMap, formatOpts.Columns = renameColumns(dataMap, formatOpts.Columns, toKey)
+		}
+
 		// --output이 있으면 WriteToFile() 사용
 		if outputFlag != "" {
 			err = output.WriteToFile(dataMap, outputFlag, formatOpts)
@@ -465,6 +511,7 @@ var (
 	fieldsFlag       string
 	withCodeFlag     bool
 	pivotFlag        string
+	apiKeysFlag      bool
 	userIDFlag       string
 	noAutoSplitFlag  bool
 	concurrencyFlag  int
@@ -738,7 +785,8 @@ func init() {
 	dataCmd.Flags().StringVarP(&formatFlag, "format", "f", "table", "[5단계] 화면 출력 형식: table=정렬표, json=파이프/jq용, csv=쉼표구분, md=Markdown 표")
 	dataCmd.Flags().StringVarP(&outputFlag, "output", "o", "", "[5단계] 파일로 저장. 확장자로 형식 자동 결정: .csv .xlsx .json .db(SQLite) .parquet")
 	dataCmd.Flags().StringVar(&fieldsFlag, "fields", "", "[5단계] 출력할 컬럼만 선택 (쉼표 구분). 예: \"C1_NM,ITM_NM,PRD_DE,DT\" (DT=수치값)")
-	dataCmd.Flags().StringVar(&pivotFlag, "pivot", "", "[5단계] 이 축의 값을 열로 펼쳐 비교표로: C1~C8(분류), ITM(항목), PRD(시점) 또는 분류 이름(시도별)")
+	dataCmd.Flags().BoolVar(&apiKeysFlag, "api-keys", false, "[5단계] 열 이름을 표마다 다른 한국어 축 이름 대신 API 키(C1, C1_NM … ITM_ID, ITM_NM, PRD_DE, DT, UNIT_NM)로 — 여러 표를 같은 코드로 처리할 때")
+	dataCmd.Flags().StringVar(&pivotFlag, "pivot", "", "[5단계] 이 축의 값을 열로 펼쳐 비교표로: C1~C8(분류), ITM(항목 — 열 이름 \"항목명(단위)\"), PRD(시점) 또는 분류 이름(시도별). parquet 저장과 함께 못 씀")
 	dataCmd.Flags().BoolVar(&withCodeFlag, "with-code", false, "[5단계] 이름 외에 원본 코드 컬럼(C1~C8, ITM_ID)도 함께 출력. 지도(행정동코드)·DB 결합 시 사용. JSON은 항상 포함")
 	dataCmd.Flags().StringVar(&userIDFlag, "user-id", "", "KOSIS 웹에서 사전 등록한 userStatsId로 조회. 지정 시 --class/--item/--period 생략 가능")
 	dataCmd.Flags().BoolVar(&noAutoSplitFlag, "no-auto-split", false, "4만 셀(API 상한) 초과 시 자동 분할 조회를 끔. 켜두면 초과 요청은 에러로 실패")
@@ -784,7 +832,8 @@ func pivotColumn(cm *api.ColumnMeta, arg string) (string, map[string]bool, bool)
 
 // pivotRows pivotCol 의 값마다 열을 만들고 valueCol 값을 채운다. 나머지 열(drop 제외)이 행을 가른다.
 // 반환: 새 행, 새 열 순서, 같은 칸에 겹친 수(첫 값을 남김).
-func pivotRows(rows []map[string]interface{}, cols []string, pivotCol, valueCol string, drop map[string]bool) ([]map[string]interface{}, []string, int) {
+// unitCol 이 있으면 열 이름을 "값(단위)" 로 한다 (항목을 열로 펼칠 때).
+func pivotRows(rows []map[string]interface{}, cols []string, pivotCol, valueCol string, drop map[string]bool, unitCol string) ([]map[string]interface{}, []string, int) {
 	var keyCols []string
 	for _, c := range cols {
 		if c != pivotCol && c != valueCol && !drop[c] {
@@ -798,6 +847,9 @@ func pivotRows(rows []map[string]interface{}, cols []string, pivotCol, valueCol 
 	dups := 0
 	for _, r := range rows {
 		pv := fmt.Sprint(r[pivotCol])
+		if u := fmt.Sprint(r[unitCol]); unitCol != "" && r[unitCol] != nil && u != "" {
+			pv += "(" + u + ")"
+		}
 		if !seenPivot[pv] {
 			seenPivot[pv] = true
 			pivots = append(pivots, pv)
@@ -824,4 +876,100 @@ func pivotRows(rows []map[string]interface{}, cols []string, pivotCol, valueCol 
 		out[i][pv] = r[valueCol]
 	}
 	return out, append(keyCols, pivots...), dups
+}
+
+// axisCount 표의 분류 축 수 (OBJ_ID 종류 수, 항목 제외).
+func axisCount(s *api.MetaSummaryResult) int {
+	seen := map[string]bool{}
+	for _, c := range s.Classifications {
+		seen[c.ObjID] = true
+	}
+	return len(seen)
+}
+
+// missingClassFlags 축 순서대로 비어 있는 --classN 과 그 축 이름.
+func missingClassFlags(s *api.MetaSummaryResult, given []string) []string {
+	var names []string
+	seen := map[string]bool{}
+	for _, c := range s.Classifications {
+		if !seen[c.ObjID] {
+			seen[c.ObjID] = true
+			names = append(names, c.ObjNM)
+		}
+	}
+	var missing []string
+	for i, n := range names {
+		if i < len(given) && strings.TrimSpace(given[i]) == "" {
+			missing = append(missing, fmt.Sprintf("--class%d(%s)", i+1, n))
+		}
+	}
+	return missing
+}
+
+// fallbackAPIKeys 메타가 없을 때 --api-keys 출력 열 순서.
+var fallbackAPIKeys = []string{"C1", "C1_NM", "C2", "C2_NM", "C3", "C3_NM", "C4", "C4_NM",
+	"C5", "C5_NM", "C6", "C6_NM", "C7", "C7_NM", "C8", "C8_NM",
+	"ITM_ID", "ITM_NM", "PRD_SE", "PRD_DE", "DT", "UNIT_NM", "LST_CHN_DE"}
+
+// renameColumns 열 이름을 rename 에 따라 바꾼다 (없는 이름은 그대로).
+func renameColumns(rows []map[string]interface{}, cols []string, rename map[string]string) ([]map[string]interface{}, []string) {
+	to := func(c string) string {
+		if k, ok := rename[c]; ok {
+			return k
+		}
+		return c
+	}
+	out := make([]map[string]interface{}, len(rows))
+	for i, r := range rows {
+		m := make(map[string]interface{}, len(r))
+		for k, v := range r {
+			m[to(k)] = v
+		}
+		out[i] = m
+	}
+	newCols := make([]string, len(cols))
+	for i, c := range cols {
+		newCols[i] = to(c)
+	}
+	return out, newCols
+}
+
+// apiKeyRow 메타 없이 API 키로 한 행 (빈 값은 뺌).
+func apiKeyRow(row api.DataRow) map[string]interface{} {
+	m := map[string]interface{}{}
+	for _, k := range fallbackAPIKeys {
+		if v := row.GetField(k); v != "" {
+			m[k] = v
+		}
+	}
+	return m
+}
+
+// apiKeyColumns 값이 있는 API 키 열 (fallbackAPIKeys 순서).
+func apiKeyColumns(rows []map[string]interface{}) []string {
+	var cols []string
+	for _, k := range fallbackAPIKeys {
+		for _, r := range rows {
+			if _, ok := r[k]; ok {
+				cols = append(cols, k)
+				break
+			}
+		}
+	}
+	return cols
+}
+
+// needCodeColumns 코드 열(C1~C8, ITM_ID)을 넣을지. JSON 은 항상 — -f json 이든 -o *.json 이든
+// 실제로 나가는 형식으로 판단한다. parquet 도 스키마에 코드 열이 있어 항상 넣는다. --with-code·--fields 도 넣는다.
+func needCodeColumns(format, outputPath string, withCode bool, fields string) bool {
+	effective := format
+	if outputPath != "" {
+		effective = output.DetectFormat(outputPath)
+	}
+	return effective == "json" || effective == "parquet" || withCode || fields != ""
+}
+
+// outputUsesAPIKeys 출력 열 이름을 API 키로 바꿀지 — --api-keys 이거나, 열이 API 키로 고정된 parquet 파일.
+func outputUsesAPIKeys(apiKeys bool, outputPath string) bool {
+	return apiKeys || (outputPath != "" && output.DetectFormat(outputPath) == "parquet")
 }

@@ -45,34 +45,37 @@ func (pf *ParquetFormatter) Format(data []map[string]interface{}, opts FormatOpt
 
 // FlatRecord represents a flexible parquet record with optional fields.
 // DT column is stored as DOUBLE (float64) for numeric data, as per spec.
+// DT_RAW 는 KOSIS 원문 값(문자열)을 그대로 둔다 — 숫자로 표현할 수 없는 값(X 비공개, - 등)은
+// DT 가 null 이므로 DT_RAW 로만 구별된다. 행 자체가 없는 조합은 parquet 에도 행이 없다.
 type FlatRecord struct {
-	ORG_ID    *string  `parquet:"ORG_ID"`
-	ORG_NM    *string  `parquet:"ORG_NM"`
-	TBL_ID    *string  `parquet:"TBL_ID"`
-	TBL_NM    *string  `parquet:"TBL_NM"`
-	C1        *string  `parquet:"C1"`
-	C1_NM     *string  `parquet:"C1_NM"`
-	C2        *string  `parquet:"C2"`
-	C2_NM     *string  `parquet:"C2_NM"`
-	C3        *string  `parquet:"C3"`
-	C3_NM     *string  `parquet:"C3_NM"`
-	C4        *string  `parquet:"C4"`
-	C4_NM     *string  `parquet:"C4_NM"`
-	C5        *string  `parquet:"C5"`
-	C5_NM     *string  `parquet:"C5_NM"`
-	C6        *string  `parquet:"C6"`
-	C6_NM     *string  `parquet:"C6_NM"`
-	C7        *string  `parquet:"C7"`
-	C7_NM     *string  `parquet:"C7_NM"`
-	C8        *string  `parquet:"C8"`
-	C8_NM     *string  `parquet:"C8_NM"`
-	ITM_ID    *string  `parquet:"ITM_ID"`
-	ITM_NM    *string  `parquet:"ITM_NM"`
-	UNIT_NM   *string  `parquet:"UNIT_NM"`
-	PRD_SE    *string  `parquet:"PRD_SE"`
-	PRD_DE    *string  `parquet:"PRD_DE"`
-	DT        *float64 `parquet:"DT,optional"` // DOUBLE type as per spec
-	LST_CHN_DE *string `parquet:"LST_CHN_DE"`
+	ORG_ID     *string  `parquet:"ORG_ID"`
+	ORG_NM     *string  `parquet:"ORG_NM"`
+	TBL_ID     *string  `parquet:"TBL_ID"`
+	TBL_NM     *string  `parquet:"TBL_NM"`
+	C1         *string  `parquet:"C1"`
+	C1_NM      *string  `parquet:"C1_NM"`
+	C2         *string  `parquet:"C2"`
+	C2_NM      *string  `parquet:"C2_NM"`
+	C3         *string  `parquet:"C3"`
+	C3_NM      *string  `parquet:"C3_NM"`
+	C4         *string  `parquet:"C4"`
+	C4_NM      *string  `parquet:"C4_NM"`
+	C5         *string  `parquet:"C5"`
+	C5_NM      *string  `parquet:"C5_NM"`
+	C6         *string  `parquet:"C6"`
+	C6_NM      *string  `parquet:"C6_NM"`
+	C7         *string  `parquet:"C7"`
+	C7_NM      *string  `parquet:"C7_NM"`
+	C8         *string  `parquet:"C8"`
+	C8_NM      *string  `parquet:"C8_NM"`
+	ITM_ID     *string  `parquet:"ITM_ID"`
+	ITM_NM     *string  `parquet:"ITM_NM"`
+	UNIT_NM    *string  `parquet:"UNIT_NM"`
+	PRD_SE     *string  `parquet:"PRD_SE"`
+	PRD_DE     *string  `parquet:"PRD_DE"`
+	DT         *float64 `parquet:"DT,optional"` // DOUBLE type as per spec
+	DT_RAW     *string  `parquet:"DT_RAW,optional"`
+	LST_CHN_DE *string  `parquet:"LST_CHN_DE"`
 }
 
 // writeParquetWithMetadata writes data to parquet file with column-based compression,
@@ -124,6 +127,12 @@ func writeParquetWithMetadata(filePath string, data []map[string]interface{}, co
 			}
 		}
 
+		// DT_RAW: 원문 그대로 (숫자로 못 바꾸는 값도 잃지 않게)
+		if v, ok := row["DT"]; ok && v != nil {
+			raw := formatValue(v)
+			rec.DT_RAW = &raw
+		}
+
 		// Map DT as DOUBLE (float64) - handle conversion
 		if v, ok := row["DT"]; ok && v != nil {
 			var numVal float64
@@ -138,7 +147,7 @@ func writeParquetWithMetadata(filePath string, data []map[string]interface{}, co
 				if f, err := strconv.ParseFloat(val, 64); err == nil {
 					numVal = f
 				} else {
-					// If not valid number, leave DT as nil
+					// 숫자가 아니면 DT 는 null — 원문은 DT_RAW 에 있다
 					records[i] = rec
 					continue
 				}

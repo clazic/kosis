@@ -22,6 +22,10 @@ type FormatOptions struct {
 	// Korean indicates whether to convert column names to Korean.
 	Korean bool
 
+	// RawKeys 열 이름을 그대로 쓴다 (모든 형식에서 한국어 변환 안 함). kosis d --api-keys.
+	// csv·xlsx 는 기본이 한국어 헤더라 Korean 과 별도로 둔다.
+	RawKeys bool
+
 	// MaxRows is the maximum number of rows to display. 0 means unlimited.
 	MaxRows int
 
@@ -47,50 +51,50 @@ var StandardColumnOrder = []string{
 // ColKorean maps English column names to Korean names.
 var ColKorean = map[string]string{
 	// Organization and table info
-	"ORG_ID":      "기관ID",
-	"ORG_NM":      "기관명",
-	"TBL_ID":      "통계표ID",
-	"TBL_NM":      "통계표명",
-	"STAT_NM":     "조사명",
-	"STAT_ID":     "통계ID",
+	"ORG_ID":  "기관ID",
+	"ORG_NM":  "기관명",
+	"TBL_ID":  "통계표ID",
+	"TBL_NM":  "통계표명",
+	"STAT_NM": "조사명",
+	"STAT_ID": "통계ID",
 
 	// Classification columns
-	"C1":      "분류값ID1",
-	"C1_NM":   "분류값명1",
-	"C2":      "분류값ID2",
-	"C2_NM":   "분류값명2",
-	"C3":      "분류값ID3",
-	"C3_NM":   "분류값명3",
-	"C4":      "분류값ID4",
-	"C4_NM":   "분류값명4",
-	"C5":      "분류값ID5",
-	"C5_NM":   "분류값명5",
-	"C6":      "분류값ID6",
-	"C6_NM":   "분류값명6",
-	"C7":      "분류값ID7",
-	"C7_NM":   "분류값명7",
-	"C8":      "분류값ID8",
-	"C8_NM":   "분류값명8",
+	"C1":    "분류값ID1",
+	"C1_NM": "분류값명1",
+	"C2":    "분류값ID2",
+	"C2_NM": "분류값명2",
+	"C3":    "분류값ID3",
+	"C3_NM": "분류값명3",
+	"C4":    "분류값ID4",
+	"C4_NM": "분류값명4",
+	"C5":    "분류값ID5",
+	"C5_NM": "분류값명5",
+	"C6":    "분류값ID6",
+	"C6_NM": "분류값명6",
+	"C7":    "분류값ID7",
+	"C7_NM": "분류값명7",
+	"C8":    "분류값ID8",
+	"C8_NM": "분류값명8",
 
 	// Item and period info
-	"ITM_ID":      "항목ID",
-	"ITM_NM":      "항목명",
-	"UNIT_NM":     "단위명",
-	"PRD_SE":      "수록주기",
-	"PRD_DE":      "수록시점",
+	"ITM_ID":  "항목ID",
+	"ITM_NM":  "항목명",
+	"UNIT_NM": "단위명",
+	"PRD_SE":  "수록주기",
+	"PRD_DE":  "수록시점",
 
 	// Data and metadata
-	"DT":           "수치값",
-	"CMMT":         "비고",
-	"LST_CHN_DE":   "최종수정일",
-	"JIPYO_ID":     "지표ID",
-	"JIPYO_NM":     "지표명",
-	"DATA_DE":      "통계시점",
-	"UNIT":         "단위",
-	"LAST_UPDATE":  "최종갱신",
-	"WGT":          "가중치",
-	"NCD":          "갱신일",
-	"SOURCE":       "출처",
+	"DT":          "수치값",
+	"CMMT":        "비고",
+	"LST_CHN_DE":  "최종수정일",
+	"JIPYO_ID":    "지표ID",
+	"JIPYO_NM":    "지표명",
+	"DATA_DE":     "통계시점",
+	"UNIT":        "단위",
+	"LAST_UPDATE": "최종갱신",
+	"WGT":         "가중치",
+	"NCD":         "갱신일",
+	"SOURCE":      "출처",
 }
 
 // NewFormatter returns a formatter based on the specified format string.

@@ -10,7 +10,7 @@
 | Markdown | `-f md` 또는 `-f markdown` | AI 출력, 문서 삽입 | GitHub Flavored Markdown 테이블 |
 | Excel | `-o *.xlsx` | 보고서 | 시트명: 통계표명, 자동 열 너비 |
 | SQLite | `-o *.db` | 대용량 SQL 분석 | 시점/지역 인덱스 자동 생성 |
-| Parquet | `-o *.parquet` | Pandas, DuckDB | 컬럼형 저장, 압축 |
+| Parquet | `-o *.parquet` | Pandas, DuckDB | 컬럼형 저장, 압축. 열은 API 키(C1…C8_NM, ITM_ID, ITM_NM, UNIT_NM, PRD_SE, PRD_DE, DT, DT_RAW, LST_CHN_DE)로 고정 — `--api-keys` 없이도 API 키로 저장, `--pivot` 결과는 담지 못함(exit 1). 코드 열(C1~C8, ITM_ID)도 항상 채운다. `DT`는 숫자(DOUBLE), `DT_RAW`는 고정 스키마에 추가한 원문 문자열 열 — `X`(비공개)·`-` 등 숫자가 아닌 값은 `DT`=null, `DT_RAW`에 원문 |
 
 > `-f` 플래그는 stdout 출력 형식, `-o` 플래그는 파일 저장 (확장자로 형식 자동 감지)
 

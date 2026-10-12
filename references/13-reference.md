@@ -13,6 +13,8 @@
 | `--periods` | (클라이언트 처리) | 비연속 시점 | `--periods "2020,2022"` |
 | `--fields` | (클라이언트 필터링) | 출력 필드 선택 | `--fields "C1,C1_NM,DT"` |
 | `--with-code` | (클라이언트 처리) | 코드 컬럼(C1~C8, ITM_ID) 함께 출력 | `--with-code` |
+| `--pivot` | (클라이언트 처리) | 한 축의 값을 열로 펼친 비교표 (C1~C8, ITM, PRD, 분류 이름). ITM 이면 열 이름 `항목명(단위)` — 항목마다 단위가 달라도 한 행. parquet 저장과 함께 쓰면 exit 1 | `--pivot C1` |
+| `--api-keys` | (클라이언트 처리) | 열 이름을 API 키로 (표마다 같은 키: C1, C1_NM … ITM_NM, PRD_DE, DT, UNIT_NM). table·json·csv·md·xlsx·db 모두 같은 이름. `--fields`(한국어·API 키)·`--pivot`(C1·분류 이름)과 함께 써도 된다 | `--api-keys -f json` |
 | `--user-id` | userStatsId | 사전 등록 통계표 | `--user-id "myid/..."` |
 
 ### 13.1.1 출력 필드 키 (코드 키 ↔ 이름 키)
@@ -26,6 +28,9 @@ KOSIS API는 레코드마다 **코드 키**와 **이름 키**를 함께 반환�
 | `ORG_ID`, `TBL_ID` | — | 출처(기관·통계표) 추적 |
 | — | `DT` | 수치값 |
 | — | `PRD_SE` / `PRD_DE` / `UNIT_NM` | 수록주기 / 시점 / 단위 |
+
+> 분류 축이 N개인 표는 `--class1`~`--classN`이 모두 필요하다. 빠지면 조회 전에 빠진 플래그와 축 이름을 알려 주고 종료 코드 1 (API의 `[20] objL` 대신).
+> 파이프·파일로 나가는 table 출력은 값을 자르지 않는다 (터미널에서만 화면 폭에 맞춰 `..`로 줄임).
 
 > ✅ **v0.5.0+**: `-f json`·`--with-code`·`--fields` 사용 시 분류·항목 코드(`C1~C8`, `ITM_ID`)가 자동 출력된다. JSON은 `"<분류축명> 코드"` 키로 이름 옆에 함께 나온다. table/csv 기본은 이름만 → 코드가 필요하면 `--with-code`.
 > ⚠ **구버전(< v0.5.0) 함정**: `-f json` / `--fields "C1"`을 줘도 코드가 `null`로 나온다. 이 경우 `meta -f json` 역매핑(`references/16-geo-join.md` §16.4 폴백)을 사용하라.

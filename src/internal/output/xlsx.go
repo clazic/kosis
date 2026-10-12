@@ -41,7 +41,7 @@ func (xf *XLSXFormatter) Format(data []map[string]interface{}, opts FormatOption
 	// Write header row
 	headers := make([]string, len(columns))
 	for i, col := range columns {
-		headers[i] = convertColumnName(col, true)
+		headers[i] = convertColumnName(col, !opts.RawKeys)
 	}
 
 	// Write headers with styling

@@ -34,7 +34,7 @@ func (cf *CSVFormatter) Format(data []map[string]interface{}, opts FormatOptions
 	headers := make([]string, len(columns))
 	for i, col := range columns {
 		// By default, use Korean names for CSV headers for better readability
-		headers[i] = convertColumnName(col, true)
+		headers[i] = convertColumnName(col, !opts.RawKeys)
 	}
 
 	if err := w.Write(headers); err != nil {

@@ -28,7 +28,9 @@ func TestSyncTwoComputers(t *testing.T) {
 	if _, err := Write(a, ea, now); err != nil {
 		t.Fatal(err)
 	}
-	if r, err := Sync(a, remote); err != nil || r.Committed != 2 { // 규칙 + .gitignore
+	_ = os.MkdirAll(filepath.Join(a, ".omc", "state"), 0o700) // 다른 도구의 숨김 폴더
+	_ = os.WriteFile(filepath.Join(a, ".omc", "state", "x.json"), []byte("{}"), 0o600)
+	if r, err := Sync(a, remote); err != nil || r.Committed != 2 { // 규칙 + .gitignore (숨김 폴더 제외)
 		t.Fatalf("A init: %+v %v", r, err)
 	}
 

@@ -31,7 +31,7 @@ func (mf *MarkdownFormatter) Format(data []map[string]interface{}, opts FormatOp
 	// Build header names
 	headers := make([]string, len(columns))
 	for i, col := range columns {
-		headers[i] = convertColumnName(col, opts.Korean)
+		headers[i] = convertColumnName(col, opts.Korean && !opts.RawKeys)
 	}
 
 	// Calculate column widths

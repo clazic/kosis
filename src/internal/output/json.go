@@ -22,7 +22,7 @@ func (jf *JSONFormatter) Format(data []map[string]interface{}, opts FormatOption
 	for i, row := range data {
 		filtered := make(map[string]interface{})
 		for _, col := range columns {
-			displayCol := convertColumnName(col, opts.Korean)
+			displayCol := convertColumnName(col, opts.Korean && !opts.RawKeys)
 			filtered[displayCol] = row[col]
 		}
 		output[i] = filtered

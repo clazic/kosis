@@ -39,10 +39,13 @@ func (tf *TableFormatter) Format(data []map[string]interface{}, opts FormatOptio
 	// Prepare column headers
 	headers := make([]string, len(columns))
 	for i, col := range columns {
-		headers[i] = convertColumnName(col, opts.Korean)
+		headers[i] = convertColumnName(col, opts.Korean && !opts.RawKeys)
 	}
 
 	// Calculate column widths
+	if !isTTY {
+		width = 0 // 파이프·파일(AI·스크립트가 읽음): 화면 폭에 맞추지 않고 값을 자르지 않는다
+	}
 	colWidths := calculateColumnWidths(columns, data, headers, width)
 
 	// Print header
@@ -103,6 +106,10 @@ func calculateColumnWidths(columns []string, data []map[string]interface{}, head
 				widths[i] = strLen
 			}
 		}
+	}
+
+	if termWidth <= 0 { // 자르지 않음
+		return widths
 	}
 
 	// Cap at 40 characters per column
