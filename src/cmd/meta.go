@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"sort"
@@ -55,12 +56,14 @@ var metaCmd = &cobra.Command{
   -f, --format <type>      출력 형식: table(기본), json
 
 출력 구조 (요약 모드):
-  [분류] → -c1, -c2, ... 에 대응 (순서대로)
+  [분류] → 축 머리의 -c1, -c2 … 를 그대로 d 에 쓴다
     코드         분류값명           ← 코드를 -c1 등에 사용
   [항목] → -i 에 대응
     코드         항목명             ← 코드를 -i에 사용
   [수록정보] → -p 에 대응
-    prdSe=코드   수록주기           ← 코드를 -p에 사용
+    -p M (월)  2011.01 ~ 2026.09    ← -p 에 넣을 코드와 수록 시점 범위
+  코드가 50개 넘는 축은 위 단계부터 50개 안에서만 보여 주고 끝에 안내(… N개 중 M개만 표시)가 붙는다.
+  나머지는 --under <코드>, --find <이름>, --axis <축> 으로 본다. -f json 은 전부 나온다
 
 예제:
   # 인구 통계표 메타 요약 (분류/항목/수록정보 한눈에)
@@ -201,7 +204,7 @@ func runMeta(cmd *cobra.Command, args []string) error {
 			}
 			return nil
 		}
-		displayMetaSummary(summary)
+		displayMetaSummary(summary, orgID, tblID)
 		return nil
 	}
 
@@ -260,36 +263,125 @@ func init() {
 	metaCmd.Flags().String("obj", "", "--type ITM 원본에서 이 분류 OBJ_ID(예 A) 또는 ITEM 만 받기")
 }
 
+// summaryAxisMax 요약에서 한 축을 다 보여 줄 최대 코드 수. 넘으면 최상위 코드만 보여 준다
+// (AI 가 읽을 출력이 수백·수천 줄로 불어나지 않게). 전체는 --axis·--under·--find 로 본다.
+const summaryAxisMax = 50
+
+// summaryLevels 큰 축에서 최상위부터 한 단계씩, summaryAxisMax 를 넘지 않을 때까지 펼친 코드 (원래 순서 유지).
+func summaryLevels(g []api.MetaResult) []api.MetaResult {
+	inAxis := map[string]bool{}
+	for _, c := range g {
+		inAxis[c.ItmID] = true
+	}
+	in := map[string]bool{}
+	var frontier map[string]bool // nil = 최상위 단계 (상위 코드가 없거나 이 축에 없는 코드 — Codes 와 같은 기준)
+	for {
+		next := map[string]bool{}
+		for _, c := range g {
+			top := c.UpItmID == "" || !inAxis[c.UpItmID]
+			if ((frontier == nil && top) || (frontier != nil && frontier[c.UpItmID])) && !in[c.ItmID] {
+				next[c.ItmID] = true
+			}
+		}
+		if len(next) == 0 || len(in)+len(next) > summaryAxisMax {
+			break
+		}
+		for k := range next {
+			in[k] = true
+		}
+		frontier = next
+	}
+	var out []api.MetaResult
+	for _, c := range g {
+		if in[c.ItmID] {
+			out = append(out, c)
+		}
+	}
+	if len(in) == 0 || len(out) > summaryAxisMax { // 최상위만으로도 넘치거나 ItmID 가 겹치면 앞에서부터
+		return g[:summaryAxisMax]
+	}
+	return out
+}
+
 // displayMetaSummary displays metadata summary in a formatted way
-func displayMetaSummary(summary *api.MetaSummaryResult) {
+func displayMetaSummary(summary *api.MetaSummaryResult, orgID, tblID string) {
 	fmt.Println("\n=== 메타데이터 요약 ===")
 	fmt.Println()
 
 	// Display classifications
 	if len(summary.Classifications) > 0 {
-		fmt.Printf("[분류] objL 파라미터에 사용 (%d개 분류)\n", len(summary.Classifications))
-		currentObj := ""
+		axes := map[string]bool{}
 		for _, c := range summary.Classifications {
-			if c.ObjID != currentObj {
-				currentObj = c.ObjID
-				fmt.Printf("\n  objL → 분류ID: %s  분류명: %s\n", c.ObjID, c.ObjNM)
+			axes[c.ObjID] = true
+		}
+		fmt.Printf("[분류] d 의 -c1, -c2 … 에 사용 (축 %d개, 코드 %d개)\n", len(axes), len(summary.Classifications))
+		flagOf := map[string]string{} // OBJ_ID → -cN. Codes 는 Classifications 를 같은 순서로 한 행씩 만든다
+		codes := summary.Codes()
+		for i, c := range summary.Classifications {
+			if _, ok := flagOf[c.ObjID]; !ok && i < len(codes) {
+				flagOf[c.ObjID] = "-c" + strings.TrimPrefix(codes[i].Flag, "--class")
 			}
-			code := c.ItmID
-			name := c.ItmNM
-			if code == "" {
-				code = c.Code
+		}
+		var order []string
+		groups := map[string][]api.MetaResult{}
+		for _, c := range summary.Classifications {
+			if _, ok := groups[c.ObjID]; !ok {
+				order = append(order, c.ObjID)
 			}
-			if name == "" {
-				name = c.Label
+			groups[c.ObjID] = append(groups[c.ObjID], c)
+		}
+		for _, obj := range order {
+			g := groups[obj]
+			fmt.Printf("\n  %s ← 분류명: %s  (분류ID %s)\n", flagOf[obj], g[0].ObjNM, obj)
+			show := g
+			if len(g) > summaryAxisMax {
+				show = summaryLevels(g)
 			}
-			fmt.Printf("    %-16s %s\n", code, name)
+			kids := map[string]int{} // 상위 코드 → 하위 코드 수
+			for _, c := range g {
+				kids[c.UpItmID]++
+			}
+			shown := map[string]bool{}
+			for _, c := range show {
+				shown[c.ItmID] = true
+			}
+			for _, c := range show {
+				code := c.ItmID
+				name := c.ItmNM
+				if code == "" {
+					code = c.Code
+				}
+				if name == "" {
+					name = c.Label
+				}
+				hidden := ""
+				if n := kids[c.ItmID]; n > 0 && len(show) < len(g) {
+					// 하위가 안 보이는 코드만 표시 — 시도 순위에서 통합시(12) 아래 1224·1236 같은 하위를 놓치지 않게
+					visible := 0
+					for _, k := range g {
+						if k.UpItmID == c.ItmID && shown[k.ItmID] {
+							visible++
+						}
+					}
+					if visible == 0 {
+						hidden = fmt.Sprintf("  (하위 %d개: --under %s)", n, code)
+					} else if visible < n {
+						hidden = fmt.Sprintf("  (하위 %d개 중 %d개 표시: --under %s)", n, visible, code)
+					}
+				}
+				fmt.Printf("    %-16s %s%s\n", code, name, hidden)
+			}
+			if len(show) < len(g) {
+				fmt.Printf("    … 이 축 코드 %d개 중 %d개만 표시. 하위: kosis m %s %s --under <코드> / 이름: --find <이름> / 전체: --axis %q\n",
+					len(g), len(show), orgID, tblID, g[0].ObjNM)
+			}
 		}
 		fmt.Println()
 	}
 
 	// Display items
 	if len(summary.Items) > 0 {
-		fmt.Printf("[항목] itmId 파라미터에 사용 (%d개 항목)\n", len(summary.Items))
+		fmt.Printf("[항목] d 의 -i 에 사용 (%d개 항목)\n", len(summary.Items))
 		for _, item := range summary.Items {
 			code := item.ItmID
 			name := item.ItmNM
@@ -299,6 +391,9 @@ func displayMetaSummary(summary *api.MetaSummaryResult) {
 			if name == "" {
 				name = item.Label
 			}
+			if u := strings.TrimSpace(item.UnitNM); u != "" {
+				name += "  [" + u + "]"
+			}
 			fmt.Printf("    %-16s %s\n", code, name)
 		}
 		fmt.Println()
@@ -306,7 +401,7 @@ func displayMetaSummary(summary *api.MetaSummaryResult) {
 
 	// Display periods
 	if len(summary.Periods) > 0 {
-		fmt.Printf("[수록정보] prdSe 파라미터에 사용\n")
+		fmt.Printf("[수록정보] d 의 -p 에 사용\n")
 		for _, p := range summary.Periods {
 			code := p.PrdSe
 			name := p.PrdDe
@@ -316,17 +411,32 @@ func displayMetaSummary(summary *api.MetaSummaryResult) {
 			if name == "" {
 				name = p.Label
 			}
+			if p.StrtPrdDe != "" || p.EndPrdDe != "" {
+				fmt.Printf("    -p %-3s (%s)  %s ~ %s\n", api.NormalizePrdSe(code), code, p.StrtPrdDe, p.EndPrdDe)
+				continue
+			}
 			fmt.Printf("    prdSe=%s  %s\n", code, name)
 		}
 		fmt.Println()
 	}
 }
 
+// errNoCodeMatch 찾는 코드가 없을 때 — grep 처럼 종료 코드 1 이라 AI·스크립트가 실패를 알아챈다.
+var errNoCodeMatch = errors.New("맞는 코드가 없습니다 (--find·--under·--level·--axis 조건). 이름을 더 짧게(일부만) 해서 --find 하거나 --axis <축> 으로 그 축 전체를 보세요")
+
+// findFold 이름 비교 때 같게 볼 글자: 물결·대시류 → '-', 가운뎃점류 → '·'.
+var findFold = strings.NewReplacer("~", "-", "～", "-", "〜", "-", "–", "-", "—", "-", "‐", "-", "−", "-", "－", "-", "ㆍ", "·", "・", "·", "･", "·", "∙", "·", "‧", "·")
+
+// normFindName --find 비교용: 공백을 지우고 표기가 다른 같은 기호를 하나로 ("15~29" = "15 - 29세").
+func normFindName(s string) string {
+	return findFold.Replace(strings.Join(strings.Fields(s), ""))
+}
+
 // printCodeRows --find·--under·--level 로 거른 코드 목록과, 플래그별로 d 에 바로 넣을 "a+b+c".
 func printCodeRows(rows []api.CodeRow, find, under string, level int, axis, format string) error {
 	var names []string
 	for _, n := range strings.Split(find, ",") {
-		if n = strings.Join(strings.Fields(n), ""); n != "" {
+		if n = normFindName(n); n != "" {
 			names = append(names, n)
 		}
 	}
@@ -344,7 +454,7 @@ func printCodeRows(rows []api.CodeRow, find, under string, level int, axis, form
 		if len(names) > 0 {
 			hit := false
 			for _, n := range names {
-				if strings.Contains(strings.ReplaceAll(r.Name, " ", ""), n) {
+				if strings.Contains(normFindName(r.Name), n) {
 					hit = true
 					break
 				}
@@ -362,14 +472,16 @@ func printCodeRows(rows []api.CodeRow, find, under string, level int, axis, form
 		if out == nil {
 			out = []api.CodeRow{}
 		}
-		if len(out) == 0 {
-			fmt.Fprintln(os.Stderr, "맞는 코드가 없습니다. kosis m <ORG> <TBL> 로 전체를 보세요.")
+		if err := enc.Encode(out); err != nil {
+			return err
 		}
-		return enc.Encode(out)
+		if len(out) == 0 {
+			return errNoCodeMatch
+		}
+		return nil
 	}
 	if len(out) == 0 {
-		fmt.Fprintln(os.Stderr, "맞는 코드가 없습니다. kosis m <ORG> <TBL> 로 전체를 보세요.")
-		return nil
+		return errNoCodeMatch
 	}
 	data := make([]map[string]interface{}, len(out))
 	for i, r := range out {
@@ -393,7 +505,8 @@ func printCodeRows(rows []api.CodeRow, find, under string, level int, axis, form
 	}
 	fmt.Println("\nkosis d 에 넣기:")
 	for _, f := range flags {
-		fmt.Printf("  %s \"%s\"\n", f, strings.Join(codes[f], "+"))
+		short := strings.Replace(strings.Replace(f, "--class", "-c", 1), "--item", "-i", 1) // SKILL 과 같은 짧은 표기
+		fmt.Printf("  %s \"%s\"\n", short, strings.Join(codes[f], "+"))
 	}
 	return nil
 }

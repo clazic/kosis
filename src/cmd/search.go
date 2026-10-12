@@ -25,7 +25,7 @@ var searchCmd = &cobra.Command{
 
 사용법:
   kosis search <키워드> [flags]
-  kosis s <키워드>
+  kosis s <키워드>              (여러 단어는 따옴표 없이도 한 검색어: kosis s 1인당 지역내총생산)
   kosis search                         대화형 모드
 
 파라미터:
@@ -91,7 +91,7 @@ var searchCmd = &cobra.Command{
   검색 결과에서 ORG_ID와 TBL_ID를 확인한 후:
   kosis meta <ORG_ID> <TBL_ID>     메타데이터 확인 (필수!)
   kosis data <ORG_ID> <TBL_ID>     데이터 조회`,
-	Args: cobra.MaximumNArgs(1),
+	Args: cobra.ArbitraryArgs, // 따옴표 없이 여러 단어를 줘도 한 검색어로 (AI 가 자주 빠뜨림)
 	RunE: runSearch,
 }
 
@@ -128,7 +128,7 @@ func runSearch(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("검색어가 입력되지 않았습니다")
 		}
 	} else {
-		keyword = args[0]
+		keyword = strings.Join(args, " ")
 	}
 
 	client, err := newCmdClient()

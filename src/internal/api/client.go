@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -8,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -142,7 +144,7 @@ func (c *Client) requestWithKey(endpoint string, params map[string]string, noCac
 	if !noCache && c.cache != nil {
 		cacheKey = endpoint + "?" + url.Values(convertParamsToURLValues(params)).Encode()
 		if data, found := c.cache.Get(cacheKey); found {
-			return data, nil
+			return stripBreakTags(data), nil
 		}
 	}
 
@@ -200,6 +202,7 @@ func (c *Client) requestWithKey(endpoint string, params map[string]string, noCac
 		if err != nil {
 			return nil, fmt.Errorf("failed to read response: %w", err)
 		}
+		body = stripBreakTags(body)
 
 		// 429 Too Many Requests 에러 처리
 		if resp.StatusCode == http.StatusTooManyRequests {
@@ -275,4 +278,15 @@ func maskAPIKey(s string) string {
 		result = result[:start] + masked + result[end:]
 	}
 	return result
+}
+
+// breakTag KOSIS 이름(항목·분류)에 섞여 오는 줄바꿈 표시(<br>, ＜br＞, JSON 이스케이프 \u003cbr\u003e, 대소문자·슬래시·공백 변형).
+// 표 화면용이라 데이터·메타에선 공백으로 바꾼다. JSON 원문에 적용하므로 바꿀 값은 공백이어야 한다 — "\n" 을 넣으면 문자열 안 날 개행으로 파싱이 깨진다.
+var breakTag = regexp.MustCompile(`(?i)(?:<|＜|\\u003c)br\s*/?\s*(?:>|＞|\\u003e)`)
+
+func stripBreakTags(b []byte) []byte {
+	if !bytes.Contains(bytes.ToLower(b), []byte("br")) {
+		return b
+	}
+	return breakTag.ReplaceAll(b, []byte(" "))
 }

@@ -120,7 +120,7 @@ func (s *MetaSummaryResult) buildColumnMeta(withCode bool) *ColumnMeta {
 		ColumnDef{Key: "PRD_DE", Label: "시점"},
 		ColumnDef{Key: "DT", Label: "수치값"},
 		ColumnDef{Key: "UNIT_NM", Label: "단위"},
-		ColumnDef{Key: "LST_CHN_DE", Label: "비고"},
+		ColumnDef{Key: "LST_CHN_DE", Label: "최종수정일"},
 	)
 
 	return cm

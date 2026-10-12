@@ -113,3 +113,14 @@ func TestNormalizePrdDe(t *testing.T) {
 		}
 	}
 }
+
+// RSI R2: KOSIS 이름의 줄바꿈 표시(＜br＞)는 공백으로
+func TestStripBreakTags(t *testing.T) {
+	got := string(stripBreakTags([]byte(`[{"ITM_NM":"1인가구＜br＞(A)","X":"a<br>b"}]`)))
+	if got != `[{"ITM_NM":"1인가구 (A)","X":"a b"}]` {
+		t.Errorf("got %s", got)
+	}
+	if string(stripBreakTags([]byte("abc"))) != "abc" {
+		t.Error("변화 없어야 함")
+	}
+}

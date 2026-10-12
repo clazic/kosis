@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -183,6 +184,19 @@ var dataCmd = &cobra.Command{
 		hasLatest := cmd.Flags().Changed("latest")
 		hasPeriods := periodsValue != ""
 
+		if sortFlag != "" && sortFlag != "desc" && sortFlag != "asc" {
+			fmt.Fprintf(os.Stderr, "오류: --sort 는 desc 또는 asc 입니다 (받은 값: %q)\n", sortFlag)
+			os.Exit(1)
+		}
+		if topFlag < 0 || (topFlag > 0 && sortFlag == "") {
+			fmt.Fprintln(os.Stderr, "오류: --top N 은 1 이상이고 --sort desc|asc 와 함께 씁니다")
+			os.Exit(1)
+		}
+		if sortFlag != "" && pivotFlag != "" {
+			fmt.Fprintln(os.Stderr, "오류: --sort 와 --pivot 은 함께 못 씁니다 (피벗한 표는 값 열이 여러 개)")
+			os.Exit(1)
+		}
+
 		if userIDFlag == "" && (class1Flag == "" || itemFlag == "" || periodFlag == "") {
 			fmt.Fprintln(os.Stderr, "오류: -c1/--class1, --item, --period는 필수입니다 (또는 --user-id 사용)")
 			fmt.Fprintln(os.Stderr)
@@ -297,6 +311,14 @@ var dataCmd = &cobra.Command{
 
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "오류: %v\n", err)
+			// [21] 잘못된 변수·[30] 데이터 없음이면 요청 코드를 메타와 대조해 어느 인자가 문제인지 짚는다
+			if (strings.Contains(err.Error(), "[21]") || strings.Contains(err.Error(), "[30]")) && orgID != "" && tblID != "" && userIDFlag == "" {
+				if summary, merr := client.MetaSummary(orgID, tblID); merr == nil {
+					for _, line := range diagnoseCodes(summary, givenClasses(), itemFlag, orgID, tblID) {
+						fmt.Fprintln(os.Stderr, line)
+					}
+				}
+			}
 			fmt.Fprintln(os.Stderr, "ℹ 원인을 확인했으면 다음에 같은 실수를 하지 않도록 기록하세요: kosis rules add (kosis rules add --help)")
 			os.Exit(1)
 		}
@@ -317,6 +339,13 @@ var dataCmd = &cobra.Command{
 				if len(results) > 0 {
 					colMeta = colMetaFull.FilterByData(results)
 				}
+				if line := echoCodes(summary, givenClasses(), itemFlag); line != "" {
+					fmt.Fprintln(os.Stderr, line)
+				}
+				if miss := missingClasses(givenClasses(), results); len(miss) > 0 {
+					fmt.Fprintf(os.Stderr, "⚠ 요청한 분류 코드 중 결과에 한 줄도 없는 코드: %s\n", strings.Join(miss, ", "))
+					fmt.Fprintf(os.Stderr, "  코드가 이 표에 없거나(오타·짐작한 코드·개편된 지역 코드) 이 시점에 값이 없습니다. 코드 확인: kosis m %s %s --find <이름>\n", orgID, tblID)
+				}
 				if miss := missingItems(summary.Items, itemFlag, results); len(miss) > 0 {
 					fmt.Fprintf(os.Stderr, "⚠ 요청한 항목 중 이 시점 범위에 값이 하나도 없는 항목: %s\n", strings.Join(miss, ", "))
 					// -l N 은 표의 최근 시점이라 그 항목이 끝난 표에선 [30] — 수록 기간 전체로 안내한다
@@ -327,6 +356,10 @@ var dataCmd = &cobra.Command{
 					fmt.Fprintf(os.Stderr, "  항목마다 수록 시점이 다를 수 있습니다 (표의 최신 시점 ≠ 그 항목의 최신 시점). 그 항목이 있는 시점 확인: kosis d %s %s … -i <코드>%s (-l 1 은 표의 최근 시점이라 비어 있을 수 있음)\n", orgID, tblID, span)
 				}
 			}
+		}
+
+		if sortFlag != "" {
+			results = sortTop(results, sortFlag == "desc", topFlag)
 		}
 
 		// 데이터를 동적 컬럼명으로 map 슬라이스로 변환
@@ -354,7 +387,7 @@ var dataCmd = &cobra.Command{
 				m["수록시점"] = row.PrdDe
 				m["수치값"] = row.DT
 				m["단위"] = row.UnitNM
-				m["비고"] = row.LstChn
+				m["최종수정일"] = row.LstChn
 			}
 			dataMap[i] = m
 		}
@@ -383,6 +416,9 @@ var dataCmd = &cobra.Command{
 			}
 			for i := range fields {
 				fields[i] = strings.TrimSpace(fields[i])
+				if fields[i] == "비고" { // v0.5.24 까지의 LST_CHN_DE 열 이름 (지금은 최종수정일)
+					fields[i] = "LST_CHN_DE"
+				}
 				// API 키가 입력된 경우 한글 라벨로 변환
 				if lookupMeta != nil {
 					if label := lookupMeta.GetLabel(fields[i]); label != fields[i] {
@@ -527,6 +563,8 @@ var (
 	fieldsFlag       string
 	withCodeFlag     bool
 	pivotFlag        string
+	sortFlag         string
+	topFlag          int
 	apiKeysFlag      bool
 	userIDFlag       string
 	noAutoSplitFlag  bool
@@ -728,20 +766,20 @@ func runDataInteractive() {
 			dataMap := make([]map[string]interface{}, len(results))
 			for i, row := range results {
 				dataMap[i] = map[string]interface{}{
-					"C1_NM":  row.C1NM,
-					"C2_NM":  row.C2NM,
-					"C3_NM":  row.C3NM,
-					"C4_NM":  row.C4NM,
-					"C5_NM":  row.C5NM,
-					"C6_NM":  row.C6NM,
-					"C7_NM":  row.C7NM,
-					"C8_NM":  row.C8NM,
-					"ITM_NM": row.ItmNM,
-					"PRD_DE": row.PrdDe,
-					"DT":     row.DT,
-					"CMMT":   row.LstChn,
-					"UNIT":   row.UnitNM,
-					"PRD_SE": row.PrdSe,
+					"C1_NM":      row.C1NM,
+					"C2_NM":      row.C2NM,
+					"C3_NM":      row.C3NM,
+					"C4_NM":      row.C4NM,
+					"C5_NM":      row.C5NM,
+					"C6_NM":      row.C6NM,
+					"C7_NM":      row.C7NM,
+					"C8_NM":      row.C8NM,
+					"ITM_NM":     row.ItmNM,
+					"PRD_DE":     row.PrdDe,
+					"DT":         row.DT,
+					"LST_CHN_DE": row.LstChn,
+					"UNIT":       row.UnitNM,
+					"PRD_SE":     row.PrdSe,
 				}
 			}
 
@@ -802,6 +840,8 @@ func init() {
 	dataCmd.Flags().StringVarP(&outputFlag, "output", "o", "", "[5단계] 파일로 저장. 확장자로 형식 자동 결정: .csv .xlsx .json .db(SQLite) .parquet")
 	dataCmd.Flags().StringVar(&fieldsFlag, "fields", "", "[5단계] 출력할 컬럼만 선택 (쉼표 구분). 예: \"C1_NM,ITM_NM,PRD_DE,DT\" (DT=수치값)")
 	dataCmd.Flags().BoolVar(&apiKeysFlag, "api-keys", false, "[5단계] 열 이름을 표마다 다른 한국어 축 이름 대신 API 키(C1, C1_NM … ITM_ID, ITM_NM, PRD_DE, DT, UNIT_NM)로 — 여러 표를 같은 코드로 처리할 때")
+	dataCmd.Flags().StringVar(&sortFlag, "sort", "", "[5단계] 수치값으로 행 정렬: desc(큰 것부터)·asc. 숫자가 아닌 값(-, X, 이름)은 맨 뒤. 순위 질문용 — 전국·시도 합계 행도 함께 정렬되니 m --level 로 코드를 좁혀라")
+	dataCmd.Flags().IntVar(&topFlag, "top", 0, "[5단계] 정렬 뒤 앞에서 N행만 (--sort 와 함께)")
 	dataCmd.Flags().StringVar(&pivotFlag, "pivot", "", "[5단계] 이 축의 값을 열로 펼쳐 비교표로: C1~C8(분류), ITM(항목 — 열 이름 \"항목명(단위)\"), PRD(시점) 또는 분류 이름(시도별). parquet 저장과 함께 못 씀")
 	dataCmd.Flags().BoolVar(&withCodeFlag, "with-code", false, "[5단계] 이름 외에 원본 코드 컬럼(C1~C8, ITM_ID)도 함께 출력. 지도(행정동코드)·DB 결합 시 사용. JSON은 항상 포함")
 	dataCmd.Flags().StringVar(&userIDFlag, "user-id", "", "KOSIS 웹에서 사전 등록한 userStatsId로 조회. 지정 시 --class/--item/--period 생략 가능")
@@ -988,6 +1028,138 @@ func needCodeColumns(format, outputPath string, withCode bool, fields string) bo
 // outputUsesAPIKeys 출력 열 이름을 API 키로 바꿀지 — --api-keys 이거나, 열이 API 키로 고정된 parquet 파일.
 func outputUsesAPIKeys(apiKeys bool, outputPath string) bool {
 	return apiKeys || (outputPath != "" && output.DetectFormat(outputPath) == "parquet")
+}
+
+// sortTop 수치값으로 정렬(같은 값은 원래 순서), top>0 이면 앞 N행. 숫자가 아닌 값은 방향과 상관없이 맨 뒤.
+func sortTop(rows []api.DataRow, desc bool, top int) []api.DataRow {
+	num := func(s string) (float64, bool) {
+		f, err := strconv.ParseFloat(strings.ReplaceAll(strings.TrimSpace(s), ",", ""), 64)
+		return f, err == nil
+	}
+	sort.SliceStable(rows, func(i, j int) bool {
+		a, aok := num(rows[i].DT)
+		b, bok := num(rows[j].DT)
+		if aok != bok {
+			return aok
+		}
+		if desc {
+			return a > b
+		}
+		return a < b
+	})
+	if top > 0 && len(rows) > top {
+		rows = rows[:top]
+	}
+	return rows
+}
+
+// givenClasses -c1 … -c8 플래그 값 (순서 = 축 번호).
+func givenClasses() []string {
+	return []string{class1Flag, class2Flag, class3Flag, class4Flag, class5Flag, class6Flag, class7Flag, class8Flag}
+}
+
+// echoCodes 콕 집어 준 코드(ALL·* 제외)가 이 표에서 무슨 이름인지 한 줄로 — 같은 코드가 표마다 다른 뜻일 때
+// (예: 형제 표에서 C_1 = 학생수 / 직원수) 오류 없이 엉뚱한 값을 받는 것을 AI 가 바로 알아채게 한다.
+func echoCodes(summary *api.MetaSummaryResult, given []string, item string) string {
+	name := map[string]string{}
+	for _, r := range summary.Codes() {
+		name[r.Flag+"|"+r.Code] = r.Name
+	}
+	var parts []string
+	add := func(flag, short, val string) {
+		if val == "" || strings.EqualFold(val, "ALL") {
+			return
+		}
+		codes := strings.Split(val, "+")
+		for i, c := range codes {
+			if i == 8 { // ponytail: 긴 목록은 앞 8개만, 나머지는 개수로
+				parts = append(parts, fmt.Sprintf("%s …외 %d개", short, len(codes)-8))
+				break
+			}
+			if c = strings.TrimSpace(c); c != "" && !strings.Contains(c, "*") {
+				if n := name[flag+"|"+c]; n != "" {
+					parts = append(parts, fmt.Sprintf("%s %s=%s", short, c, n))
+				}
+			}
+		}
+	}
+	for i, g := range given {
+		add(fmt.Sprintf("--class%d", i+1), fmt.Sprintf("-c%d", i+1), g)
+	}
+	add("--item", "-i", item)
+	if len(parts) == 0 {
+		return ""
+	}
+	return "조회한 코드: " + strings.Join(parts, ", ")
+}
+
+// diagnoseCodes 조회 실패 뒤 요청 코드(ALL·* 제외)를 메타와 대조한 안내 줄. 모두 있으면 조합·시점 문제라고 알린다.
+func diagnoseCodes(summary *api.MetaSummaryResult, given []string, item, orgID, tblID string) []string {
+	known := map[string]map[string]bool{}
+	example := map[string]string{}
+	for _, r := range summary.Codes() {
+		if known[r.Flag] == nil {
+			known[r.Flag] = map[string]bool{}
+			example[r.Flag] = r.Code
+		}
+		known[r.Flag][r.Code] = true
+	}
+	var bad []string
+	checked := 0
+	check := func(flag, short, val string) {
+		if val == "" || strings.EqualFold(val, "ALL") || known[flag] == nil {
+			return
+		}
+		for _, c := range strings.Split(val, "+") {
+			if c = strings.TrimSpace(c); c == "" || strings.Contains(c, "*") {
+				continue
+			}
+			checked++
+			if !known[flag][c] {
+				bad = append(bad, fmt.Sprintf("%s %s (이 축 코드 예: %s)", short, c, example[flag]))
+			}
+		}
+	}
+	for i, g := range given {
+		check(fmt.Sprintf("--class%d", i+1), fmt.Sprintf("-c%d", i+1), g)
+	}
+	check("--item", "-i", item)
+	if checked == 0 { // 대조한 코드가 없으면(메타가 비었거나 모두 ALL·*) 결론을 내지 않는다
+		return nil
+	}
+	if len(bad) > 0 {
+		return []string{"⚠ 이 표에 없는 코드: " + strings.Join(bad, ", "), fmt.Sprintf("  코드 찾기: kosis m %s %s --find <이름> (또는 --axis <축>)", orgID, tblID)}
+	}
+	span := ""
+	for _, p := range summary.Periods {
+		span += fmt.Sprintf(" %s %s~%s", api.NormalizePrdSe(p.PrdSe), p.StrtPrdDe, p.EndPrdDe)
+	}
+	return []string{"ℹ 요청한 코드는 모두 이 표에 있습니다 — 이 시점·코드 조합에 값이 없는 것입니다. 수록 시점:" + span,
+		"  한 축씩 ALL 로 바꿔 어느 조합이 비는지 확인하세요 (상위·하위가 종속된 축은 합계 코드 조합이 없을 수 있음)"}
+}
+
+// missingClasses -cN 에 콕 집어 준 코드(ALL·* 제외) 중 결과 행에 한 번도 안 나온 것 ("-c2 24" 형태).
+func missingClasses(given []string, rows []api.DataRow) []string {
+	if len(rows) == 0 {
+		return nil
+	}
+	var out []string
+	for i, g := range given {
+		if g == "" || strings.EqualFold(g, "ALL") {
+			continue
+		}
+		key := fmt.Sprintf("C%d", i+1)
+		got := map[string]bool{}
+		for _, r := range rows {
+			got[r.GetField(key)] = true
+		}
+		for _, c := range strings.Split(g, "+") {
+			if c = strings.TrimSpace(c); c != "" && !strings.Contains(c, "*") && !got[c] {
+				out = append(out, fmt.Sprintf("-c%d %s", i+1, c))
+			}
+		}
+	}
+	return out
 }
 
 // missingItems 요청한 항목(ALL 이면 메타의 모든 항목) 중 결과에 한 행도 없는 항목 "코드 이름(단위)".

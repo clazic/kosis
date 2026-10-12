@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -186,5 +187,141 @@ func TestParseHistoryID(t *testing.T) {
 	}
 	if id, err := parseHistoryID("501"); err != nil || id != 501 {
 		t.Errorf("501: %d %v", id, err)
+	}
+}
+
+// RSI R1: --find 는 표기가 다른 같은 기호(~·-, ㆍ·)를 같게 본다
+func TestNormFindName(t *testing.T) {
+	if !strings.Contains(normFindName("15 - 29세"), normFindName("15~29")) {
+		t.Error("15~29 가 '15 - 29세' 에 안 맞음")
+	}
+	if normFindName("광업ㆍ제조업") != normFindName("광업 · 제조업") {
+		t.Error("가운뎃점 표기 차이")
+	}
+}
+
+// RSI R1: 못 찾으면 오류(종료 코드 1)
+func TestFindNoMatchIsError(t *testing.T) {
+	rows := []api.CodeRow{{Flag: "--class1", Code: "75", Name: "15 - 29세", Level: 1}}
+	if err := printCodeRows(rows, "없는이름", "", 0, "", "json"); !errors.Is(err, errNoCodeMatch) {
+		t.Errorf("err = %v", err)
+	}
+}
+
+// RSI R1: -cN 으로 콕 집은 코드 중 결과에 없는 코드 (ALL·* 은 안 따짐)
+func TestMissingClasses(t *testing.T) {
+	rows := []api.DataRow{{C1: "11", C2: "0"}}
+	got := missingClasses([]string{"11+24", "ALL", "1*"}, rows)
+	if len(got) != 1 || got[0] != "-c1 24" {
+		t.Errorf("got %v", got)
+	}
+	if got := missingClasses([]string{"24"}, nil); got != nil {
+		t.Errorf("결과 0행은 따지지 않음: %v", got)
+	}
+}
+
+// RSI R1: 큰 축 요약은 한도 안에서 최상위부터 단계별로 펼친다
+func TestSummaryLevels(t *testing.T) {
+	var g []api.MetaResult
+	g = append(g, api.MetaResult{ItmID: "0"}, api.MetaResult{ItmID: "C"})
+	for i := 0; i < 30; i++ {
+		g = append(g, api.MetaResult{ItmID: "C" + string(rune('A'+i)), UpItmID: "C"})
+	}
+	for i := 0; i < 60; i++ {
+		g = append(g, api.MetaResult{ItmID: "D" + string(rune('A'+i)), UpItmID: "CA"})
+	}
+	got := summaryLevels(g)
+	if len(got) != 32 || got[0].ItmID != "0" {
+		t.Errorf("len=%d", len(got))
+	}
+}
+
+// RSI R2: [21]/[30] 뒤 진단 — 표에 없는 코드를 짚고, 다 있으면 조합·시점 문제라고 알린다
+func TestDiagnoseCodes(t *testing.T) {
+	sum := &api.MetaSummaryResult{
+		Classifications: []api.MetaResult{{ObjID: "A", ObjNM: "시도", ObjIDSN: "1", ItmID: "00"}},
+		Items:           []api.MetaResult{{ObjID: "ITEM", ItmID: "13103T1"}},
+		Periods:         []api.MetaResult{{PrdSe: "월", StrtPrdDe: "2000.12", EndPrdDe: "2026.08"}},
+	}
+	got := strings.Join(diagnoseCodes(sum, []string{"00"}, "T1", "101", "X"), "\n")
+	if !strings.Contains(got, "-i T1") || strings.Contains(got, "-c1") {
+		t.Errorf("없는 항목만 짚어야 함: %s", got)
+	}
+	got = strings.Join(diagnoseCodes(sum, []string{"ALL"}, "13103T1", "101", "X"), "\n")
+	if !strings.Contains(got, "모두 이 표에 있습니다") || !strings.Contains(got, "M 2000.12~2026.08") {
+		t.Errorf("조합 안내: %s", got)
+	}
+}
+
+// RSI R3: 콕 집은 코드의 이 표 이름을 보여 준다 (형제 표에서 같은 코드가 다른 뜻)
+func TestEchoCodes(t *testing.T) {
+	sum := &api.MetaSummaryResult{
+		Classifications: []api.MetaResult{{ObjID: "C", ObjNM: "학교현황별", ObjIDSN: "1", ItmID: "C_1", ItmNM: "직원수"}},
+		Items:           []api.MetaResult{{ObjID: "ITEM", ItmID: "T1", ItmNM: "값"}},
+	}
+	if got := echoCodes(sum, []string{"C_1"}, "ALL"); got != "조회한 코드: -c1 C_1=직원수" {
+		t.Errorf("got %q", got)
+	}
+	if got := echoCodes(sum, []string{"ALL"}, "ALL"); got != "" {
+		t.Errorf("ALL 은 안 보여 줌: %q", got)
+	}
+}
+
+// 리뷰: 대조한 코드가 없으면(빈 메타·ALL 뿐) 진단 결론을 내지 않는다
+func TestDiagnoseCodesNothingChecked(t *testing.T) {
+	if got := diagnoseCodes(&api.MetaSummaryResult{}, []string{"11"}, "T1", "101", "X"); got != nil {
+		t.Errorf("빈 메타: %v", got)
+	}
+}
+
+// 리뷰: 부모가 축에 없는 코드도 최상위, 상한 50 보장
+func TestSummaryLevelsOrphanTop(t *testing.T) {
+	var g []api.MetaResult
+	for i := 0; i < 10; i++ {
+		g = append(g, api.MetaResult{ItmID: fmt.Sprintf("P%d", i), UpItmID: "ROOT"})
+		for j := 0; j < 10; j++ {
+			g = append(g, api.MetaResult{ItmID: fmt.Sprintf("P%dK%d", i, j), UpItmID: fmt.Sprintf("P%d", i)})
+		}
+	}
+	got := summaryLevels(g)
+	if len(got) != 10 || got[0].ItmID != "P0" {
+		t.Errorf("최상위 10개만 기대, len=%d", len(got))
+	}
+	dup := make([]api.MetaResult, 60) // ItmID 가 모두 빈 값
+	if got := summaryLevels(dup); len(got) > summaryAxisMax {
+		t.Errorf("상한 넘음: %d", len(got))
+	}
+}
+
+// RSI R4: --sort/--top — 숫자 아닌 값은 맨 뒤, 같은 값은 원래 순서
+func TestSortTop(t *testing.T) {
+	rows := []api.DataRow{{C1: "a", DT: "5"}, {C1: "b", DT: "-"}, {C1: "c", DT: "1,200"}, {C1: "d", DT: "5"}}
+	got := sortTop(append([]api.DataRow{}, rows...), true, 3)
+	if len(got) != 3 || got[0].C1 != "c" || got[1].C1 != "a" || got[2].C1 != "d" {
+		t.Errorf("desc: %+v", got)
+	}
+	got = sortTop(append([]api.DataRow{}, rows...), false, 0)
+	if got[0].C1 != "a" || got[3].C1 != "b" {
+		t.Errorf("asc: %+v", got)
+	}
+}
+
+// 리뷰: 축 머리 -cN 은 축 ID 기준 — 이름이 같은 축 둘도 번호가 다르다
+func TestSummaryAxisFlagsByObjID(t *testing.T) {
+	sum := &api.MetaSummaryResult{Classifications: []api.MetaResult{
+		{ObjID: "A", ObjNM: "구분", ObjIDSN: "1", ItmID: "1"},
+		{ObjID: "B", ObjNM: "구분", ObjIDSN: "2", ItmID: "2"},
+	}}
+	r, w, _ := os.Pipe()
+	old := os.Stdout
+	os.Stdout = w
+	displayMetaSummary(sum, "101", "X")
+	w.Close()
+	os.Stdout = old
+	buf := make([]byte, 4096)
+	n, _ := r.Read(buf)
+	out := string(buf[:n])
+	if !strings.Contains(out, "-c1 ← 분류명: 구분  (분류ID A)") || !strings.Contains(out, "-c2 ← 분류명: 구분  (분류ID B)") {
+		t.Errorf("축 번호:\n%s", out)
 	}
 }

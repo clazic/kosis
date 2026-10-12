@@ -138,6 +138,6 @@ API 키 ↔ 한글 기본 매핑:
 | PRD_DE | 시점 |
 | DT | 수치값 |
 | UNIT_NM | 단위 |
-| LST_CHN_DE | 비고 |
+| LST_CHN_DE | 최종수정일 (KOSIS 자료 최종 수정일) |
 
 > 💡 **기계 결합엔 코드, 사람 표시엔 이름.** 지도(choropleth)·DB join에는 `C1`/`ITM_ID` 같은 **코드 키**를 써라. 이름 키는 중복 가능. **v0.5.0+는 `-f json`/`--with-code`로 코드가 자동 출력**된다(→ `references/16-geo-join.md` §16.3). 구버전이라 코드가 `null`이면 §16.4 역매핑 폴백.

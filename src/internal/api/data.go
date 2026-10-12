@@ -193,7 +193,7 @@ func (c *Client) DataWithPeriods(orgID, tblID string, periods []string, opts Dat
 		if err != nil {
 			// API 오류 30: 해당 시점에 데이터가 없음 → 건너뛰고 계속 진행
 			if strings.Contains(err.Error(), "API 오류 [30]") {
-				fmt.Fprintf(os.Stderr, "참고: 시점 %s에 데이터가 없어 건너뜁니다.\n", period)
+				fmt.Fprintf(os.Stderr, "참고: 시점 %s에 요청한 코드·항목 조합의 데이터가 없어 건너뜁니다 (시점 문제가 아니라 코드가 표에 없을 수도 있음 — kosis m 으로 코드 확인).\n", period)
 				continue
 			}
 			return allResults, fmt.Errorf("기간 %s 조회 실패: %w", period, err)

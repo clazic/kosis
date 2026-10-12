@@ -280,7 +280,7 @@ func detectClassColumns(row map[string]interface{}) []string {
 	// 시점, 수치값, 단위, 항목 등 비분류 컬럼을 제외하고 남은 문자열 컬럼이 분류
 	excluded := map[string]bool{
 		"수록시점": true, "시점": true, "수치값": true, "단위": true,
-		"항목명": true, "항목": true, "수록주기": true, "비고": true,
+		"항목명": true, "항목": true, "수록주기": true, "비고": true, "최종수정일": true,
 		"PRD_DE": true, "DT": true, "UNIT_NM": true, "ITM_NM": true, "PRD_SE": true,
 		"LST_CHN_DE": true, "CMMT": true, "ORG_ID": true, "TBL_ID": true, "TBL_NM": true,
 	}

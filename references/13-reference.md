@@ -16,10 +16,13 @@
 | `s --org` | orgId | 표를 만든 기관 — 서버에서 거름. 이름은 기관별 목록(`ls --view MT_OTITLE`)에서 코드로 바꿈(맞는 기관 5개 넘으면 오류) | `--org 101`, `--org 울산` |
 | `s --page` / `--sort` | startCount / sort | 쪽 번호(1부터) / RANK(정확도)·DATE(최신) | `--page 2 --sort DATE` |
 | `s --stat` / `--region` | (클라이언트 필터링) | 받은 쪽 안에서만 거름 — 빈 결과면 `--page` 로 다음 쪽 | `--stat 광업제조업조사` |
-| `m --find` / `--under` / `--level` / `--axis` | type=ITM (1회) | 코드 고르기. `--axis item`·`class2`·분류 이름 일부. `--type` 없이 또는 `--type ITM` 과만 (다른 type 과 쓰면 exit 1). 축 번호는 OBJ_ID_SN | `--axis item`, `--find 출하액` |
+| `s <검색어…>` | searchNm | 따옴표 없이 여러 단어를 줘도 한 검색어로 합친다 (`kosis s 1인당 지역내총생산`) | |
+| `m --find` / `--under` / `--level` / `--axis` | type=ITM (1회) | 코드 고르기. `--axis item`·`class2`·분류 이름 일부. `--type` 없이 또는 `--type ITM` 과만 (다른 type 과 쓰면 exit 1). 축 번호는 OBJ_ID_SN. 맞는 코드가 없으면 exit 1. `--find` 는 공백·`~`/`-`·`ㆍ`/`·` 차이 무시 | `--axis item`, `--find 출하액`, `--find 15~29` |
 | `m --type ITM --obj` | objId | ITM 원본에서 한 분류(OBJ_ID) 또는 ITEM 만 | `--type ITM --obj ITEM` |
 | `rules list --id` / `--topic` / `--status` | (로컬 처리) | 규칙 id·표 ID 정확히 / topic / wrong·ok | `--id 101/DT_1FS1101` |
 | `--pivot` | (클라이언트 처리) | 한 축의 값을 열로 펼친 비교표 (C1~C8, ITM, PRD, 분류 이름). ITM 이면 열 이름 `항목명(단위)` — 항목마다 단위가 달라도 한 행. parquet 저장과 함께 쓰면 exit 1 | `--pivot C1` |
+| `d --sort` / `--top` | (클라이언트 처리) | 수치값으로 정렬 desc·asc(숫자 아닌 값은 맨 뒤, 같은 값은 원래 순서), `--top N` 은 정렬 뒤 앞 N행. `--top` 만 쓰거나 `--pivot` 과 함께 쓰면 exit 1. 합계 행도 함께 정렬된다 | `--sort desc --top 3` |
+| (열 이름) | LST_CHN_DE | v0.5.25 부터 `최종수정일` (예전 `비고`). `--fields 비고` 는 계속 받는다 | `--fields 시점,수치값,최종수정일` |
 | `--api-keys` | (클라이언트 처리) | 열 이름을 API 키로 (표마다 같은 키: C1, C1_NM … ITM_NM, PRD_DE, DT, UNIT_NM). table·json·csv·md·xlsx·db 모두 같은 이름. `--fields`(한국어·API 키)·`--pivot`(C1·분류 이름)과 함께 써도 된다 | `--api-keys -f json` |
 | `--user-id` | userStatsId | 사전 등록 통계표 | `--user-id "myid/..."` |
 
