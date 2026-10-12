@@ -8,6 +8,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
+	"unicode/utf8"
 
 	"github.com/clazic/kosis/internal/api"
 	"github.com/clazic/kosis/internal/chart"
@@ -41,7 +43,7 @@ var dataCmd = &cobra.Command{
   <TBL_ID>                 통계표 ID (예: DT_1IN1502, DT_MLTM_2086)
 
 필수 플래그 (--user-id 미사용 시):
-  -c1, --class1 <값>      분류1 코드 (ALL, "00+11", "11*")
+  -c1, --class1 <값>      분류1 코드 (ALL, "00+11", "11*", level:1)
   -i,  --item <값>         항목 코드 (ALL, "T10+T20")
   -p,  --period <코드>     수록주기
 
@@ -140,7 +142,7 @@ var dataCmd = &cobra.Command{
   - 존재하지 않는 시점 요청 시 에러 30 → -l 5로 먼저 가용 시점 확인
   - prdSe=2년·3년·4년·5년 통계표에 -p Y 사용 시 에러 30 → -p F 사용
   - ALL 사용 시 4만 셀 초과 가능 → 자동 분할 처리됨
-  - 코드는 kosis m --find/--under/--level 결과를 그대로 (짐작 금지 — 에러 21). + 나열 개수 제한은 확인되지 않음 (84개 실측 성공)
+  - 코드는 kosis m --find/--under/--level 결과를 그대로 (짐작 금지 — 에러 21). + 나열 개수 제한은 확인되지 않음 (220개 실측 성공, level:2)
   - 분류 축이 N개인 표는 --class1 ~ --classN 모두 필요 (빠지면 빠진 플래그를 알려 줌)
 
 자주 쓰는 통계표:
@@ -195,6 +197,10 @@ var dataCmd = &cobra.Command{
 			fmt.Fprintf(os.Stderr, "오류: --sort 는 desc 또는 asc 입니다 (받은 값: %q)\n", sortFlag)
 			os.Exit(1)
 		}
+		if sortByFlag != "" && (sortFlag == "" || !map[string]bool{"value": true, "change": changeFlag != "", "pct": changeFlag != "", "ratio": ratioFlag != ""}[sortByFlag]) {
+			fmt.Fprintf(os.Stderr, "오류: --sort-by 는 --sort 와 함께 value|change|pct|ratio 중 하나 (change·pct 는 --change, ratio 는 --ratio 필요). 받은 값: %q\n", sortByFlag)
+			os.Exit(1)
+		}
 		if topFlag < 0 || (topFlag > 0 && sortFlag == "") {
 			fmt.Fprintln(os.Stderr, "오류: --top N 은 1 이상이고 --sort desc|asc 와 함께 씁니다")
 			os.Exit(1)
@@ -217,7 +223,17 @@ var dataCmd = &cobra.Command{
 		}
 
 		if userIDFlag == "" && (strings.Join(givenClasses(), "") == "" || itemFlag == "" || periodFlag == "") {
-			fmt.Fprintln(os.Stderr, "오류: 분류(-c1 …), 항목(-i), 주기(-p)는 필수입니다 (또는 --user-id 사용). 코드는 kosis m <ORG> <TBL> 로 확인")
+			var need []string // 빠진 것만 — 다 준 것까지 필수라고 하면 무엇이 틀렸는지 헷갈린다
+			if strings.Join(givenClasses(), "") == "" {
+				need = append(need, "분류(-c1 …, m 의 [분류])")
+			}
+			if itemFlag == "" {
+				need = append(need, "항목(-i, m 의 [항목])")
+			}
+			if periodFlag == "" {
+				need = append(need, "주기(-p, m 의 [수록정보])")
+			}
+			fmt.Fprintf(os.Stderr, "오류: 빠진 인자: %s (또는 --user-id). 확인: kosis m %s %s\n", strings.Join(need, ", "), orgID, tblID)
 			fmt.Fprintln(os.Stderr, "  사용법: kosis d --help") // 도움말 전체는 원인을 묻는다 — 한 줄만
 			os.Exit(1)
 		}
@@ -266,11 +282,32 @@ var dataCmd = &cobra.Command{
 					class1Flag = "ALL"
 					fmt.Fprintln(os.Stderr, "ℹ 이 표는 축 번호가 2부터라 1번 축이 없습니다 — -c1 을 ALL 로 채웠습니다")
 				}
+				if extra := extraClassFlags(summary, givenClasses()); len(extra) > 0 {
+					fmt.Fprintf(os.Stderr, "오류: 이 표는 분류 축이 %d개라 %s 는 없는 축입니다 — 빼고 조회하세요 (축 확인: kosis m %s %s)\n", axisCount(summary), strings.Join(extra, ", "), orgID, tblID)
+					os.Exit(1)
+				}
 				if missing := missingClassFlags(summary, givenClasses()); len(missing) > 0 {
 					short := strings.NewReplacer("--class", "-c").Replace(strings.Join(missing, ", ")) // SKILL 과 같은 -cN 표기
 					fmt.Fprintf(os.Stderr, "오류: 이 표는 분류 축이 %d개라 다음 플래그도 필요합니다: %s\n", axisCount(summary), short)
 					fmt.Fprintf(os.Stderr, "  코드 확인: kosis m %s %s (또는 --find·--under·--level), 축 전체는 ALL\n", orgID, tblID)
 					os.Exit(1)
+				}
+				// 수록 범위 밖 시점(-s/-e/--periods) — KOSIS 는 [30] 으로만 답해 코드 문제처럼 보인다
+				if out := periodsOutOfRange(summary, periodFlag, append([]string{startFlag, endFlag}, strings.Split(periodsValue, ",")...)); out != "" {
+					fmt.Fprintf(os.Stderr, "ℹ %s\n", out)
+				}
+				// -c1 level:2 → 그 축 2단계 코드 전부 (m --level 2 의 -c1 줄을 손으로 옮기지 않게)
+				for i, f := range []*string{&class1Flag, &class2Flag, &class3Flag, &class4Flag, &class5Flag, &class6Flag, &class7Flag, &class8Flag} {
+					if !strings.Contains(strings.ToLower(*f), "level:") { // (!코드 빼기는 level: 과 함께만)
+						continue
+					}
+					expanded, lerr := expandLevels(summary, i+1, *f)
+					if lerr != nil {
+						fmt.Fprintf(os.Stderr, "오류: -c%d %s: %v\n", i+1, *f, lerr)
+						os.Exit(1)
+					}
+					fmt.Fprintf(os.Stderr, "ℹ -c%d %s → 코드 %d개: %s (뺄 코드는 !코드 — 예 \"level:1+!03\")\n", i+1, *f, strings.Count(expanded, "+")+1, capList(codeNames(summary, i+1, expanded), 30))
+					*f = expanded
 				}
 				// 표에 없는 주기를 요청하면 KOSIS 가 다른 주기 행을 오류 없이 돌려준다 (월간 표에 -p Y → 월별 행) — 조회 전에 막는다
 				if have := cyclesOf(summary); len(have) > 0 && !have["?"] && !have[api.NormalizePrdSe(strings.ToUpper(periodFlag))] {
@@ -346,6 +383,9 @@ var dataCmd = &cobra.Command{
 					}
 				}
 			}
+			if strings.Contains(err.Error(), "[50]") {
+				fmt.Fprintln(os.Stderr, "ℹ [50] 은 KOSIS 서버 오류입니다 — 잠시 뒤 다시 해 보고, 같은 조합만 계속 실패하면 ALL 대신 코드를 좁히거나 같은 주제의 다른 표(kosis s)를 쓰세요")
+			}
 			fmt.Fprintln(os.Stderr, "ℹ 원인을 확인했으면 다음에 같은 실수를 하지 않도록 기록하세요: kosis rules add (kosis rules add --help)")
 			os.Exit(1)
 		}
@@ -378,13 +418,31 @@ var dataCmd = &cobra.Command{
 				if p := emptyLatest(results); p != "" {
 					fmt.Fprintf(os.Stderr, "⚠ 마지막 시점 %s 의 값이 모두 비어 있습니다(- 등) — 아직 공표 전일 수 있습니다. '최근 값'은 그 전 시점을 쓰고 그렇게 밝히세요\n", p)
 				}
-				if ended := codesEndedEarly(givenClasses(), results); len(ended) > 0 {
+				if ended := codesEndedEarly(givenClasses(), results, ""); len(ended) > 0 {
 					fmt.Fprintf(os.Stderr, "⚠ 다른 코드보다 일찍 값이 끊긴 코드: %s\n", strings.Join(ended, ", "))
 					fmt.Fprintf(os.Stderr, "  폐지·개편된 코드(이름이 같은 새 코드로 이어짐)이거나 그 시점부터 수록되지 않은 행입니다. 확인: kosis m %s %s --find <이름>\n", orgID, tblID)
+					for _, h := range sameNameSuccessors(summary, ended) {
+						fmt.Fprintf(os.Stderr, "  %s\n", h)
+					}
+				} else if exp, last := expectedLast(summary, periodFlag, endFlag, periodsValue), lastPeriod(results); len(exp) == len(last) && exp > last {
+					// 모든 코드가 같은 시점에 끝났는데 표는 더 뒤까지 — 코드 탓이 아니라 이 조합(항목)·공표 시점 문제일 수 있다
+					fmt.Fprintf(os.Stderr, "ℹ 이 조회의 값은 %s 까지입니다 (표의 -p %s 끝은 %s) — 항목·조합에 따라 일찍 끝났거나 아직 공표 전입니다\n", last, api.NormalizePrdSe(strings.ToUpper(periodFlag)), exp)
+					for _, h := range sameNameSuccessors(summary, codesEndedEarly(givenClasses(), results, exp)) {
+						fmt.Fprintf(os.Stderr, "  %s\n", h)
+					}
 				}
 				if miss := missingClasses(givenClasses(), results); len(miss) > 0 {
-					fmt.Fprintf(os.Stderr, "⚠ 요청한 분류 코드 중 결과에 한 줄도 없는 코드: %s\n", strings.Join(miss, ", "))
-					fmt.Fprintf(os.Stderr, "  코드가 이 표에 없거나(오타·짐작한 코드·개편된 지역 코드) 이 시점에 그 조합 행이 아예 없습니다 (비공개 값은 행이 오고 수치값이 X·- 로 온다 — 이건 그 경우가 아니다). 코드 확인: kosis m %s %s --find <이름>\n", orgID, tblID)
+					fmt.Fprintf(os.Stderr, "⚠ 요청한 분류 코드 중 결과에 한 줄도 없는 코드: %s\n", capList(miss, 10))
+					inMeta, notInMeta := splitByMeta(summary, miss)
+					if len(notInMeta) > 0 {
+						fmt.Fprintf(os.Stderr, "  이 표 메타에 없는 코드(오타·짐작한 코드·개편된 지역 코드): %s — 코드 확인: kosis m %s %s --find <이름>\n", capList(notInMeta, 10), orgID, tblID)
+					}
+					if len(inMeta) > 0 {
+						fmt.Fprintf(os.Stderr, "  메타에는 있지만 이 시점·조합에 행이 없는 코드(통합·폐지된 코드, 그 시점 미수록, 공표 범위 밖): %s (비공개 값은 행이 오고 수치값이 X·- 로 온다 — 이건 그 경우가 아니다)\n", capList(inMeta, 10))
+					}
+					for _, h := range childrenOfMissing(summary, miss) {
+						fmt.Fprintf(os.Stderr, "  %s\n", h)
+					}
 				}
 				if miss := missingItems(summary.Items, itemFlag, results); len(miss) > 0 {
 					fmt.Fprintf(os.Stderr, "⚠ 요청한 항목 중 이 시점 범위에 값이 하나도 없는 항목: %s\n", strings.Join(miss, ", "))
@@ -398,16 +456,49 @@ var dataCmd = &cobra.Command{
 			}
 		}
 
+		// 표 주석(CMMT, 캐시됨): 잠정치·누계처럼 값을 읽는 법이 바뀌는 말은 stderr 한 줄로
+		var cmmt []map[string]interface{}
+		if orgID != "" && tblID != "" && userIDFlag == "" && len(results) > 0 {
+			cmmt, _ = client.MetaRaw(orgID, tblID, "CMMT")
+			if notesSay(cmmt, "잠정") {
+				fmt.Fprintf(os.Stderr, "ℹ 표 주석에 '잠정'이 있습니다 — 최근 값은 잠정치일 수 있으니 답에 밝히세요 (kosis m %s %s --type CMMT)\n", orgID, tblID)
+			}
+		}
+		if f := futurePeriod(results, time.Now()); f != "" {
+			fmt.Fprintf(os.Stderr, "⚠ 결과에 아직 오지 않은 시점(%s)이 있습니다 — 추계·전망치일 수 있습니다(학년도 표는 아님 — 표 이름·주석 확인). 실적이 필요하면 -s/-e 로 지난 시점까지 고르세요 (올해 값도 전망일 수 있음)\n", f)
+		}
+		if z := allZeroItems(results); len(z) > 0 {
+			fmt.Fprintf(os.Stderr, "⚠ 값이 모두 0 인 항목: %s — 작성하지 않은 항목일 수 있습니다. 같은 뜻의 다른 항목(kosis m %s %s --axis item)·ex 로 확인하고, 실제로 0 이면 0 이 답입니다\n", strings.Join(z, ", "), orgID, tblID)
+		}
+		if u := joinedUnit(results); u != "" {
+			fmt.Fprintf(os.Stderr, "ℹ 단위 칸 %q 는 여러 단위를 이은 표 전체 단위일 수 있습니다 — 행마다 분류·항목 이름 괄호의 단위(예 '(천명당)')를 따르세요\n", u)
+		}
+		if len(results) > 0 && unitsEmpty(results) && !namesCarryUnit(results) {
+			fmt.Fprintf(os.Stderr, "ℹ 단위 칸이 비어 있습니다 — 항목 이름 괄호, kosis m %s %s --axis item 의 [단위], kosis ex 에서 확인하고 짐작한 단위는 짐작이라고 밝히세요\n", orgID, tblID)
+		}
+
 		var changes map[string][2]string // 행 키 → {증감, 증감률}
 		if changeFlag != "" {
 			changes = computeChanges(results, changeFlag == "yoy")
-			if orgID != "" && tblID != "" && userIDFlag == "" {
-				if cm, cerr := client.MetaRaw(orgID, tblID, "CMMT"); cerr == nil && notesSayCumulative(cm) {
-					fmt.Fprintln(os.Stderr, "⚠ 이 표 주석에 '누계'가 있습니다 — 값이 연초부터의 누계면 --change 는 누계끼리 비교한 값입니다(그 달만의 증감이 아님). 그 달 값은 이번 달 누계 − 지난달 누계 (kosis m <ORG> <TBL> --type CMMT 로 확인)")
-				}
+			if notesSay(cmmt, "누계") {
+				fmt.Fprintln(os.Stderr, "⚠ 이 표 주석에 '누계'가 있습니다 — 값이 연초부터의 누계면 --change 는 누계끼리 비교한 값입니다(그 달만의 증감이 아님). 그 달 값은 이번 달 누계 − 지난달 누계 (kosis m <ORG> <TBL> --type CMMT 로 확인)")
 			}
 			if len(changes) == 0 && len(results) > 0 {
 				fmt.Fprintln(os.Stderr, "ℹ --change: 비교할 시점이 결과에 없습니다 — 비교 시점까지 받으세요 (yoy: 월 -l 13, 분기 -l 5, 년 -l 2 / prev: -l 2)")
+			} else {
+				// 비교 기준으로만 받은 앞 시점 행(증감 빈 칸)은 뺀다 — -l 13 이면 최신 달만 남는다
+				kept, noChange := keepChanged(results, changes)
+				if len(kept) < len(results) {
+					fmt.Fprintf(os.Stderr, "ℹ --change: 비교 기준으로만 쓴 앞 시점 행 %d개는 뺐습니다 (남은 행 %d개)\n", len(results)-len(kept), len(kept))
+				}
+				if len(noChange) > 0 {
+					var ids []string
+					for _, r := range noChange {
+						ids = append(ids, strings.TrimSpace(strings.Join([]string{r.C1, r.C2, r.C3, r.ItmID}, " "))+"@"+r.PrdDe)
+					}
+					fmt.Fprintf(os.Stderr, "⚠ 증감을 못 구한 최신 행 %d개 (비교 시점 값이 없거나 숫자 아님 — 신설 코드·X): %s\n", len(noChange), capList(ids, 10))
+				}
+				results = kept
 			}
 		}
 		var ratios map[string]string
@@ -419,14 +510,69 @@ var dataCmd = &cobra.Command{
 				os.Exit(1)
 			}
 		}
+		if sortFlag == "" && len(sameNameCodes(results)) > 0 {
+			// 편입 전후 코드(군위군 47720·27720)를 함께 받으면 코드별로 묶여 나온다 — 시계열로 읽게 시점순
+			sort.SliceStable(results, func(i, j int) bool { return results[i].PrdDe < results[j].PrdDe })
+		}
+		missBeforeSort := missingClasses(givenClasses(), results) // --no-total·--top 으로 줄기 전에
 		if noTotalFlag {
 			before := len(results)
 			results = dropTotals(results, givenClasses())
 			fmt.Fprintf(os.Stderr, "--no-total: 합계 행 %d개 뺌\n", before-len(results))
 		}
+		var ranks map[string]string // --sort 순위 (동률은 같은 순위)
 		if sortFlag != "" {
-			results = sortTop(results, sortFlag == "desc", topFlag)
-			if topFlag > 0 && len(results) > topFlag {
+			by := sortByFlag
+			if by == "" && changes != nil {
+				by = "change" // --change 와 함께면 증감으로 (수치값 순위는 --sort-by value)
+			}
+			if ((by == "change" || by == "pct") && len(changes) == 0) || (by == "ratio" && len(ratios) == 0) {
+				// 정렬 값이 하나도 없으면 원래 순서의 앞 N행이 순위처럼 나간다 — 막는다
+				fmt.Fprintln(os.Stderr, "오류: --sort 기준 값(증감·비율)이 하나도 없습니다 — 비교 시점까지 받으세요 (yoy: 월 -l 13, 분기 -l 5, 년 -l 2 / prev: -l 2) 또는 --sort-by value")
+				os.Exit(1)
+			}
+			val := func(r api.DataRow) string { return r.DT }
+			switch by {
+			case "change":
+				val = func(r api.DataRow) string { return changes[rowKey(r)][0] }
+			case "pct":
+				val = func(r api.DataRow) string { return changes[rowKey(r)][1] }
+			case "ratio":
+				val = func(r api.DataRow) string { return ratios[rowKey(r)] }
+			}
+			if by != "" {
+				hint := ""
+				if by == "change" && sortByFlag == "" {
+					hint = " — 증감률(%) 순위는 --sort-by pct"
+				}
+				fmt.Fprintf(os.Stderr, "ℹ --sort: %s 기준%s\n", map[string]string{"value": "수치값", "change": "증감", "pct": "증감률(%)", "ratio": "비율(%)"}[by], hint)
+			}
+			groups := map[string]bool{}
+			grp := sortGrouper(results) // 자르기 전 결과로 한 번만
+			mixedAxes := multiCodeAxes(results)
+			for _, r := range results {
+				groups[grp(r)] = true
+			}
+			results = sortTopBy(results, sortFlag == "desc", topFlag, val)
+			ranks = rankRows(results, val, grp)    // 묶음은 자르기 전 결과 기준 (잘린 뒤 다시 정하면 순위가 틀린다)
+			var sortSummary *api.MetaSummaryResult // 메타는 캐시돼 다시 불러도 호출이 늘지 않는다
+			if orgID != "" && tblID != "" && userIDFlag == "" {
+				sortSummary, _ = client.MetaSummary(orgID, tblID)
+			}
+			if miss := withoutCoveredParents(sortSummary, givenClasses(), missBeforeSort); len(miss) > 0 {
+				// 값 없는 코드(통합시 12 등)는 순위에 없다 — 하위 코드를 넣지 않으면 그 지역이 순위에서 조용히 빠진다
+				hint := " — 그 코드의 값이 없어 순위에서 빠졌습니다"
+				if sortSummary != nil && len(childrenOfMissing(sortSummary, miss)) > 0 {
+					hint = " — 위 '아래 코드' 안내대로 하위 코드를 넣어야 순위가 맞습니다"
+				}
+				fmt.Fprintf(os.Stderr, "⚠ 순위에 없는 코드: %s%s\n", capList(miss, 10), hint)
+			}
+			if ax := mixedAxes; len(ax) > 1 {
+				fmt.Fprintf(os.Stderr, "⚠ 코드가 여럿인 축이 %d개(%s) — 순위가 그 조합으로 섞입니다. 순위를 매길 축 하나만 여러 코드로 두세요\n", len(ax), strings.Join(ax, "×"))
+			}
+			if len(groups) > 1 {
+				fmt.Fprintf(os.Stderr, "ℹ --sort: 항목·시점 %d묶음마다 따로 정렬·순위를 매겼습니다 (한 항목·시점만 보려면 -i·-l 로 좁히세요)\n", len(groups))
+			} else if topFlag > 0 && len(results) > topFlag {
 				fmt.Fprintf(os.Stderr, "ℹ --top %d: %d위와 값이 같은 행까지 %d행을 보여 줍니다 (동률)\n", topFlag, topFlag, len(results))
 			}
 		}
@@ -465,6 +611,9 @@ var dataCmd = &cobra.Command{
 			if ratios != nil {
 				m["비율(%)"] = ratios[rowKey(row)]
 			}
+			if ranks != nil {
+				m["순위"] = ranks[rowKey(row)]
+			}
 			dataMap[i] = m
 		}
 
@@ -481,7 +630,7 @@ var dataCmd = &cobra.Command{
 			formatOpts.Columns = apiKeyColumns(dataMap)
 		}
 
-		if (changes != nil || ratios != nil) && len(formatOpts.Columns) > 0 { // 수치값 바로 뒤에
+		if (changes != nil || ratios != nil || ranks != nil) && len(formatOpts.Columns) > 0 { // 수치값 바로 뒤에
 			dtLabel := "수치값"
 			if colMeta != nil {
 				dtLabel = colMeta.GetLabel("DT")
@@ -497,6 +646,9 @@ var dataCmd = &cobra.Command{
 					}
 					if ratios != nil {
 						cols = append(cols, "비율(%)")
+					}
+					if ranks != nil {
+						cols = append(cols, "순위")
 					}
 				}
 			}
@@ -544,6 +696,9 @@ var dataCmd = &cobra.Command{
 			if pcol == colMetaFull.GetLabel("ITM_NM") { // 항목마다 단위가 다르면 단위가 행을 가른다 → 열 이름에 붙인다
 				unitCol = colMetaFull.GetLabel("UNIT_NM")
 				drop[unitCol] = true
+			}
+			if same := sameNameCodes(results); len(same) > 0 && !withCodeFlag {
+				fmt.Fprintf(os.Stderr, "ℹ --pivot: 이름이 같은 다른 코드가 한 행으로 합쳐집니다: %s — 코드별로 보려면 --with-code\n", capList(same, 5))
 			}
 			dataMap, formatOpts.Columns, dups = pivotRows(dataMap, formatOpts.Columns, pcol, colMetaFull.GetLabel("DT"), drop, unitCol)
 			if dups > 0 {
@@ -610,7 +765,7 @@ var dataCmd = &cobra.Command{
 					}
 				}
 			}
-			toKey["증감"], toKey["증감률(%)"], toKey["비율(%)"] = "DT_CHG", "DT_CHG_PCT", "DT_RATIO_PCT"
+			toKey["증감"], toKey["증감률(%)"], toKey["비율(%)"], toKey["순위"] = "DT_CHG", "DT_CHG_PCT", "DT_RATIO_PCT", "RANK"
 			dataMap, formatOpts.Columns = renameColumns(dataMap, formatOpts.Columns, toKey)
 		}
 
@@ -666,6 +821,7 @@ var (
 	topFlag          int
 	changeFlag       string
 	ratioFlag        string
+	sortByFlag       string
 	noTotalFlag      bool
 	apiKeysFlag      bool
 	userIDFlag       string
@@ -924,15 +1080,15 @@ func init() {
 
 	// 플래그 정의
 	// class 계열 short flag(-c1~-c8)는 root에서 사전 정규화하여 지원합니다.
-	dataCmd.Flags().StringVar(&class1Flag, "class1", "", "[1단계] 분류1 코드. meta의 [분류] 첫 번째 항목에 대응. -c1로 축약. ALL=전체, \"00+11\"=복수, \"11*\"=하위 전체 (예: -c1 \"11\"=서울)")
-	dataCmd.Flags().StringVar(&class2Flag, "class2", "", "[1단계] 분류2 코드. meta [분류] 두 번째 항목. -c2로 축약 (예: 시도별 다음에 오는 산업별)")
-	dataCmd.Flags().StringVar(&class3Flag, "class3", "", "[1단계] 분류3 코드. meta [분류] 세 번째 항목. -c3로 축약")
-	dataCmd.Flags().StringVar(&class4Flag, "class4", "", "[1단계] 분류4 코드. meta [분류] 네 번째 항목. -c4로 축약")
-	dataCmd.Flags().StringVar(&class5Flag, "class5", "", "[1단계] 분류5 코드. meta [분류] 다섯 번째 항목. -c5로 축약")
-	dataCmd.Flags().StringVar(&class6Flag, "class6", "", "[1단계] 분류6 코드. meta [분류] 여섯 번째 항목. -c6로 축약")
-	dataCmd.Flags().StringVar(&class7Flag, "class7", "", "[1단계] 분류7 코드. meta [분류] 일곱 번째 항목. -c7로 축약")
-	dataCmd.Flags().StringVar(&class8Flag, "class8", "", "[1단계] 분류8 코드. meta [분류] 여덟 번째 항목. -c8로 축약")
-	dataCmd.Flags().StringVarP(&itemFlag, "item", "i", "", "[2단계] 항목 코드. meta의 [항목] 코드를 그대로 사용. ALL=전체, \"T10+T20\"=복수 (한글 이름 사용 시 에러 21)")
+	dataCmd.Flags().Var(&joinValue{&class1Flag}, "class1", "[1단계] 분류1 코드. meta의 [분류] 첫 번째 항목에 대응. -c1로 축약. ALL=전체, \"00+11\"=복수, \"11*\"=하위 전체, level:N=그 축 N단계 코드 전부 (예: -c1 \"11\"=서울, -c1 level:1 --no-total=시도 17개). 거듭 주면 + 로 합침")
+	dataCmd.Flags().Var(&joinValue{&class2Flag}, "class2", "[1단계] 분류2 코드. meta [분류] 두 번째 항목. -c2로 축약 (예: 시도별 다음에 오는 산업별)")
+	dataCmd.Flags().Var(&joinValue{&class3Flag}, "class3", "[1단계] 분류3 코드. meta [분류] 세 번째 항목. -c3로 축약")
+	dataCmd.Flags().Var(&joinValue{&class4Flag}, "class4", "[1단계] 분류4 코드. meta [분류] 네 번째 항목. -c4로 축약")
+	dataCmd.Flags().Var(&joinValue{&class5Flag}, "class5", "[1단계] 분류5 코드. meta [분류] 다섯 번째 항목. -c5로 축약")
+	dataCmd.Flags().Var(&joinValue{&class6Flag}, "class6", "[1단계] 분류6 코드. meta [분류] 여섯 번째 항목. -c6로 축약")
+	dataCmd.Flags().Var(&joinValue{&class7Flag}, "class7", "[1단계] 분류7 코드. meta [분류] 일곱 번째 항목. -c7로 축약")
+	dataCmd.Flags().Var(&joinValue{&class8Flag}, "class8", "[1단계] 분류8 코드. meta [분류] 여덟 번째 항목. -c8로 축약")
+	dataCmd.Flags().VarP(&joinValue{&itemFlag}, "item", "i", "[2단계] 항목 코드. meta의 [항목] 코드를 그대로 사용. ALL=전체, \"T10+T20\"=복수 (한글 이름 사용 시 에러 21)")
 	dataCmd.Flags().StringVarP(&periodFlag, "period", "p", "", "[3단계] 수록주기. meta [수록정보]의 prdSe 값에 대응: Y=년, M=월, Q=분기, H=반기, F=2년 이상 여러 해(2·3·4·5년…) (불일치 시 에러 30)")
 	dataCmd.Flags().StringVarP(&startFlag, "start", "s", "", "[4단계] 시작 시점. --end와 함께 연속 범위 지정. 주기별 형식: 연=2020, 월=202401, 분기=202401(YYYYQQ), 반기=202401(YYYYHH)")
 	dataCmd.Flags().StringVarP(&endFlag, "end", "e", "", "[4단계] 종료 시점. --start와 짝으로 사용 (예: -s 2020 -e 2024)")
@@ -944,7 +1100,8 @@ func init() {
 	dataCmd.Flags().BoolVar(&apiKeysFlag, "api-keys", false, "[5단계] 열 이름을 표마다 다른 한국어 축 이름 대신 API 키(C1, C1_NM … ITM_ID, ITM_NM, PRD_DE, DT, UNIT_NM)로 — 여러 표를 같은 코드로 처리할 때")
 	dataCmd.Flags().StringVar(&sortFlag, "sort", "", "[5단계] 수치값으로 행 정렬: desc(큰 것부터)·asc. 숫자가 아닌 값(-, X, 이름)은 맨 뒤. 순위 질문용 — 전국·시도 합계 행도 함께 정렬되니 m --level 로 코드를 좁혀라")
 	dataCmd.Flags().StringVar(&changeFlag, "change", "", "[5단계] 같은 계열(분류·항목)의 비교 시점 대비 '증감'·'증감률(%)' 열 추가: yoy=1년 전 같은 달·분기·해, prev=직전 시점. 비교 시점도 받아야 한다 (월 yoy 는 -l 13)")
-	dataCmd.Flags().StringVar(&ratioFlag, "ratio", "", "[5단계] 같은 축의 두 코드 비율 '비율(%)' 열: 분자코드/분모코드 (예 T2/T1 항목끼리, ALL/<합계코드> 그 축 모든 행의 합계 대비). 분자 코드 행(ALL 이면 그 축 모든 행)에 채우고, 다른 축·시점이 같은 행끼리 나눈다 — 분모 코드도 조회에 넣어야 한다")
+	dataCmd.Flags().StringVar(&sortByFlag, "sort-by", "", "[5단계] --sort 기준: value=수치값, change=증감, pct=증감률(%), ratio=비율(%). 기본은 수치값, --change 와 함께면 증감")
+	dataCmd.Flags().StringVar(&ratioFlag, "ratio", "", "[5단계] 같은 축의 두 코드 비율 '비율(%)' 열: 분자코드/분모코드 (예 T2/T1 항목끼리, ALL/<합계코드> 그 축 모든 행의 합계 대비, Y70+Y75/000 분자 여러 코드 — 코드별 % 와 합계 % 를 stderr 로). 분자 코드 행(ALL 이면 그 축 모든 행)에 채우고, 다른 축·시점이 같은 행끼리 나눈다 — 분모 코드도 조회에 넣어야 한다")
 	dataCmd.Flags().BoolVar(&noTotalFlag, "no-total", false, "[5단계] 여러 코드를 준 축(ALL·*·+)에서 합계 행(이름이 전국·계·합계·총계·소계·전체)을 뺀다 — 순위용. 코드 하나로 고정한 축은 건드리지 않는다")
 	dataCmd.Flags().IntVar(&topFlag, "top", 0, "[5단계] 정렬 뒤 앞에서 N행만 (--sort 와 함께)")
 	dataCmd.Flags().StringVar(&pivotFlag, "pivot", "", "[5단계] 이 축의 값을 열로 펼쳐 비교표로: C1~C8(분류), ITM(항목 — 열 이름 \"항목명(단위)\"), PRD(시점) 또는 분류 이름(시도별). parquet 저장과 함께 못 씀")
@@ -1157,14 +1314,24 @@ func dropTotals(rows []api.DataRow, given []string) []api.DataRow {
 	return out
 }
 
-// notesSayCumulative 표 주석(CMMT)에 '누계'가 있는지 — 월 값이 연초부터의 누계인 표 (주택 인허가 등).
-func notesSayCumulative(cmmt []map[string]interface{}) bool {
+// notesSay 표 주석(CMMT)에 그 말이 있는지 — '누계'(월 값이 연초부터의 누계, 주택 인허가 등), '잠정'(최근 값 잠정치).
+func notesSay(cmmt []map[string]interface{}, word string) bool {
 	for _, c := range cmmt {
-		if strings.Contains(fmt.Sprint(c["CMMT_DC"]), "누계") {
+		if strings.Contains(fmt.Sprint(c["CMMT_DC"]), word) {
 			return true
 		}
 	}
 	return false
+}
+
+// unitsEmpty 결과 모든 행의 단위 칸이 비었는지.
+func unitsEmpty(rows []api.DataRow) bool {
+	for _, r := range rows {
+		if strings.TrimSpace(r.UnitNM) != "" {
+			return false
+		}
+	}
+	return true
 }
 
 // rowKey 행 하나를 가리키는 키 (분류 코드·항목·시점).
@@ -1241,35 +1408,74 @@ func joinCodes(v string) string {
 
 // sortTop 수치값으로 정렬(같은 값은 원래 순서), top>0 이면 앞 N행. 숫자가 아닌 값은 방향과 상관없이 맨 뒤.
 func sortTop(rows []api.DataRow, desc bool, top int) []api.DataRow {
+	return sortTopBy(rows, desc, top, func(r api.DataRow) string { return r.DT })
+}
+
+// sortTopBy 정렬 기준 값을 고른다 (수치값·증감·증감률·비율 — --sort-by).
+func sortTopBy(rows []api.DataRow, desc bool, top int, val func(api.DataRow) string) []api.DataRow {
 	num := func(s string) (float64, bool) {
 		f, err := strconv.ParseFloat(strings.ReplaceAll(strings.TrimSpace(s), ",", ""), 64)
 		return f, err == nil
 	}
-	sort.SliceStable(rows, func(i, j int) bool {
-		a, aok := num(rows[i].DT)
-		b, bok := num(rows[j].DT)
-		if aok != bok {
-			return aok
+	// 항목·시점이 섞이면(수출액·수입액, 2024·2025) 묶음마다 따로 — 단위가 다른 값끼리 순위를 매기지 않는다
+	var order []string
+	groups := map[string][]api.DataRow{}
+	sortGroup := sortGrouper(rows)
+	for _, r := range rows {
+		k := sortGroup(r)
+		if _, ok := groups[k]; !ok {
+			order = append(order, k)
 		}
-		if desc {
-			return a > b
-		}
-		return a < b
-	})
-	if top > 0 && len(rows) > top {
-		k := top // 경계 동률은 함께 — 경계 값이 숫자일 때만, 숫자로 비교 ("3.30" = "3.3")
-		if bv, ok := num(rows[top-1].DT); ok {
-			for k < len(rows) {
-				v, ok2 := num(rows[k].DT)
-				if !ok2 || v != bv {
-					break
-				}
-				k++
-			}
-		}
-		rows = rows[:k]
+		groups[k] = append(groups[k], r)
 	}
-	return rows
+	var out []api.DataRow
+	for _, k := range order {
+		g := groups[k]
+		sort.SliceStable(g, func(i, j int) bool {
+			a, aok := num(val(g[i]))
+			b, bok := num(val(g[j]))
+			if aok != bok {
+				return aok
+			}
+			if desc {
+				return a > b
+			}
+			return a < b
+		})
+		if top > 0 && len(g) > top {
+			n := top // 경계 동률은 함께 — 경계 값이 숫자일 때만, 숫자로 비교 ("3.30" = "3.3")
+			if bv, ok := num(val(g[top-1])); ok {
+				for n < len(g) {
+					v, ok2 := num(val(g[n]))
+					if !ok2 || v != bv {
+						break
+					}
+					n++
+				}
+			}
+			g = g[:n]
+		}
+		out = append(out, g...)
+	}
+	return out
+}
+
+// sortGrouper --sort 를 따로 하는 묶음: 항목마다, 그리고 그 항목에 계열(분류 코드 조합)이 여럿이면 시점마다
+// (시도 순위). 계열이 하나뿐이면 시점끼리 비교한다 (가장 높았던 해).
+func sortGrouper(rows []api.DataRow) func(api.DataRow) string {
+	series := map[string]map[string]bool{}
+	for _, r := range rows {
+		if series[r.ItmID] == nil {
+			series[r.ItmID] = map[string]bool{}
+		}
+		series[r.ItmID][strings.Join([]string{r.C1, r.C2, r.C3, r.C4, r.C5, r.C6, r.C7, r.C8}, "|")] = true
+	}
+	return func(r api.DataRow) string {
+		if len(series[r.ItmID]) > 1 {
+			return r.ItmID + "|" + r.PrdDe
+		}
+		return r.ItmID
+	}
 }
 
 // computeRatios 같은 축의 두 코드 num/den 의 비율(%) — 다른 축 코드·항목·시점이 같은 행끼리. 결과는 분자 행의 키에.
@@ -1277,12 +1483,16 @@ func sortTop(rows []api.DataRow, desc bool, top int) []api.DataRow {
 func computeRatios(rows []api.DataRow, num, den string) (map[string]string, error) {
 	keys := []string{"C1", "C2", "C3", "C4", "C5", "C6", "C7", "C8", "ITM_ID"}
 	all := strings.EqualFold(num, "ALL") // 분자 ALL: 그 축의 모든 행을 분모 대비 % 로 (시도별 전국 대비 등)
+	nums := map[string]bool{}            // 분자 여러 코드(Y70+Y75): 코드마다 % 를 채우고 합계 비율은 stderr 로
+	for _, c := range strings.FieldsFunc(num, func(r rune) bool { return r == '+' || r == ',' }) {
+		nums[strings.TrimSpace(c)] = true
+	}
 	axis := ""
 	for _, k := range keys {
 		hasN, hasD, other := false, false, false
 		for _, r := range rows {
 			v := r.GetField(k)
-			hasN = hasN || v == num
+			hasN = hasN || nums[v]
 			hasD = hasD || v == den
 			other = other || (v != "" && v != den)
 		}
@@ -1294,7 +1504,7 @@ func computeRatios(rows []api.DataRow, num, den string) (map[string]string, erro
 	if axis == "" {
 		return nil, fmt.Errorf("결과에서 %s 와 %s 가 같은 축에 함께 있지 않습니다 — 두 코드를 모두 조회에 넣으세요", num, den)
 	}
-	fmt.Fprintf(os.Stderr, "ℹ --ratio: %s 축에서 %s ÷ %s\n", axis, num, den)
+	fmt.Fprintf(os.Stderr, "ℹ --ratio: %s 축에서 %s ÷ %s × 100 (비율(%%) 열) — 1인당·사업체당 같은 배수면 100 으로 나누거나 kosis ratio --scale 1\n", axis, num, den)
 	other := func(r api.DataRow) string {
 		var parts []string
 		for _, k := range keys {
@@ -1313,14 +1523,37 @@ func computeRatios(rows []api.DataRow, num, den string) (map[string]string, erro
 		}
 	}
 	out := map[string]string{}
+	sums, cnt, order := map[string]float64{}, map[string]int{}, []string{}
 	for _, r := range rows {
-		if !all && r.GetField(axis) != num {
+		if !all && !nums[r.GetField(axis)] {
 			continue
 		}
 		v, err := strconv.ParseFloat(strings.ReplaceAll(r.DT, ",", ""), 64)
 		d, ok := denVal[other(r)]
 		if err == nil && ok && d != 0 {
 			out[rowKey(r)] = strconv.FormatFloat(v/d*100, 'f', 2, 64)
+			if _, seen := sums[other(r)]; !seen {
+				order = append(order, other(r))
+			}
+			sums[other(r)] += v / d * 100
+			cnt[other(r)]++
+		}
+	}
+	if !all && len(nums) > 1 {
+		var lines []string
+		for _, k := range order {
+			where := strings.Join(strings.FieldsFunc(k, func(r rune) bool { return r == '|' }), " ")
+			if cnt[k] < len(nums) { // 일부 코드 값이 X·- 거나 행이 없으면 합계가 작게 나온다 — 내지 않는다
+				lines = append(lines, fmt.Sprintf("합계 못 냄: 분자 %d개 중 %d개만 값 있음 (%s)", len(nums), cnt[k], where))
+				continue
+			}
+			lines = append(lines, fmt.Sprintf("%s%% (%s)", strconv.FormatFloat(sums[k], 'f', 2, 64), where))
+		}
+		if len(lines) > 10 {
+			lines = append(lines[:10], fmt.Sprintf("… 외 %d개 (코드별 %% 는 비율(%%) 열)", len(lines)-10))
+		}
+		for _, l := range lines {
+			fmt.Fprintf(os.Stderr, "ℹ --ratio 분자 %s 합계: %s\n", num, l)
 		}
 	}
 	return out, nil
@@ -1535,12 +1768,15 @@ func emptyLatest(rows []api.DataRow) string {
 
 // codesEndedEarly -cN 으로 콕 집은 코드 중 결과 전체의 마지막 시점보다 일찍 값이 끝난 코드 ("-c1 46110(~2025)").
 // 개편으로 옛 코드가 중간에 끊겼는데 앞 시점 값이 있어 missingClasses 에 안 걸리는 경우를 잡는다.
-func codesEndedEarly(given []string, rows []api.DataRow) []string {
+func codesEndedEarly(given []string, rows []api.DataRow, expected string) []string {
 	last := ""
 	for _, r := range rows {
 		if r.PrdDe > last {
 			last = r.PrdDe
 		}
+	}
+	if len(expected) == len(last) && expected > last { // 코드 하나만 줬을 때도 — 표가 더 뒤까지 있으면 그 코드는 끊긴 것
+		last = expected
 	}
 	var out []string
 	for i, g := range given {
@@ -1620,6 +1856,487 @@ func missingItems(metaItems []api.MetaResult, itemFlag string, rows []api.DataRo
 	for _, c := range want {
 		if !got[c] {
 			out = append(out, strings.TrimSpace(c+" "+name[c]))
+		}
+	}
+	return out
+}
+
+// joinValue -c1 A -c1 B 처럼 같은 플래그를 거듭 주면 "A+B" 로 합친다 (string 플래그는 마지막 값만 남겨 앞 코드가 조용히 사라졌다 — RSI R15).
+type joinValue struct{ p *string }
+
+func (j *joinValue) String() string {
+	if j.p == nil {
+		return ""
+	}
+	return *j.p
+}
+
+func (j *joinValue) Set(v string) error {
+	if *j.p != "" && v != "" {
+		v = *j.p + "+" + v
+	}
+	*j.p = v
+	return nil
+}
+
+func (j *joinValue) Type() string { return "string" }
+
+// childrenOfMissing 결과에 없는 코드("-c1 12") 중 하위 코드가 있는 것 — 상위(통합시 등)는 값이 없고 하위에 값이 있는 표.
+func childrenOfMissing(summary *api.MetaSummaryResult, miss []string) []string {
+	if summary == nil {
+		return nil
+	}
+	axisN := map[string]int{}
+	for _, a := range summary.Axes() {
+		axisN[a.ObjID] = a.N
+	}
+	var out []string
+	for _, m := range miss {
+		var n int
+		var code string
+		if _, err := fmt.Sscanf(m, "-c%d %s", &n, &code); err != nil {
+			continue
+		}
+		var names, codes []string
+		for _, c := range summary.Classifications {
+			if axisN[c.ObjID] == n && c.UpItmID == code {
+				names = append(names, c.ItmID+" "+c.ItmNM)
+				codes = append(codes, c.ItmID)
+			}
+		}
+		if len(codes) > 0 && len(codes) <= 30 {
+			out = append(out, fmt.Sprintf("-c%d %s 아래 코드: %s → -c%d \"%s\"", n, code, capList(names, 5), n, strings.Join(codes, "+")))
+		}
+	}
+	return out
+}
+
+// expandLevels "-c1 level:2" (또는 "00+level:2") 의 level:N 을 그 축 N단계 코드로 바꾼다.
+func expandLevels(summary *api.MetaSummaryResult, axisN int, v string) (string, error) {
+	byLevel := map[int][]string{}
+	flag := fmt.Sprintf("--class%d", axisN)
+	for _, r := range summary.Codes() {
+		if r.Flag == flag {
+			byLevel[r.Level] = append(byLevel[r.Level], r.Code)
+		}
+	}
+	var out []string
+	drop := map[string]bool{}
+	for _, tok := range strings.Split(v, "+") {
+		tok = strings.TrimSpace(tok)
+		if strings.HasPrefix(tok, "!") { // 뺄 코드 (level:1 에 섞인 동부·읍부·면부 등)
+			drop[strings.TrimPrefix(tok, "!")] = true
+			continue
+		}
+		low := strings.ToLower(tok)
+		if !strings.HasPrefix(low, "level:") {
+			out = append(out, tok)
+			continue
+		}
+		n, err := strconv.Atoi(strings.TrimPrefix(low, "level:"))
+		if err != nil || len(byLevel[n]) == 0 {
+			var have []string
+			for l := 1; l <= 20; l++ {
+				if len(byLevel[l]) > 0 {
+					have = append(have, fmt.Sprintf("level:%d(%d개)", l, len(byLevel[l])))
+				}
+			}
+			return "", fmt.Errorf("이 축에 그 단계가 없습니다. 있는 단계: %s", strings.Join(have, ", "))
+		}
+		out = append(out, byLevel[n]...)
+	}
+	kept := out[:0]
+	for _, c := range out {
+		if !drop[c] {
+			kept = append(kept, c)
+		}
+	}
+	return strings.Join(kept, "+"), nil
+}
+
+// codeNames "a+b" 코드를 "a 이름" 목록으로 (level:N 이 무엇으로 바뀌었는지 보이게).
+func codeNames(summary *api.MetaSummaryResult, axisN int, codes string) []string {
+	name := map[string]string{}
+	flag := fmt.Sprintf("--class%d", axisN)
+	for _, r := range summary.Codes() {
+		if r.Flag == flag {
+			name[r.Code] = r.Name
+		}
+	}
+	var out []string
+	for _, c := range strings.Split(codes, "+") {
+		out = append(out, strings.TrimSpace(c+" "+name[c]))
+	}
+	return out
+}
+
+// splitByMeta 결과에 없는 코드("-c1 12")를 표 메타에 있는 것과 없는 것으로 나눈다.
+func splitByMeta(summary *api.MetaSummaryResult, miss []string) (inMeta, notInMeta []string) {
+	have := map[string]bool{}
+	for _, r := range summary.Codes() {
+		have[strings.Replace(r.Flag, "--class", "-c", 1)+" "+r.Code] = true
+	}
+	for _, m := range miss {
+		if have[m] {
+			inMeta = append(inMeta, m)
+		} else {
+			notInMeta = append(notInMeta, m)
+		}
+	}
+	return inMeta, notInMeta
+}
+
+// joinedUnit 단위 칸이 '명 건'·'농장 마리' 처럼 짧은 단위를 공백으로 이은 값이면 그 값 (표 전체 단위를 행마다 붙인 경우).
+func joinedUnit(rows []api.DataRow) string {
+	for _, r := range rows {
+		f := strings.Fields(r.UnitNM)
+		if len(f) < 2 {
+			continue
+		}
+		short := !strings.Contains("천 만 십만 백만 천만 억 십억 백억 천억 조", f[0]) // '백만 달러' 는 한 단위
+		for _, w := range f {
+			short = short && utf8.RuneCountInString(w) <= 2
+		}
+		if short {
+			return r.UnitNM
+		}
+	}
+	return ""
+}
+
+// capList 목록이 길면 앞 n개와 '외 N개' (level:2 로 수백 코드를 줄 때 stderr 가 넘치지 않게).
+func capList(l []string, n int) string {
+	if len(l) <= n {
+		return strings.Join(l, ", ")
+	}
+	return fmt.Sprintf("%s 외 %d개", strings.Join(l[:n], ", "), len(l)-n)
+}
+
+// keepChanged --change 결과에서 비교 기준으로만 받은 앞 시점 행(증감 없음)을 뺀다.
+// 계열마다 가장 최근 시점 행은 증감이 없어도 남긴다 (신설 코드·X 값 — 조용히 지우지 않는다). noChange 는 그런 행.
+func keepChanged(rows []api.DataRow, changes map[string][2]string) (kept, noChange []api.DataRow) {
+	series := func(r api.DataRow) string {
+		return strings.Join([]string{r.C1, r.C2, r.C3, r.C4, r.C5, r.C6, r.C7, r.C8, r.ItmID}, "|")
+	}
+	latest := map[string]string{}
+	for _, r := range rows {
+		if k := series(r); r.PrdDe > latest[k] {
+			latest[k] = r.PrdDe
+		}
+	}
+	for _, r := range rows {
+		c, ok := changes[rowKey(r)]
+		has := ok && c[0] != ""
+		switch {
+		case has:
+			kept = append(kept, r)
+		case r.PrdDe == latest[series(r)]:
+			kept = append(kept, r)
+			noChange = append(noChange, r)
+		}
+	}
+	return kept, noChange
+}
+
+// allZeroItems 결과에서 값이 2개 이상이고 모두 0 인 항목 ("T3 보급률") — 미작성 항목을 0 으로 읽는 조용한 오답 방지.
+func allZeroItems(rows []api.DataRow) []string {
+	type st struct {
+		name    string
+		n       int
+		nonZero bool
+	}
+	by := map[string]*st{}
+	var order []string
+	for _, r := range rows {
+		v, err := strconv.ParseFloat(strings.ReplaceAll(strings.TrimSpace(r.DT), ",", ""), 64)
+		if err != nil {
+			continue
+		}
+		x, ok := by[r.ItmID]
+		if !ok {
+			x = &st{name: r.ItmNM}
+			by[r.ItmID] = x
+			order = append(order, r.ItmID)
+		}
+		x.n++
+		x.nonZero = x.nonZero || v != 0
+	}
+	var out []string
+	for _, id := range order {
+		if x := by[id]; x.n >= 2 && !x.nonZero {
+			out = append(out, strings.TrimSpace(id+" "+x.name))
+		}
+	}
+	return out
+}
+
+// rankRows 정렬된 행의 순위 (1,2,2,4 — 같은 값은 같은 순위, 숫자 아닌 값은 빈 칸). '한국 몇 위' 를 바로 읽게.
+func rankRows(sorted []api.DataRow, val func(api.DataRow) string, sortGroup func(api.DataRow) string) map[string]string {
+	out := map[string]string{}
+	type st struct {
+		n, rank int
+		prev    float64
+	}
+	by := map[string]*st{} // 묶음(항목·시점)마다 순위
+	for _, r := range sorted {
+		g := by[sortGroup(r)]
+		if g == nil {
+			g = &st{}
+			by[sortGroup(r)] = g
+		}
+		g.n++
+		v, err := strconv.ParseFloat(strings.ReplaceAll(strings.TrimSpace(val(r)), ",", ""), 64)
+		if err != nil {
+			continue
+		}
+		if g.rank == 0 || v != g.prev {
+			g.rank = g.n
+		}
+		g.prev = v
+		out[rowKey(r)] = strconv.Itoa(g.rank)
+	}
+	return out
+}
+
+// futurePeriod 결과의 가장 늦은 시점이 지금보다 뒤면 그 시점 (추계·전망 표: IMF WEO 2031, 장래인구추계 2070).
+func futurePeriod(rows []api.DataRow, now time.Time) string {
+	last := ""
+	for _, r := range rows {
+		if r.PrdDe > last {
+			last = r.PrdDe
+		}
+	}
+	if len(last) < 4 {
+		return ""
+	}
+	y, err := strconv.Atoi(last[:4])
+	if err != nil {
+		return ""
+	}
+	if y > now.Year() {
+		return last
+	}
+	if y == now.Year() && len(last) == 6 { // 월: 올해 아직 오지 않은 달 (분기 202603 은 달로 봐도 지난 시점이라 오탐 없음)
+		if m, err := strconv.Atoi(last[4:]); err == nil && m > int(now.Month()) {
+			return last
+		}
+	}
+	return ""
+}
+
+// extraClassFlags 표에 없는 축 번호에 준 -cN (축 정보가 없으면 판단하지 않는다).
+func extraClassFlags(summary *api.MetaSummaryResult, given []string) []string {
+	if len(summary.Axes()) == 0 {
+		return nil
+	}
+	var out []string
+	for i, g := range given {
+		if i > 0 && g != "" && !summary.HasAxis(i+1) { // -c1 은 1번 축이 없는 표도 API 가 요구한다(ALL 로 채움)
+			out = append(out, fmt.Sprintf("-c%d", i+1))
+		}
+	}
+	return out
+}
+
+// normPrd 수록정보 시점("2026.07", "2026 2/4", "2025")을 d 시점 코드(202607, 202602, 2025)로.
+func normPrd(v, cycle string) string {
+	v = strings.TrimSpace(v)
+	if cycle == "Q" || cycle == "H" || cycle == "S" {
+		if f := strings.Fields(v); len(f) == 2 && len(f[1]) > 0 {
+			return f[0] + "0" + f[1][:1]
+		}
+	}
+	return strings.NewReplacer(".", "", " ", "", "/", "").Replace(v)
+}
+
+// periodsOutOfRange 요청 시점 중 그 주기 수록 범위 밖인 것 (안내 한 줄, 없으면 "").
+func periodsOutOfRange(summary *api.MetaSummaryResult, prdSe string, req []string) string {
+	c := api.NormalizePrdSe(strings.ToUpper(prdSe))
+	for _, p := range summary.Periods {
+		if api.NormalizePrdSe(p.PrdSe) != c {
+			continue
+		}
+		lo, hi := normPrd(p.StrtPrdDe, c), normPrd(p.EndPrdDe, c)
+		var out []string
+		for _, r := range req {
+			r = strings.TrimSpace(r)
+			if r == "" || len(r) != len(hi) {
+				continue
+			}
+			if r > hi || (len(lo) == len(r) && r < lo) {
+				out = append(out, r)
+			}
+		}
+		if len(out) > 0 {
+			return fmt.Sprintf("요청 시점 %s 은 이 표 -p %s 수록 범위(%s ~ %s) 밖입니다 — 그 시점은 행이 없습니다 (코드 문제가 아님)", strings.Join(out, ", "), c, strings.TrimSpace(p.StrtPrdDe), strings.TrimSpace(p.EndPrdDe))
+		}
+	}
+	return ""
+}
+
+// sameNameCodes 같은 축에서 이름은 같고 코드가 다른 것 ("군위군(27720·47720)" — 편입·개편 전후 코드).
+func sameNameCodes(rows []api.DataRow) []string {
+	type key struct {
+		axis int
+		name string
+	}
+	codes := map[key][]string{}
+	var order []key
+	for _, r := range rows {
+		for i, p := range [][2]string{{r.C1, r.C1NM}, {r.C2, r.C2NM}, {r.C3, r.C3NM}, {r.C4, r.C4NM}, {r.C5, r.C5NM}, {r.C6, r.C6NM}, {r.C7, r.C7NM}, {r.C8, r.C8NM}} {
+			if p[0] == "" || p[1] == "" {
+				continue
+			}
+			k := key{i + 1, strings.TrimSpace(p[1])}
+			if _, ok := codes[k]; !ok {
+				order = append(order, k)
+			}
+			found := false
+			for _, c := range codes[k] {
+				found = found || c == p[0]
+			}
+			if !found {
+				codes[k] = append(codes[k], p[0])
+			}
+		}
+	}
+	var out []string
+	for _, k := range order {
+		if len(codes[k]) > 1 {
+			out = append(out, fmt.Sprintf("%s(%s)", k.name, strings.Join(codes[k], "·")))
+		}
+	}
+	return out
+}
+
+// namesCarryUnit 분류·항목 이름이 '(명)'·'(천명당)' 처럼 단위를 괄호로 품고 있는지 — 그러면 빈 단위 칸 안내를 생략한다.
+func namesCarryUnit(rows []api.DataRow) bool {
+	for _, r := range rows {
+		hit := false
+		for _, n := range []string{r.ItmNM, r.C1NM, r.C2NM, r.C3NM, r.C4NM, r.C5NM, r.C6NM, r.C7NM, r.C8NM} {
+			hit = hit || (strings.HasSuffix(strings.TrimSpace(n), ")") && strings.Contains(n, "("))
+		}
+		if !hit {
+			return false
+		}
+	}
+	return len(rows) > 0
+}
+
+// sameNameSuccessors 일찍 끊긴 코드("-c1 47720(~2022)")와 이름이 같은 같은 축 다른 코드 — 이어 붙일 후보.
+func sameNameSuccessors(summary *api.MetaSummaryResult, ended []string) []string {
+	rows := summary.Codes()
+	var out []string
+	for _, e := range ended {
+		var n int
+		var code string
+		if _, err := fmt.Sscanf(e, "-c%d %s", &n, &code); err != nil {
+			continue
+		}
+		code, _, _ = strings.Cut(code, "(")
+		flag := fmt.Sprintf("--class%d", n)
+		name := ""
+		for _, r := range rows {
+			if r.Flag == flag && r.Code == code {
+				name = r.Name
+			}
+		}
+		var others []string
+		for _, r := range rows {
+			if name != "" && r.Flag == flag && r.Code != code && r.Name == name {
+				others = append(others, r.Code+" "+r.Path)
+			}
+		}
+		if len(others) > 0 && len(others) <= 5 {
+			out = append(out, fmt.Sprintf("-c%d %s(%s) 와 이름이 같은 코드: %s — 이어 보려면 -c%d 에 함께 넣으세요", n, code, name, strings.Join(others, ", "), n))
+		}
+	}
+	return out
+}
+
+// expectedLast 이 조회가 닿아야 할 마지막 시점: 표의 그 주기 끝, -e·--periods 가 더 이르면 그것.
+func expectedLast(summary *api.MetaSummaryResult, prdSe, end, periods string) string {
+	c := api.NormalizePrdSe(strings.ToUpper(prdSe))
+	last := ""
+	for _, p := range summary.Periods {
+		if api.NormalizePrdSe(p.PrdSe) == c {
+			last = normPrd(p.EndPrdDe, c)
+		}
+	}
+	if periods != "" {
+		maxP := ""
+		for _, p := range strings.Split(periods, ",") {
+			if p = strings.TrimSpace(p); p > maxP {
+				maxP = p
+			}
+		}
+		end = maxP
+	}
+	if end != "" && len(end) == len(last) && end < last {
+		return end
+	}
+	return last
+}
+
+// withoutCoveredParents 결과에 없는 코드 중, 하위 코드를 이미 모두 함께 준 상위 코드(12 + 1224+1236)는 뺀다.
+func withoutCoveredParents(summary *api.MetaSummaryResult, given, miss []string) []string {
+	if summary == nil {
+		return miss
+	}
+	giv := map[string]bool{}
+	for i, g := range given {
+		for _, c := range strings.Split(g, "+") {
+			giv[fmt.Sprintf("-c%d %s", i+1, strings.TrimSpace(c))] = true
+		}
+	}
+	axisN := map[string]int{}
+	for _, a := range summary.Axes() {
+		axisN[a.ObjID] = a.N
+	}
+	var out []string
+	for _, m := range miss {
+		var n int
+		var code string
+		if _, err := fmt.Sscanf(m, "-c%d %s", &n, &code); err != nil {
+			out = append(out, m)
+			continue
+		}
+		kids, covered := 0, true
+		for _, c := range summary.Classifications {
+			if axisN[c.ObjID] == n && c.UpItmID == code {
+				kids++
+				covered = covered && giv[fmt.Sprintf("-c%d %s", n, c.ItmID)]
+			}
+		}
+		if kids == 0 || !covered {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+// lastPeriod 결과의 가장 늦은 시점.
+func lastPeriod(rows []api.DataRow) string {
+	last := ""
+	for _, r := range rows {
+		if r.PrdDe > last {
+			last = r.PrdDe
+		}
+	}
+	return last
+}
+
+// multiCodeAxes 결과에서 코드가 둘 이상인 분류 축 ("c1", "c2").
+func multiCodeAxes(rows []api.DataRow) []string {
+	var out []string
+	for i := 1; i <= 8; i++ {
+		seen := map[string]bool{}
+		for _, r := range rows {
+			seen[r.GetField(fmt.Sprintf("C%d", i))] = true
+		}
+		delete(seen, "")
+		if len(seen) > 1 {
+			out = append(out, fmt.Sprintf("c%d", i))
 		}
 	}
 	return out

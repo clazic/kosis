@@ -206,6 +206,10 @@ func runMeta(cmd *cobra.Command, args []string) error {
 			return nil
 		}
 		displayMetaSummary(summary, orgID, tblID)
+		// 주석에 조사 대상·정의(만 3세 이상, 내국인 출원만 …)가 있으면 알린다 — 요약만 보고 지나치기 쉽다
+		if cm, cerr := client.MetaRaw(orgID, tblID, "CMMT"); cerr == nil && len(cm) > 0 {
+			fmt.Printf("\n[주석] %d개 — 조사 대상·정의·잠정 여부: kosis m %s %s --type CMMT\n", len(cm), orgID, tblID)
+		}
 		return nil
 	}
 
@@ -222,6 +226,9 @@ func runMeta(cmd *cobra.Command, args []string) error {
 		if strings.EqualFold(metaType, "UNIT") {
 			fmt.Fprintf(os.Stderr, "  단위는 kosis m %s %s --axis item 의 [단위] 또는 d 결과의 단위 칸, 항목 이름 괄호에서 봅니다\n", orgID, tblID)
 		}
+		if strings.EqualFold(metaType, "CMMT") {
+			fmt.Fprintf(os.Stderr, "  조사 개요·모집단·정의는 kosis ex %s %s 에서 봅니다\n", orgID, tblID)
+		}
 		if format == "json" {
 			fmt.Println("[]")
 		}
@@ -232,6 +239,10 @@ func runMeta(cmd *cobra.Command, args []string) error {
 	seenCol := map[string]bool{}
 	for _, r := range results {
 		for k := range r {
+			// 표 출력은 영문명·매번 같은 기관·표 ID 를 빼 폭을 줄인다 (ITM 원본이 수백 KB). json 은 전부
+			if format == "table" && (strings.HasSuffix(k, "_ENG") || strings.HasSuffix(k, "_ENG_NM") || k == "ORG_ID" || k == "TBL_ID") {
+				continue
+			}
 			if !seenCol[k] {
 				seenCol[k] = true
 				columns = append(columns, k)
@@ -494,6 +505,21 @@ func noMatch(rows []api.CodeRow, under string, level int, axis string) error {
 			return fmt.Errorf("--level %d 에 맞는 코드가 없습니다. 있는 단계: %s", level, strings.Join(lv, ", "))
 		}
 	}
+	if axis != "" { // 그 이름의 축이 아예 없으면 있는 축 이름을 알려 준다 (분류 이름이 '레벨01' 같은 표)
+		found := false
+		var axes []string
+		seen := map[string]bool{}
+		for _, r := range rows {
+			found = found || axisMatches(r, axis)
+			if !seen[r.Flag] {
+				seen[r.Flag] = true
+				axes = append(axes, strings.Replace(strings.Replace(r.Flag, "--class", "class", 1), "--item", "item", 1)+"="+r.Axis)
+			}
+		}
+		if !found {
+			return fmt.Errorf("--axis %q 에 맞는 축이 없습니다. 있는 축: %s", axis, strings.Join(axes, ", "))
+		}
+	}
 	return errNoCodeMatch
 }
 
@@ -572,6 +598,21 @@ func printCodeRows(rows []api.CodeRow, find, under string, level int, axis, form
 	for _, f := range flags {
 		short := strings.Replace(strings.Replace(f, "--class", "-c", 1), "--item", "-i", 1) // SKILL 과 같은 짧은 표기
 		fmt.Printf("  %s \"%s\"\n", short, strings.Join(codes[f], "+"))
+	}
+	if _, has := codes["--item"]; !has { // 분류만 찾았으면 항목(-i)도 함께 — 항목이 적은 표만
+		var items []string
+		for _, r := range rows {
+			if r.Flag == "--item" {
+				it := r.Code + "=" + r.Name
+				if r.Unit != "" {
+					it += "[" + r.Unit + "]"
+				}
+				items = append(items, it)
+			}
+		}
+		if len(items) > 0 && len(items) <= 10 {
+			fmt.Printf("  -i 항목: %s\n", strings.Join(items, ", "))
+		}
 	}
 	return nil
 }

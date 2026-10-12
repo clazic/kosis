@@ -316,7 +316,7 @@ func printSearchNextSteps(keyword string, total, fetched, page int, clientFilter
 		fmt.Fprintln(os.Stderr, "  · --region 은 표 이름·기관·조사명·경로 글자만 봅니다. 전국 시도별·시군구별 표 안의 지역은 빠지니 --region 없이 찾은 뒤 kosis m <ORG> <TBL> --find <지역> 으로 고르세요")
 	}
 	if org != "" {
-		fmt.Fprintln(os.Stderr, "  · --org 는 표를 만든 기관입니다. 다른 기관(예 국가데이터처)의 전국 표에도 그 지역 값이 있을 수 있습니다")
+		fmt.Fprintln(os.Stderr, "  · --org 는 표를 만든 기관입니다. 다른 기관(예 국가데이터처)이 만든 표에 있을 수 있으니 --org 없이도 찾아보세요")
 	}
 	fmt.Fprintln(os.Stderr, "  · 검색에서 못 찾은 것이 KOSIS 에 없다는 뜻은 아닙니다 — 다른 말(조사명·항목명)로, 또는 kosis ls 로 찾아보세요")
 }

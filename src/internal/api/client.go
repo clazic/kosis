@@ -144,6 +144,9 @@ func (c *Client) requestWithKey(endpoint string, params map[string]string, noCac
 	if !noCache && c.cache != nil {
 		cacheKey = endpoint + "?" + url.Values(convertParamsToURLValues(params)).Encode()
 		if data, found := c.cache.Get(cacheKey); found {
+			if err := apiError(data); err != nil { // 캐시한 [30](없음) 응답
+				return nil, err
+			}
 			return stripBreakTags(data), nil
 		}
 	}
@@ -223,11 +226,12 @@ func (c *Client) requestWithKey(endpoint string, params map[string]string, noCac
 
 		// Check for API error response (err field)
 		// Handle both object and array responses
-		if len(body) > 0 && body[0] == '{' {
-			var errResp ErrorResponse
-			if err := json.Unmarshal(body, &errResp); err == nil && errResp.Err != "" {
-				return nil, fmt.Errorf("API 오류 [%s]: %s", errResp.Err, errResp.ErrMsg)
+		if err := apiError(body); err != nil {
+			// [30](그 메타·검색 결과 없음)은 바뀌지 않는 답이라 캐시한다 — 주석 없는 표에 d 마다 CMMT 를 다시 묻지 않게
+			if !noCache && c.cache != nil && strings.Contains(err.Error(), "[30]") && strings.Contains(cacheKey, "type=CMMT") { // 주석 없음만 — 메타 갱신 중 일시 [30] 을 굳히지 않게
+				_ = c.cache.Set(cacheKey, body)
 			}
+			return nil, err
 		}
 
 		// noCache가 false일 때만 캐시 저장 (설계서 8.5절에 따라 메타/검색만 캐시)
@@ -289,4 +293,15 @@ func stripBreakTags(b []byte) []byte {
 		return b
 	}
 	return breakTag.ReplaceAll(b, []byte(" "))
+}
+
+// apiError KOSIS 오류 응답({"err":"30","errMsg":…})이면 그 오류.
+func apiError(body []byte) error {
+	if len(body) > 0 && body[0] == '{' {
+		var errResp ErrorResponse
+		if err := json.Unmarshal(body, &errResp); err == nil && errResp.Err != "" {
+			return fmt.Errorf("API 오류 [%s]: %s", errResp.Err, errResp.ErrMsg)
+		}
+	}
+	return nil
 }

@@ -97,9 +97,9 @@ var indicatorSearchCmd = &cobra.Command{
   검색 결과에서 지표ID를 확인한 후:
   kosis ind info <지표ID>    지표 설명 확인
   kosis ind d <지표명>       지표 데이터 조회`,
-	Args: cobra.ExactArgs(1),
+	Args: cobra.MinimumNArgs(1), // 따옴표 없는 여러 단어도 한 지표명으로 (s 와 같게)
 	Run: func(cmd *cobra.Command, args []string) {
-		jipyoNm := args[0]
+		jipyoNm := strings.Join(args, " ")
 		limit, _ := cmd.Flags().GetInt("limit")
 		format, _ := cmd.Flags().GetString("format")
 
@@ -137,7 +137,7 @@ var indicatorSearchCmd = &cobra.Command{
 		}
 
 		if len(results) == 0 {
-			fmt.Fprintf(os.Stderr, "'%s' 지표 검색 결과가 없습니다.\n", jipyoNm)
+			fmt.Fprintf(os.Stderr, "'%s' 지표 검색 결과가 없습니다. 지표(e-나라지표)는 이름이 좁습니다 — 통계표는 kosis s %s\n", jipyoNm, jipyoNm)
 			return
 		}
 
@@ -314,9 +314,9 @@ var indicatorDataCmd = &cobra.Command{
 관련 명령어:
   kosis ind s "키워드"       먼저 검색하여 정확한 지표명 확인
   kosis ind info <ID>        지표 개념/산식 확인`,
-	Args: cobra.ExactArgs(1),
+	Args: cobra.MinimumNArgs(1), // 따옴표 없는 여러 단어도 한 지표명으로 (s 와 같게)
 	Run: func(cmd *cobra.Command, args []string) {
-		jipyoNm := args[0]
+		jipyoNm := strings.Join(args, " ")
 		limit, _ := cmd.Flags().GetInt("limit")
 		format, _ := cmd.Flags().GetString("format")
 		outputFile, _ := cmd.Flags().GetString("output")

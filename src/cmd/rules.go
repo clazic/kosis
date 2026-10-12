@@ -200,6 +200,9 @@ verified 날짜와 status 를 보고 판단한다. 규칙 파일을 읽지 못�
 			fmt.Printf("  배포: %s", shippedPath)
 		}
 		fmt.Printf("  로컬: %s\n", rules.Dir())
+		if len(all) == 0 && idF != "" {
+			fmt.Fprintf(os.Stderr, "ℹ %q 와 정확히 같은 규칙·표 항목이 없습니다 (표는 ORG/TBL 형식, 예 101/DT_1B8000G). 그 표의 규칙이 없으면 kosis m·ex 로 확인하세요\n", idF)
+		}
 		return nil
 	},
 }

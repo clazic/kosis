@@ -25,7 +25,7 @@ var listCmd = &cobra.Command{
 
 플래그:
   --view <코드>            서비스뷰 (기본: MT_ZTITLE=주제별)
-  --parent <ID>            상위 목록 ID (기본: A)
+  --parent <ID>            상위 목록 ID (기본: 최상위 주제 A 인구·B 사회일반 … S2 무역)
   -f, --format <type>      출력 형식: table(기본), json
 
 서비스뷰 코드:
@@ -42,8 +42,11 @@ var listCmd = &cobra.Command{
   MT_TM2_TITLE    이슈별
   MT_ETITLE       영문`,
 
-	Example: `  # 주제별 최상위 목록
+	Example: `  # 주제별 최상위 목록 (A 인구, D 노동, I1 주거, P2 물가 …)
   kosis ls
+
+  # 인구(A) 아래 조사 목록
+  kosis ls --parent A
 
   # 기관별 목록
   kosis ls --view MT_OTITLE
@@ -79,12 +82,12 @@ func init() {
 	rootCmd.AddCommand(listCmd)
 
 	listCmd.Flags().StringVar(&listView, "view", "MT_ZTITLE", "탐색할 서비스뷰: MT_ZTITLE=주제별, MT_OTITLE=기관별, MT_RTITLE=국제통계, MT_BUKHAN=북한, MT_GTITLE01/02=e-지방지표, MT_ETITLE=영문 등")
-	listCmd.Flags().StringVar(&listParent, "parent", "A", "펼칠 상위 목록 ID. 출력의 LIST_ID를 넣어 한 단계씩 하위로 내려감 (A=최상위)")
+	listCmd.Flags().StringVar(&listParent, "parent", "", "펼칠 상위 목록 ID. 출력의 LIST_ID를 넣어 한 단계씩 하위로 내려감 (비우면 최상위 주제 목록, A=인구)")
 	listCmd.Flags().StringVarP(&listFormat, "format", "f", "table", "출력 형식: table=정렬표, json=파이프/jq용")
 }
 
 func runList(cmd *cobra.Command, args []string) error {
-	if strings.EqualFold(listView, "MT_OTITLE") && listParent != "A" {
+	if strings.EqualFold(listView, "MT_OTITLE") && listParent != "" {
 		// 기관별 뷰는 KOSIS 가 --parent 를 무시하고 같은 기관 목록을 준다 (2026-10-13 실측: --parent 112 → 183개 기관)
 		fmt.Fprintf(os.Stderr, "ℹ 기관별 뷰(MT_OTITLE)는 기관 목록만 줍니다 — 그 기관의 표는 kosis s <검색어> --org %s\n", listParent)
 	}
@@ -100,6 +103,10 @@ func runList(cmd *cobra.Command, args []string) error {
 		ParentID: listParent,
 	})
 	if err != nil {
+		cmd.SilenceUsage = true // 실행 오류 — 사용법 전체로 오류 한 줄을 묻지 않는다
+		if strings.Contains(err.Error(), "[30]") {
+			return fmt.Errorf("--parent %s 아래 목록이 없습니다 (뷰 %s). --parent 에는 앞 단계 출력의 LIST_ID 를 넣습니다 — 최상위: kosis ls --view %s", listParent, listView, listView)
+		}
 		return fmt.Errorf("통계목록 조회 실패: %w", err)
 	}
 

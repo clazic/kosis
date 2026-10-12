@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/clazic/kosis/internal/api"
 	"github.com/clazic/kosis/internal/history"
@@ -353,11 +354,11 @@ func TestUnderLeafMessage(t *testing.T) {
 // RSI R5: 개편으로 중간에 끊긴 옛 코드
 func TestCodesEndedEarly(t *testing.T) {
 	rows := []api.DataRow{{C1: "46110", PrdDe: "202606"}, {C1: "12110", PrdDe: "202607"}, {C1: "11", PrdDe: "202607"}}
-	got := codesEndedEarly([]string{"46110+11"}, rows)
+	got := codesEndedEarly([]string{"46110+11"}, rows, "")
 	if len(got) != 1 || got[0] != "-c1 46110(~202606)" {
 		t.Errorf("got %v", got)
 	}
-	if got := codesEndedEarly([]string{"ALL"}, rows); got != nil {
+	if got := codesEndedEarly([]string{"ALL"}, rows, ""); got != nil {
 		t.Errorf("ALL: %v", got)
 	}
 }
@@ -484,10 +485,10 @@ func TestDiagnoseSuffixHint(t *testing.T) {
 
 // RSI R10: 주석에 '누계'가 있는 표
 func TestNotesSayCumulative(t *testing.T) {
-	if !notesSayCumulative([]map[string]interface{}{{"CMMT_DC": "당해년도 해당 월까지의 누계"}}) {
+	if !notesSay([]map[string]interface{}{{"CMMT_DC": "당해년도 해당 월까지의 누계"}}, "누계") {
 		t.Error("누계 못 찾음")
 	}
-	if notesSayCumulative([]map[string]interface{}{{"CMMT_DC": "잠정치"}}) {
+	if notesSay([]map[string]interface{}{{"CMMT_DC": "잠정치"}}, "누계") {
 		t.Error("오탐")
 	}
 }
@@ -602,5 +603,305 @@ func TestTotalNameRegex(t *testing.T) {
 		if totalName.MatchString(n) {
 			t.Errorf("오탐: %s", n)
 		}
+	}
+}
+
+// RSI R14: --ratio 분자 여러 코드(65세 이상 = 연령 구간 합)
+func TestComputeRatiosMulti(t *testing.T) {
+	rows := []api.DataRow{{C1: "000", PrdDe: "2025", DT: "200"}, {C1: "Y70", PrdDe: "2025", DT: "30"}, {C1: "Y75", PrdDe: "2025", DT: "20"}, {C1: "Y40", PrdDe: "2025", DT: "150"}}
+	got, err := computeRatios(rows, "Y70+Y75", "000")
+	if err != nil || got[rowKey(rows[1])] != "15.00" || got[rowKey(rows[2])] != "10.00" || got[rowKey(rows[3])] != "" {
+		t.Errorf("%v %v", got, err)
+	}
+}
+
+// RSI R15: 잠정 주석·빈 단위 안내
+func TestNotesSayProvisionalAndUnits(t *testing.T) {
+	if !notesSay([]map[string]interface{}{{"CMMT_DC": "최종월 수치는 잠정치임"}}, "잠정") {
+		t.Error("잠정")
+	}
+	if !unitsEmpty([]api.DataRow{{UnitNM: ""}, {UnitNM: " "}}) || unitsEmpty([]api.DataRow{{UnitNM: ""}, {UnitNM: "원"}}) {
+		t.Error("unitsEmpty")
+	}
+}
+
+// RSI R15: 같은 -cN 을 거듭 주면 합친다
+func TestJoinValue(t *testing.T) {
+	v := ""
+	j := &joinValue{&v}
+	_ = j.Set("A")
+	_ = j.Set("B")
+	if v != "A+B" {
+		t.Errorf("%q", v)
+	}
+}
+
+// RSI R15: 값 없는 상위 코드(통합시 12)는 하위 코드 안내
+func TestChildrenOfMissing(t *testing.T) {
+	sum := &api.MetaSummaryResult{Classifications: []api.MetaResult{
+		{ObjID: "A", ObjIDSN: "1", ItmID: "12", ItmNM: "전남광주"},
+		{ObjID: "A", ObjIDSN: "1", ItmID: "1224", ItmNM: "광주광역시", UpItmID: "12"},
+		{ObjID: "A", ObjIDSN: "1", ItmID: "1236", ItmNM: "전라남도", UpItmID: "12"},
+	}}
+	got := childrenOfMissing(sum, []string{"-c1 12", "-c1 99"})
+	if len(got) != 1 || !strings.Contains(got[0], `-c1 "1224+1236"`) {
+		t.Errorf("%v", got)
+	}
+}
+
+// RSI R16: -c1 level:N
+func TestExpandLevels(t *testing.T) {
+	sum := &api.MetaSummaryResult{Classifications: []api.MetaResult{
+		{ObjID: "A", ObjIDSN: "1", ItmID: "00"}, {ObjID: "A", ObjIDSN: "1", ItmID: "11"},
+		{ObjID: "A", ObjIDSN: "1", ItmID: "11010", UpItmID: "11"},
+	}}
+	if got, err := expandLevels(sum, 1, "level:1"); err != nil || got != "00+11" {
+		t.Errorf("%q %v", got, err)
+	}
+	if got, _ := expandLevels(sum, 1, "00+level:2"); got != "00+11010" {
+		t.Errorf("%q", got)
+	}
+	if _, err := expandLevels(sum, 1, "level:3"); err == nil {
+		t.Error("없는 단계는 오류")
+	}
+}
+
+// RSI R16: 결과에 없는 코드 — 메타에 있는지로 나눈다
+func TestSplitByMeta(t *testing.T) {
+	sum := &api.MetaSummaryResult{Classifications: []api.MetaResult{{ObjID: "A", ObjIDSN: "1", ItmID: "12"}}}
+	in, out := splitByMeta(sum, []string{"-c1 12", "-c1 99"})
+	if len(in) != 1 || in[0] != "-c1 12" || len(out) != 1 || out[0] != "-c1 99" {
+		t.Errorf("%v %v", in, out)
+	}
+}
+
+// RSI R16: '명 건' 같은 이은 단위
+func TestJoinedUnit(t *testing.T) {
+	if joinedUnit([]api.DataRow{{UnitNM: "명 건"}}) != "명 건" || joinedUnit([]api.DataRow{{UnitNM: "백만 달러"}}) != "" || joinedUnit([]api.DataRow{{UnitNM: "원"}}) != "" {
+		t.Error("joinedUnit")
+	}
+}
+
+// RSI R17: --change 와 --sort — 기준 행 빼고 증감으로 정렬
+func TestChangeSortBy(t *testing.T) {
+	rows := []api.DataRow{
+		{C1: "A", PrdDe: "202508", DT: "100"}, {C1: "B", PrdDe: "202508", DT: "10"},
+		{C1: "A", PrdDe: "202608", DT: "105"}, {C1: "B", PrdDe: "202608", DT: "30"},
+	}
+	ch := computeChanges(rows, true)
+	kept, _ := keepChanged(rows, ch)
+	if len(kept) != 2 {
+		t.Fatalf("기준 행 빼기: %d", len(kept))
+	}
+	got := sortTopBy(kept, true, 1, func(r api.DataRow) string { return ch[rowKey(r)][0] })
+	if got[0].C1 != "B" {
+		t.Errorf("증감 +20 인 B 가 1위: %+v", got)
+	}
+}
+
+// RSI R18: 값이 모두 0 인 항목 경고
+func TestAllZeroItems(t *testing.T) {
+	rows := []api.DataRow{{ItmID: "T3", ItmNM: "보급률", DT: "0"}, {ItmID: "T3", DT: "0.0"}, {ItmID: "T6", DT: "93.9"}, {ItmID: "T6", DT: "0"}, {ItmID: "T9", DT: "0"}}
+	got := allZeroItems(rows)
+	if len(got) != 1 || got[0] != "T3 보급률" {
+		t.Errorf("%v", got)
+	}
+}
+
+// 리뷰3: 비교 시점이 없는 최신 행(신설 코드)은 지우지 않는다
+func TestKeepChangedLatestWithoutBase(t *testing.T) {
+	rows := []api.DataRow{
+		{C1: "A", PrdDe: "202508", DT: "100"}, {C1: "A", PrdDe: "202608", DT: "105"},
+		{C1: "NEW", PrdDe: "202608", DT: "7"}, {C1: "X", PrdDe: "202508", DT: "1"}, {C1: "X", PrdDe: "202608", DT: "X"},
+	}
+	kept, no := keepChanged(rows, computeChanges(rows, true))
+	if len(kept) != 3 || len(no) != 2 {
+		t.Errorf("kept %d no %d", len(kept), len(no))
+	}
+}
+
+// RSI R19: --axis 가 없는 축 이름이면 있는 축 목록
+func TestNoMatchAxisNames(t *testing.T) {
+	rows := []api.CodeRow{{Flag: "--class3", Axis: "레벨01", Code: "1"}, {Flag: "--item", Axis: "항목", Code: "T1"}}
+	err := noMatch(rows, "", 0, "차종")
+	if err == nil || !strings.Contains(err.Error(), "class3=레벨01") {
+		t.Errorf("%v", err)
+	}
+}
+
+// RSI R20: --sort 순위 열 (동률 같은 순위)
+func TestRankRows(t *testing.T) {
+	rows := []api.DataRow{{C1: "a", DT: "9"}, {C1: "b", DT: "7"}, {C1: "c", DT: "7"}, {C1: "d", DT: "5"}, {C1: "e", DT: "-"}}
+	r := rankRows(rows, func(x api.DataRow) string { return x.DT }, sortGrouper(rows))
+	if r[rowKey(rows[0])] != "1" || r[rowKey(rows[2])] != "2" || r[rowKey(rows[3])] != "4" || r[rowKey(rows[4])] != "" {
+		t.Errorf("%v", r)
+	}
+}
+
+// RSI R20: 미래 시점(추계·전망) 경고
+func TestFuturePeriod(t *testing.T) {
+	now := time.Date(2026, 10, 13, 0, 0, 0, 0, time.UTC)
+	if futurePeriod([]api.DataRow{{PrdDe: "2031"}, {PrdDe: "2025"}}, now) != "2031" || futurePeriod([]api.DataRow{{PrdDe: "202608"}}, now) != "" {
+		t.Error("futurePeriod")
+	}
+}
+
+// RSI R20: 항목이 섞이면 항목마다 따로 정렬·top·순위
+func TestSortTopByGroups(t *testing.T) {
+	rows := []api.DataRow{
+		{C1: "계", ItmID: "EX", DT: "700"}, {C1: "계", ItmID: "IM", DT: "630"},
+		{C1: "중국", ItmID: "EX", DT: "130"}, {C1: "중국", ItmID: "IM", DT: "141"}, {C1: "미국", ItmID: "EX", DT: "122"},
+	}
+	v := func(r api.DataRow) string { return r.DT }
+	got := sortTopBy(rows, true, 2, v)
+	if len(got) != 4 || got[0].ItmID != "EX" || got[1].C1 != "중국" || got[2].ItmID != "IM" {
+		t.Errorf("%+v", got)
+	}
+	r := rankRows(got, v, sortGrouper(rows))
+	if r[rowKey(got[2])] != "1" {
+		t.Errorf("IM 묶음 1위: %v", r)
+	}
+}
+
+// RSI R20: 표에 없는 축 번호의 -cN
+func TestExtraClassFlags(t *testing.T) {
+	sum := &api.MetaSummaryResult{Classifications: []api.MetaResult{{ObjID: "A", ObjIDSN: "1"}, {ObjID: "B", ObjIDSN: "2"}}}
+	if got := extraClassFlags(sum, []string{"00", "1", "", "", "", "T1"}); len(got) != 1 || got[0] != "-c6" {
+		t.Errorf("%v", got)
+	}
+	if got := extraClassFlags(&api.MetaSummaryResult{}, []string{"", "", "x"}); got != nil {
+		t.Error("축 정보 없으면 판단 안 함")
+	}
+}
+
+// RSI R21: 수록 범위 밖 시점 안내
+func TestPeriodsOutOfRange(t *testing.T) {
+	sum := &api.MetaSummaryResult{Periods: []api.MetaResult{{PrdSe: "Y", StrtPrdDe: "1965", EndPrdDe: "2025"}, {PrdSe: "M", StrtPrdDe: "1965.01", EndPrdDe: "2026.08"}, {PrdSe: "Q", StrtPrdDe: "1981 1/4", EndPrdDe: "2026 2/4"}}}
+	if got := periodsOutOfRange(sum, "Y", []string{"2000", "2026"}); !strings.Contains(got, "2026") || strings.Contains(got, "2000,") {
+		t.Errorf("%q", got)
+	}
+	if got := periodsOutOfRange(sum, "M", []string{"202608"}); got != "" {
+		t.Errorf("범위 안: %q", got)
+	}
+	if got := periodsOutOfRange(sum, "Q", []string{"202603"}); got == "" {
+		t.Error("2026 3분기는 밖")
+	}
+}
+
+// RSI R21: 계열이 하나면 시점끼리 순위 (가장 높았던 해)
+func TestSortSingleSeriesAcrossPeriods(t *testing.T) {
+	rows := []api.DataRow{{C1: "0", ItmID: "T80", PrdDe: "2000", DT: "4.4"}, {C1: "0", ItmID: "T80", PrdDe: "2001", DT: "4.0"}, {C1: "0", ItmID: "T80", PrdDe: "2020", DT: "4.0"}, {C1: "0", ItmID: "T80", PrdDe: "2010", DT: "3.7"}}
+	v := func(r api.DataRow) string { return r.DT }
+	got := sortTopBy(rows, true, 1, v)
+	if len(got) != 1 || got[0].PrdDe != "2000" {
+		t.Errorf("%+v", got)
+	}
+	r := rankRows(sortTopBy(append([]api.DataRow{}, rows...), true, 0, v), v, sortGrouper(rows))
+	if r[rowKey(rows[1])] != "2" || r[rowKey(rows[2])] != "2" || r[rowKey(rows[3])] != "4" {
+		t.Errorf("%v", r)
+	}
+}
+
+// RSI R21: 이름 같은 다른 코드(편입 전후), 이름에 단위가 있으면 빈 단위 안내 생략
+func TestSameNameCodesAndNameUnits(t *testing.T) {
+	rows := []api.DataRow{{C1: "47720", C1NM: "군위군", PrdDe: "2022"}, {C1: "27720", C1NM: "군위군", PrdDe: "2023"}, {C1: "11", C1NM: "서울"}}
+	if got := sameNameCodes(rows); len(got) != 1 || got[0] != "군위군(47720·27720)" {
+		t.Errorf("%v", got)
+	}
+	if !namesCarryUnit([]api.DataRow{{C1NM: "합계출산율(명)"}}) || namesCarryUnit([]api.DataRow{{C1NM: "합계출산율"}}) {
+		t.Error("namesCarryUnit")
+	}
+}
+
+// RSI R21: 끊긴 코드의 같은 이름 후속 코드
+func TestSameNameSuccessors(t *testing.T) {
+	sum := &api.MetaSummaryResult{Classifications: []api.MetaResult{
+		{ObjID: "A", ObjIDSN: "1", ItmID: "47", ItmNM: "경상북도"}, {ObjID: "A", ObjIDSN: "1", ItmID: "47720", ItmNM: "군위군", UpItmID: "47"},
+		{ObjID: "A", ObjIDSN: "1", ItmID: "27", ItmNM: "대구광역시"}, {ObjID: "A", ObjIDSN: "1", ItmID: "27720", ItmNM: "군위군", UpItmID: "27"},
+	}}
+	got := sameNameSuccessors(sum, []string{"-c1 47720(~2022)"})
+	if len(got) != 1 || !strings.Contains(got[0], "27720") {
+		t.Errorf("%v", got)
+	}
+}
+
+// RSI R21: 코드 하나만 줘도 표 끝보다 일찍 끊기면 알림, -e 가 더 이르면 그 기준
+func TestCodesEndedEarlySingle(t *testing.T) {
+	rows := []api.DataRow{{C1: "47720", PrdDe: "2021"}, {C1: "47720", PrdDe: "2022"}}
+	sum := &api.MetaSummaryResult{Periods: []api.MetaResult{{PrdSe: "Y", EndPrdDe: "2025"}}}
+	if got := codesEndedEarly([]string{"47720"}, rows, expectedLast(sum, "Y", "", "")); len(got) != 1 {
+		t.Errorf("%v", got)
+	}
+	if got := codesEndedEarly([]string{"47720"}, rows, expectedLast(sum, "Y", "2022", "")); len(got) != 0 {
+		t.Errorf("-e 2022 면 끊긴 게 아님: %v", got)
+	}
+}
+
+// RSI R22: kosis ratio — 시도 이름 맞추기·인자 나누기
+func TestRatioNameKeyAndSplit(t *testing.T) {
+	cases := map[string]string{"강원특별자치도": "강원", "강원도": "강원", "전라북도": "전북", "전북특별자치도": "전북", "충청남도": "충남", "경기도": "경기", "서울특별시": "서울", "세종특별자치시": "세종", "전국": "전국", "울산광역시": "울산"}
+	for in, want := range cases {
+		if got := nameKey(in); got != want {
+			t.Errorf("%s → %s (기대 %s)", in, got, want)
+		}
+	}
+	if got := splitArgs(`101 DT_1 -c1 "11+26" -i 'T1'`); len(got) != 6 || got[3] != "11+26" || got[5] != "T1" {
+		t.Errorf("%q", got)
+	}
+}
+
+// RSI R23: 하위 코드를 다 준 상위 코드는 '순위에 없는 코드' 에서 뺀다
+func TestWithoutCoveredParents(t *testing.T) {
+	sum := &api.MetaSummaryResult{Classifications: []api.MetaResult{
+		{ObjID: "A", ObjIDSN: "1", ItmID: "12"}, {ObjID: "A", ObjIDSN: "1", ItmID: "1224", UpItmID: "12"}, {ObjID: "A", ObjIDSN: "1", ItmID: "1236", UpItmID: "12"},
+	}}
+	if got := withoutCoveredParents(sum, []string{"11+12+1224+1236"}, []string{"-c1 12"}); len(got) != 0 {
+		t.Errorf("%v", got)
+	}
+	if got := withoutCoveredParents(sum, []string{"11+12+1224"}, []string{"-c1 12"}); len(got) != 1 {
+		t.Errorf("일부만 주면 남김: %v", got)
+	}
+}
+
+// 리뷰4: --top 으로 잘린 뒤에도 묶음은 자르기 전 기준 (해마다 1위)
+func TestRankAfterTopUsesOriginalGroups(t *testing.T) {
+	rows := []api.DataRow{{C1: "41", ItmID: "T", PrdDe: "2023", DT: "100"}, {C1: "11", ItmID: "T", PrdDe: "2023", DT: "90"},
+		{C1: "41", ItmID: "T", PrdDe: "2024", DT: "110"}, {C1: "11", ItmID: "T", PrdDe: "2024", DT: "95"}}
+	v := func(r api.DataRow) string { return r.DT }
+	grp := sortGrouper(rows)
+	got := sortTopBy(append([]api.DataRow{}, rows...), true, 1, v)
+	r := rankRows(got, v, grp)
+	for _, g := range got {
+		if r[rowKey(g)] != "1" {
+			t.Errorf("%+v rank %s", g, r[rowKey(g)])
+		}
+	}
+	if len(multiCodeAxes(rows)) != 1 {
+		t.Error("multiCodeAxes")
+	}
+	if futurePeriod([]api.DataRow{{PrdDe: "202612"}}, time.Date(2026, 10, 13, 0, 0, 0, 0, time.UTC)) != "202612" {
+		t.Error("올해 아직 안 온 달")
+	}
+	if normPrd("2026  2/4", "Q") != "202602" {
+		t.Error("normPrd 두 칸 공백")
+	}
+}
+
+// 리뷰4: ratio 는 분자 쪽 이름 열로 짝을 찾는다 (축 번호가 달라도)
+func TestRatioKeyPerSide(t *testing.T) {
+	num := ratioSide{key: "C2_NM", rows: []map[string]string{{"C1_NM": "계", "C2_NM": "강원특별자치도", "DT": "10", "PRD_DE": "2025"}}}
+	den := ratioSide{key: "C1_NM", rows: []map[string]string{{"C1_NM": "강원도", "DT": "100", "PRD_DE": "2025"}}}
+	if ratioKey(num, num.rows[0], true) != ratioKey(den, den.rows[0], true) || ratioKey(den, num.rows[0], false) == ratioKey(num, num.rows[0], false) {
+		t.Error("양쪽 키가 같아야 한다")
+	}
+}
+
+// 리뷰4 후: level:1 에서 !코드 빼기
+func TestExpandLevelsExclude(t *testing.T) {
+	sum := &api.MetaSummaryResult{Classifications: []api.MetaResult{
+		{ObjID: "A", ObjIDSN: "1", ItmID: "00"}, {ObjID: "A", ObjIDSN: "1", ItmID: "03"}, {ObjID: "A", ObjIDSN: "1", ItmID: "11"},
+	}}
+	if got, err := expandLevels(sum, 1, "level:1+!03"); err != nil || got != "00+11" {
+		t.Errorf("%q %v", got, err)
 	}
 }

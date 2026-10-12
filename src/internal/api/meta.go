@@ -108,7 +108,55 @@ func (c *Client) MetaCodes(orgID, tblID, objID string) ([]CodeRow, error) {
 			s.Classifications = append(s.Classifications, r)
 		}
 	}
+	s.Classifications = inferOrphanParents(s.Classifications)
 	return s.Codes(), nil
+}
+
+// inferOrphanParents KOSIS 메타가 상위(UP_ITM_ID)를 빠뜨린 코드에 상위를 채운다.
+// 2026.07 인천 개편 신설 구(23125 제물포구 등)는 상위가 비어 최상위로 보였다 — --level 1 시도 순위에 구가 섞이고
+// --under 23 에선 빠졌다. 상위가 없는 코드 X 가 다른 최상위 코드 P 로 시작하고, P 의 실제 하위 중 X 와 길이가 같은
+// 코드도 P 로 시작하면(같은 코드 체계) X 의 상위를 P 로 본다. 가장 긴 P 를 고른다.
+func inferOrphanParents(rows []MetaResult) []MetaResult {
+	type key struct{ obj, code string }
+	in := map[key]bool{}
+	for _, r := range rows {
+		in[key{r.ObjID, r.ItmID}] = true
+	}
+	isTop := func(r MetaResult) bool { return r.UpItmID == "" || !in[key{r.ObjID, r.UpItmID}] }
+	childLens := map[key]map[int]bool{} // 상위 → 실제 하위 코드 길이들 (그 상위로 시작하는 것만)
+	for _, r := range rows {
+		if !isTop(r) && strings.HasPrefix(r.ItmID, r.UpItmID) {
+			k := key{r.ObjID, r.UpItmID}
+			if childLens[k] == nil {
+				childLens[k] = map[int]bool{}
+			}
+			childLens[k][len(r.ItmID)] = true
+		}
+	}
+	topParent := map[key]bool{} // 실제 하위가 있는 최상위 코드 — 후보는 이것뿐
+	for _, r := range rows {
+		if isTop(r) && childLens[key{r.ObjID, r.ItmID}] != nil {
+			topParent[key{r.ObjID, r.ItmID}] = true
+		}
+	}
+	out := make([]MetaResult, len(rows))
+	copy(out, rows)
+	if len(topParent) == 0 {
+		return out
+	}
+	for i, r := range out {
+		if !isTop(rows[i]) {
+			continue
+		}
+		for k := len(r.ItmID) - 1; k >= 1; k-- { // 긴 접두사부터 — O(n·코드 길이)
+			p := key{r.ObjID, r.ItmID[:k]}
+			if topParent[p] && childLens[p][len(r.ItmID)] {
+				out[i].UpItmID = r.ItmID[:k]
+				break
+			}
+		}
+	}
+	return out
 }
 
 func unmarshalMetaRaw(body []byte, out *[]map[string]any) error {
@@ -159,6 +207,8 @@ func (c *Client) MetaSummary(orgID, tblID string) (*MetaSummaryResult, error) {
 			}
 		}
 	}
+
+	summary.Classifications = inferOrphanParents(summary.Classifications)
 
 	// PRD 타입: 수록정보 (주기, 기간)
 	prdResults, prdErr := c.Meta(orgID, tblID, MetaOptions{Type: "PRD"})

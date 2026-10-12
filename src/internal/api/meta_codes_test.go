@@ -35,3 +35,18 @@ func TestCodesKeepsObjSN(t *testing.T) {
 		t.Errorf("OBJ_ID_SN 무시: %+v", rows)
 	}
 }
+
+// RSI R16: 상위가 빠진 신설 구(23125)는 같은 체계의 최상위(23) 아래로
+func TestInferOrphanParents(t *testing.T) {
+	rows := []MetaResult{
+		{ObjID: "A", ItmID: "00"}, {ObjID: "A", ItmID: "23"}, {ObjID: "A", ItmID: "23010", UpItmID: "23"},
+		{ObjID: "A", ItmID: "23125"}, {ObjID: "A", ItmID: "2"}, {ObjID: "A", ItmID: "999"},
+	}
+	got := inferOrphanParents(rows)
+	if got[3].UpItmID != "23" {
+		t.Errorf("23125 상위: %q", got[3].UpItmID)
+	}
+	if got[1].UpItmID != "" || got[4].UpItmID != "" || got[5].UpItmID != "" {
+		t.Errorf("하위 없는 2·999·23 은 그대로: %+v", got)
+	}
+}

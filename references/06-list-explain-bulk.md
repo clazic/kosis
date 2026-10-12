@@ -5,7 +5,8 @@
 트리 구조로 통계표를 탐색합니다.
 
 ```bash
-kosis ls                              # 주제별 최상위
+kosis ls                              # 주제별 최상위 (A 인구, D 노동, I1 주거, P2 물가 … — v0.5.27+, 전에는 인구 하위가 나왔다)
+kosis ls --parent I1                  # 주거 아래 조사 목록
 kosis ls --view MT_OTITLE             # 기관별
 kosis ls --parent A_4                 # 인구총조사 하위
 kosis ls --parent A11                 # 인구부문 → 연도별 표 목록
