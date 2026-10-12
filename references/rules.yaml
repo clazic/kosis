@@ -4,7 +4,8 @@
 # 사람용 설명은 LEARNINGS.md, 명령 문법은 references/13-reference.md.
 #
 # ── 읽는 법 ──
-# 1. 작업 전에 이 파일과 로컬 규칙 ~/.kosis/rules.d/*.yaml(있으면)을 읽는다. 로컬이 더 최신이다.
+# 1. 모든 조회(s·m·d·ex) 전에 이 파일, LEARNINGS.md(오답노트), 로컬 규칙 ~/.kosis/rules.d/*.yaml(있으면)을 참조한다.
+#    예외 없음 — 익숙한 표·짧은 조회도 마찬가지. 로컬이 더 최신이다.
 #    kosis rules list [찾을 말] 로 둘을 함께 볼 수 있다 (-f json 이면 본문까지).
 # 2. tables 에 원하는 통계표가 있으면 검색·메타를 건너뛰고 바로 써도 된다 (verified 날짜가 오래됐으면 m 으로 재확인).
 #    단 axes 가 표의 분류 축 전부가 아니면 m 으로 먼저 확인한다 (kosis d 도 빠진 --classN 을 조회 전에 알려 준다).
@@ -80,10 +81,10 @@ rules:
 
   - id: workflow.record-learning
     topic: workflow
-    when: 작업 중 규칙에 없던 사실을 확인했거나 기존 규칙이 틀린 것을 알았을 때
-    do: "kosis rules add 로 기록한다(verified·evidence 필수). 틀린 규칙은 지우지 말고 status: wrong 과 이유를 적고 맞는 내용을 새로 add"
-    why: 기록하지 않으면 다음 작업에서 같은 실수를 한다
-    evidence: "2026-10-12 실사용 감사 G7·G8 — 새 사실과 틀린 규칙을 기록하지 않음"
+    when: "작업 중 규칙에 없던 사실을 확인했거나, 기존 규칙이 틀린 것을 알았거나, 에러·빈 결과·이상한 동작의 원인을 찾았을 때 ('원인을 찾았다'고 말하는 순간 모두 해당)"
+    do: "사용자에게 보고하기 전에 같은 작업 안에서 kosis rules add 로 기록한다(verified·evidence 필수). 틀린 규칙은 지우지 말고 status: wrong 과 이유를 적고 맞는 내용을 새로 add. 보고에 무엇을 어디에 기록했는지 적는다"
+    why: 원인을 말로만 밝히고 기록하지 않으면 다른 AI·다음 작업이 같은 실수를 한다
+    evidence: "2026-10-12 실사용 감사 G7·G8 — 새 사실과 틀린 규칙을 기록하지 않음. 2026-10-12 규칙이 'F=5년'으로 틀려 3년 주기 표를 '데이터 없음'으로 오판 — 원인을 찾은 뒤 meta.period-codes 정정"
     verified: "2026-10-12"
 
   - id: workflow.rules-source
