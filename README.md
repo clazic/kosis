@@ -239,6 +239,57 @@ env = { KOSIS_API_KEYS = "<키1>,<키2>" }
 
 `KOSIS_API_KEYS` 를 빼면 `~/.kosis/config.yaml`(`kosis config set-key`/`add-key` 로 넣은 키, `KOSIS_API_KEY` 환경변수 포함)을 씁니다.
 
+### HTTP 모드 (Streamable HTTP, 게이트웨이 없이)
+
+```bash
+kosis-mcp --http                      # 127.0.0.1:8080, 경로 /mcp
+kosis-mcp --http 127.0.0.1:9100
+KOSIS_MCP_TOKEN=<긴 무작위 값> kosis-mcp --http 0.0.0.0:9100   # loopback 이 아니면 토큰 필수 (없으면 시작 거부)
+```
+
+| 환경변수 | 설명 |
+|----------|------|
+| `KOSIS_MCP_TOKEN` | 있으면 모든 요청에 `Authorization: Bearer <토큰>` 필수 (상수 시간 비교, 틀리면 401) |
+| `KOSIS_MCP_ALLOWED_ORIGINS` | 허용할 `Origin` (쉼표). `Origin` 머리글이 오면 loopback 출처(`http://localhost:*`, `http://127.0.0.1:*`) 또는 이 목록만 허용, 아니면 403 |
+| `KOSIS_API_KEYS` | 기본 키 (stdio 와 같음) |
+
+- MCP 2025-06-18 Streamable HTTP: `POST /mcp`(JSON-RPC 하나 또는 배치 10개까지, 본문 1MB 상한), `GET /mcp`(세션의 서버 알림 SSE, 15초마다 `: ping`), `DELETE /mcp`(세션 끝).
+- `initialize` 응답의 `Mcp-Session-Id` 머리글을 이후 요청에 보낸다. 없으면 400, 모르는(끝났거나 1시간 쓰지 않은) 세션이면 404. `MCP-Protocol-Version` 머리글이 모르는 값이면 400.
+- `tools/call` 에 `_meta.progressToken` 이 있고 `Accept` 에 `text/event-stream` 이 있으면 SSE 로 답한다: `notifications/progress` 이벤트들(시작, `kosis_data` 분할 조회 조각 n/전체 — 1초에 한 번까지, 끝) → 마지막에 응답 이벤트. 아니면 `application/json`.
+- 요청별 키: 머리글 `X-Api-Keys: k1,k2` → 그 POST 의 `tools/call` 모두에 `_meta["kr.pes/keys"]` 와 같게 적용 (그 호출에 `_meta` 키가 있으면 `_meta` 가 먼저). 기본 키로 넘어가지 않는다.
+- 취소: `notifications/cancelled {requestId}` 를 같은 세션으로 POST 하거나, 응답 중인 POST 연결이 끊기면 그 요청의 KOSIS 호출·분할 조회를 멈추고 답하지 않는다.
+- 응답·SSE 이벤트 모두 키를 지운다. stderr 접근 기록은 메서드·도구 이름·걸린 시간만.
+
+Claude Code (HTTP):
+
+```bash
+claude mcp add --transport http kosis http://127.0.0.1:8080/mcp --header "Authorization: Bearer <토큰>"
+```
+
+Codex (`~/.codex/config.toml`, HTTP):
+
+```toml
+[mcp_servers.kosis]
+url = "http://127.0.0.1:8080/mcp"
+bearer_token_env_var = "KOSIS_MCP_TOKEN"
+```
+
+curl 로 확인:
+
+```bash
+U=http://127.0.0.1:8080/mcp
+SID=$(curl -s -D - -o /dev/null -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' $U \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"curl","version":"0"}}}' \
+  | awk -F': ' 'tolower($1)=="mcp-session-id"{print $2}' | tr -d '\r')
+curl -sN -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' -H "Mcp-Session-Id: $SID" $U \
+  -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"kosis_data","arguments":{"org_id":"101","tbl_id":"DT_1B040A3","class1":"ALL","item":"T20","period":"M","start":"201601","end":"202512"},"_meta":{"progressToken":"p1"}}}'
+```
+
+### 진행 알림 · 취소 (stdio·HTTP 공통)
+
+- `tools/call` 의 `params._meta.progressToken` 이 있으면 `notifications/progress {progressToken, progress, total?, message}` 를 보낸다 (stdio 는 stdout 한 줄, HTTP 는 그 POST 의 SSE). 없으면 보내지 않는다.
+- `notifications/cancelled {requestId}` 를 받으면 그 요청을 멈추고 답하지 않는다.
+
 ### 키
 
 | 방법 | 설명 |

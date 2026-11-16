@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -41,7 +42,19 @@ type Client struct {
 	keyIndex   int
 	keyStart   int // 이 프로세스가 처음 쓸 키. 0 고정이면 kosis 를 여러 번 실행할 때 0번 키만 한도에 걸린다
 	keyIndexMu sync.Mutex
-	keyPool    chan int // 키 풀(설계서 Step 2): 가용 키 인덱스를 버퍼드 채널로 관리(borrow/return)
+	keyPool    chan int        // 키 풀(설계서 Step 2): 가용 키 인덱스를 버퍼드 채널로 관리(borrow/return)
+	ctx        context.Context // nil 이면 context.Background (MCP 서버가 요청 취소에 쓴다)
+}
+
+// SetContext 이 클라이언트의 모든 HTTP 호출·재시도 대기를 ctx 에 묶는다. ctx 가 끝나면 진행 중 호출이 끊기고
+// 이후 호출은 바로 실패한다 (분할 조회 워커도 남은 조각을 곧바로 끝낸다). CLI 는 부르지 않는다.
+func (c *Client) SetContext(ctx context.Context) { c.ctx = ctx }
+
+func (c *Client) context() context.Context {
+	if c.ctx == nil {
+		return context.Background()
+	}
+	return c.ctx
 }
 
 // NewClient creates a new KOSIS API client.
@@ -139,6 +152,10 @@ func (c *Client) request(endpoint string, params map[string]string, noCache bool
 // 워커 풀 기반 병렬 조회(설계서 8.5절)에서 각 워커가 특정 키로 요청하도록 함.
 // 429 Too Many Requests 에러 시 exponential backoff로 자동 재시도합니다 (최대 3회).
 func (c *Client) requestWithKey(endpoint string, params map[string]string, noCache bool, keyIndex int) ([]byte, error) {
+	ctx := c.context()
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("요청 취소됨: %w", err)
+	}
 	// noCache가 false일 때만 캐시 조회
 	var cacheKey string
 	if !noCache && c.cache != nil {
@@ -189,7 +206,7 @@ func (c *Client) requestWithKey(endpoint string, params map[string]string, noCac
 
 	for attempt := 0; attempt <= maxRetries; attempt++ {
 		// Make HTTP request
-		req, err := http.NewRequest("GET", queryURL.String(), nil)
+		req, err := http.NewRequestWithContext(ctx, "GET", queryURL.String(), nil)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create request: %w", err)
 		}
@@ -212,7 +229,11 @@ func (c *Client) requestWithKey(endpoint string, params map[string]string, noCac
 			lastErr = fmt.Errorf("API rate limit exceeded (429)")
 			if attempt < maxRetries {
 				// Exponential backoff: 1초, 2초, 4초
-				time.Sleep(backoff)
+				select {
+				case <-time.After(backoff):
+				case <-ctx.Done():
+					return nil, fmt.Errorf("요청 취소됨: %w", ctx.Err())
+				}
 				backoff *= 2
 				continue
 			}

@@ -76,9 +76,9 @@ func TestSelectKeys(t *testing.T) {
 // ── 입력 검증 ─────────────────────────────────────────────────
 
 func TestValidateArgs(t *testing.T) {
-	data, _ := toolByName("kosis_data")
-	search, _ := toolByName("kosis_search")
-	ind, _ := toolByName("kosis_indicator")
+	data, _ := testTool("kosis_data")
+	search, _ := testTool("kosis_search")
+	ind, _ := testTool("kosis_indicator")
 
 	bad := []struct {
 		t    *tool
@@ -323,4 +323,8 @@ func TestInvalidArgsIsError(t *testing.T) {
 	if got["<nil>"]["error"] == nil {
 		t.Errorf("파싱 오류: %v", got)
 	}
+}
+
+func testTool(name string) (*tool, bool) {
+	return newServer(nil, "dev", nil, nil).toolByName(name)
 }

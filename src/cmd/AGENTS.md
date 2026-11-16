@@ -42,7 +42,8 @@ Constraints:
 - `kosis-mcp/` 는 별도 `package main`(stdio MCP 서버). `mcp_export.go` 의 `MCPSearch`·`MCPData`·`MCPList`·`MCPExplain`·`MCPMetaSummary`·`MCPFilterCodes` 로 이 패키지의 검사·안내 도우미를 쓴다.
 - `data.go` 의 조회 전 검사나 조회 뒤 안내(stderr)를 더하거나 바꾸면 `mcp_export.go` 의 `MCPData` 에도 같은 것을 넣는다 (MCP 는 stderr 대신 `notices`).
 - MCP 는 파일을 쓰지 않는다(캐시 제외 — 이력 기록 없음). 키는 결과·오류에 원문으로 내보내지 않는다(`kosis-mcp/keys.go` 의 `scrubKeys`).
-- 검증: `go test ./cmd/kosis-mcp`, 실제 stdio smoke 는 README "MCP 서버" 절.
+- 전송: stdio(`server.go`)와 Streamable HTTP(`http.go`, `--http`)가 같은 `handleRequest`·도구 코드를 쓴다. 진행 알림 `progress.go`, 취소는 요청 ctx → `api.Client.SetContext`.
+- 검증: `go test ./cmd/kosis-mcp`, 실제 stdio·HTTP smoke 는 README "MCP 서버" 절.
 
 # Local Golden Rules
 

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -8,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // 캐시 키·파일 이름·내용에 API 키가 들어가지 않는다 (캐시는 공개 통계 응답만, 사람 사이 공유 가능).
@@ -84,5 +86,31 @@ func TestCacheSkipsBodyWithKey(t *testing.T) {
 	}
 	if entries, _ := os.ReadDir(dir); len(entries) != 0 {
 		t.Errorf("키가 든 응답을 캐시했다: %d개", len(entries))
+	}
+}
+
+// SetContext 의 ctx 가 끝나면 진행 중 HTTP 호출이 바로 끊긴다 (MCP 취소).
+func TestContextCancelStopsRequest(t *testing.T) {
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-release:
+		case <-r.Context().Done():
+		}
+	}))
+	defer srv.Close()
+	defer close(release)
+	c, _ := NewClient([]string{"k"})
+	c.baseURL = srv.URL
+	ctx, cancel := context.WithCancel(context.Background())
+	c.SetContext(ctx)
+	go func() { time.Sleep(100 * time.Millisecond); cancel() }()
+	start := time.Now()
+	_, err := c.request("statisticsSearch.do?method=getList", map[string]string{"searchNm": "x"}, true)
+	if err == nil || time.Since(start) > 5*time.Second {
+		t.Fatalf("취소되어야 한다: %v (%v)", err, time.Since(start))
+	}
+	if _, err := c.request("x", nil, true); err == nil || !strings.Contains(err.Error(), "취소") {
+		t.Errorf("취소 뒤 호출은 바로 실패: %v", err)
 	}
 }

@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -37,7 +38,7 @@ type tool struct {
 	Title       string
 	Description string
 	Params      []*param
-	run         func(c *api.Client, in args) (string, error)
+	run         func(ctx context.Context, c *api.Client, in args, prog *progress) (string, error)
 }
 
 // args 검증을 통과한 인자 (문자열은 string, 정수는 int).
@@ -176,8 +177,8 @@ func init() {
 	}
 }
 
-func toolByName(name string) (*tool, bool) {
-	for _, t := range tools {
+func (s *server) toolByName(name string) (*tool, bool) {
+	for _, t := range s.tools {
 		if t.Name == name {
 			return t, true
 		}
@@ -186,9 +187,9 @@ func toolByName(name string) (*tool, bool) {
 }
 
 // toolList tools/list 응답의 도구 정의 (JSON Schema 포함).
-func toolList() []map[string]any {
+func (s *server) toolList() []map[string]any {
 	var out []map[string]any
-	for _, t := range tools {
+	for _, t := range s.tools {
 		props := map[string]any{}
 		required := []string{}
 		for _, p := range t.Params {
@@ -377,7 +378,7 @@ func toAny[T any](xs []T) []any {
 
 // ── 도구 실행 ─────────────────────────────────────────────────
 
-func runSearch(c *api.Client, in args) (string, error) {
+func runSearch(_ context.Context, c *api.Client, in args, prog *progress) (string, error) {
 	ans, err := cmd.MCPSearch(c, cmd.SearchQuery{
 		Keyword: in.str("keyword"), Limit: in.num("limit"), Page: in.num("page"), Sort: in.str("sort"),
 		Org: in.str("org"), Stat: in.str("stat"), Region: in.str("region"),
@@ -392,7 +393,7 @@ func runSearch(c *api.Client, in args) (string, error) {
 	return fitResult(obj, "results", toAny(ans.Results), "limit 을 줄이세요"), nil
 }
 
-func runMeta(c *api.Client, in args) (string, error) {
+func runMeta(_ context.Context, c *api.Client, in args, prog *progress) (string, error) {
 	org, tbl, typ := in.str("org_id"), in.str("tbl_id"), in.str("type")
 	find, under, level, axis := in.str("find"), in.str("under"), in.num("level"), in.str("axis")
 	selecting := find != "" || under != "" || level > 0 || axis != ""
@@ -441,7 +442,7 @@ func runMeta(c *api.Client, in args) (string, error) {
 	return fitResult(res, "rows", toAny(rows), "type=ITM 은 find·under·level·axis 로 고르세요"), nil
 }
 
-func runData(c *api.Client, in args) (string, error) {
+func runData(_ context.Context, c *api.Client, in args, prog *progress) (string, error) {
 	q := cmd.DataQuery{
 		OrgID: in.str("org_id"), TblID: in.str("tbl_id"),
 		Item: in.str("item"), Period: in.str("period"),
@@ -450,6 +451,9 @@ func runData(c *api.Client, in args) (string, error) {
 	}
 	for i := range q.Classes {
 		q.Classes[i] = in.str(fmt.Sprintf("class%d", i+1))
+	}
+	if prog != nil {
+		q.Progress = func(done, total int) { prog.step(done, total, "분할 조회 조각") }
 	}
 	ans, err := cmd.MCPData(c, q)
 	if err != nil {
@@ -462,7 +466,7 @@ func runData(c *api.Client, in args) (string, error) {
 	return fitResult(obj, "rows", toAny(ans.Rows), "분류 코드·항목·시점(latest, start/end)을 줄이거나 fields 로 열을 고르세요"), nil
 }
 
-func runList(c *api.Client, in args) (string, error) {
+func runList(_ context.Context, c *api.Client, in args, prog *progress) (string, error) {
 	rows, notices, err := cmd.MCPList(c, in.str("view"), in.str("parent"))
 	if err != nil {
 		return "", err
@@ -477,7 +481,7 @@ func runList(c *api.Client, in args) (string, error) {
 	return fitResult(obj, "rows", toAny(rows), "parent 로 한 단계 내려가세요"), nil
 }
 
-func runExplain(c *api.Client, in args) (string, error) {
+func runExplain(_ context.Context, c *api.Client, in args, prog *progress) (string, error) {
 	res, err := cmd.MCPExplain(c, in.str("org_id"), in.str("tbl_id"))
 	if err != nil {
 		return "", err
@@ -486,7 +490,7 @@ func runExplain(c *api.Client, in args) (string, error) {
 	return fitResult(res, "notes", toAny(notes), "주석이 많습니다 — kosis_meta type=CMMT 로 보세요"), nil
 }
 
-func runIndicator(c *api.Client, in args) (string, error) {
+func runIndicator(_ context.Context, c *api.Client, in args, prog *progress) (string, error) {
 	action, name, limit := in.str("action"), in.str("name"), in.num("limit")
 	var (
 		res []api.IndicatorResult

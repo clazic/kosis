@@ -258,6 +258,9 @@ type DataQuery struct {
 	Latest       int
 	Periods      string // 비연속 시점 "2020,2022"
 	Fields       string // 출력 열 (API 키 또는 한국어 열 이름, 쉼표)
+
+	// Progress 분할 조회 조각을 받을 때마다 (n, 전체). nil 이면 부르지 않는다.
+	Progress func(done, total int)
 }
 
 // DataColumn 결과 열: Key 는 행의 키(API 키 C1, C1_NM, ITM_NM, PRD_DE, DT …), Label 은 이 표의 이름.
@@ -380,7 +383,7 @@ func MCPData(client *api.Client, q DataQuery) (*DataAnswer, error) {
 		}
 		results, err = client.DataWithPeriods(q.OrgID, q.TblID, periods, opts)
 	} else {
-		results, err = client.DataWithAutoSplit(q.OrgID, q.TblID, opts, api.SplitOptions{MaxCells: 40000}, nil)
+		results, err = client.DataWithAutoSplit(q.OrgID, q.TblID, opts, api.SplitOptions{MaxCells: 40000}, q.Progress)
 	}
 	if err != nil {
 		lines := []string{err.Error()}

@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/clazic/kosis/internal/cache"
 	"github.com/clazic/kosis/internal/config"
@@ -21,29 +22,56 @@ const usage = `kosis-mcp — KOSIS(국가통계포털) 조회 MCP 서버 (stdio)
 
 사용법:
   kosis-mcp            MCP 서버로 실행 (stdin/stdout, 줄 단위 JSON-RPC 2.0)
+  kosis-mcp --http [주소]
+                       Streamable HTTP 로 실행 (기본 127.0.0.1:8080, 경로 /mcp)
   kosis-mcp --version  버전
   kosis-mcp --help     이 도움말
 
 키:
   KOSIS_API_KEYS       기본 API 키 (쉼표로 여러 개). 없으면 ~/.kosis/config.yaml 의 api_keys
   _meta["kr.pes/keys"] tools/call 마다 줄 키 (문자열 배열). 있으면 그 키만 쓴다
+  X-Api-Keys: k1,k2    (HTTP) 그 POST 의 tools/call 에 요청별 키로
+
+HTTP:
+  KOSIS_MCP_TOKEN            있으면 Authorization: Bearer <토큰> 필수. loopback 이 아닌 주소는 토큰 없이 시작 거부
+  KOSIS_MCP_ALLOWED_ORIGINS  허용할 Origin (쉼표). loopback 출처는 늘 허용
 
 도구: kosis_search, kosis_meta, kosis_data, kosis_list, kosis_explain, kosis_indicator (읽기 전용)
 `
 
 func main() {
-	for _, a := range os.Args[1:] {
-		switch a {
-		case "--version", "-v", "version":
+	httpAddr := ""
+	argv := os.Args[1:]
+	for i := 0; i < len(argv); i++ {
+		switch a := argv[i]; {
+		case a == "--version" || a == "-v" || a == "version":
 			fmt.Println("kosis-mcp", version)
 			return
-		case "--help", "-h", "help":
+		case a == "--help" || a == "-h" || a == "help":
 			fmt.Print(usage)
 			return
+		case a == "--http":
+			httpAddr = defaultHTTPAddr
+			if i+1 < len(argv) && !strings.HasPrefix(argv[i+1], "-") {
+				httpAddr = argv[i+1]
+				i++
+			}
+		case strings.HasPrefix(a, "--http="):
+			httpAddr = strings.TrimPrefix(a, "--http=")
 		default:
 			fmt.Fprintf(os.Stderr, "알 수 없는 인자: %s\n\n%s", a, usage)
 			os.Exit(2)
 		}
+	}
+
+	if httpAddr != "" {
+		os.Stdout = os.Stderr
+		s := newServer(nil, version, loadDefaultKeys(), openCache())
+		if err := newHTTPServer(s, httpConfigFromEnv()).listenAndServe(httpAddr); err != nil {
+			fmt.Fprintf(os.Stderr, "kosis-mcp: %v\n", s.scrub(err.Error(), nil))
+			os.Exit(1)
+		}
+		return
 	}
 
 	// stdout 은 JSON-RPC 전용. 다른 코드가 실수로 fmt.Print 해도 프로토콜이 깨지지 않게 os.Stdout 을 stderr 로 돌린다.
