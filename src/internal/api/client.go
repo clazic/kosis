@@ -142,7 +142,7 @@ func (c *Client) requestWithKey(endpoint string, params map[string]string, noCac
 	// noCache가 false일 때만 캐시 조회
 	var cacheKey string
 	if !noCache && c.cache != nil {
-		cacheKey = endpoint + "?" + url.Values(convertParamsToURLValues(params)).Encode()
+		cacheKey = cacheKeyFor(endpoint, params)
 		if data, found := c.cache.Get(cacheKey); found {
 			if err := apiError(data); err != nil { // 캐시한 [30](없음) 응답
 				return nil, err
@@ -235,7 +235,8 @@ func (c *Client) requestWithKey(endpoint string, params map[string]string, noCac
 		}
 
 		// noCache가 false일 때만 캐시 저장 (설계서 8.5절에 따라 메타/검색만 캐시)
-		if !noCache && c.cache != nil {
+		// 응답에 키가 섞여 있으면 저장하지 않는다 — 캐시는 공개 통계 응답만 (사람 사이 공유 가능)
+		if !noCache && c.cache != nil && !containsKey(body, params["apiKey"]) {
 			if err := c.cache.Set(cacheKey, body); err != nil {
 				// 캐시 저장 실패는 무시하고 데이터만 반환
 				fmt.Fprintf(os.Stderr, "캐시 저장 오류: %v\n", err)
@@ -248,13 +249,33 @@ func (c *Client) requestWithKey(endpoint string, params map[string]string, noCac
 	return nil, lastErr
 }
 
-// convertParamsToURLValues converts string map to url.Values.
-func convertParamsToURLValues(params map[string]string) map[string][]string {
-	result := make(map[string][]string)
-	for k, v := range params {
-		result[k] = []string{v}
+// cacheOnlyParams 캐시 키에 넣지 않는 요청 인자. apiKey 는 비밀이고, 나머지는 모든 요청에 같은 값이라 뜻이 없다.
+// 호출자가 이전 요청에 쓴 params 맵을 다시 넘겨도(apiKey 가 이미 들어 있어도) 캐시 키·파일 이름에 키가 들어가지 않는다.
+var cacheOnlyParams = map[string]bool{"apiKey": true, "format": true, "jsonVD": true, "jsonMVD": true}
+
+// cacheKeyFor 캐시 키 = 엔드포인트 + 키를 뺀 요청 인자. 같은 조회면 어떤 API 키로 받았든 같은 캐시를 쓴다.
+func cacheKeyFor(endpoint string, params map[string]string) string {
+	v := url.Values{}
+	for k, val := range params {
+		if !cacheOnlyParams[k] {
+			v.Set(k, val)
+		}
 	}
-	return result
+	return endpoint + "?" + v.Encode()
+}
+
+// SetCache 이미 만든 파일 캐시를 함께 쓴다 (MCP 서버가 요청마다 만드는 클라이언트가 한 캐시를 나눠 쓰게).
+func (c *Client) SetCache(fc *cache.Cache) { c.cache = fc }
+
+// CloseIdleConnections 이 클라이언트의 유휴 HTTP 연결을 닫는다 (요청마다 클라이언트를 만드는 MCP 서버용).
+func (c *Client) CloseIdleConnections() { c.httpClient.CloseIdleConnections() }
+
+// containsKey 응답 본문에 API 키가 그대로 또는 URL 인코딩된 채 들어 있는지.
+func containsKey(body []byte, key string) bool {
+	if key == "" {
+		return false
+	}
+	return bytes.Contains(body, []byte(key)) || bytes.Contains(body, []byte(url.QueryEscape(key)))
 }
 
 // maskAPIKey masks any API key that appears in the given string.

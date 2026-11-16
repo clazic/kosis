@@ -525,37 +525,7 @@ func noMatch(rows []api.CodeRow, under string, level int, axis string) error {
 
 // printCodeRows --find·--under·--level 로 거른 코드 목록과, 플래그별로 d 에 바로 넣을 "a+b+c".
 func printCodeRows(rows []api.CodeRow, find, under string, level int, axis, format string) error {
-	var names []string
-	for _, n := range strings.Split(find, ",") {
-		if n = normFindName(n); n != "" {
-			names = append(names, n)
-		}
-	}
-	var out []api.CodeRow
-	for _, r := range rows {
-		if under != "" && r.ParentCode != under {
-			continue
-		}
-		if level > 0 && r.Level != level {
-			continue
-		}
-		if axis != "" && !axisMatches(r, axis) {
-			continue
-		}
-		if len(names) > 0 {
-			hit := false
-			for _, n := range names {
-				if strings.Contains(normFindName(r.Name), n) {
-					hit = true
-					break
-				}
-			}
-			if !hit {
-				continue
-			}
-		}
-		out = append(out, r)
-	}
+	out := filterCodeRows(rows, find, under, level, axis)
 	if format == "json" {
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetEscapeHTML(false)
@@ -615,6 +585,42 @@ func printCodeRows(rows []api.CodeRow, find, under string, level int, axis, form
 		}
 	}
 	return nil
+}
+
+// filterCodeRows --find/--under/--level/--axis 로 코드 행을 고른다 (m 출력과 MCP kosis_meta 가 같이 쓴다).
+func filterCodeRows(rows []api.CodeRow, find, under string, level int, axis string) []api.CodeRow {
+	var names []string
+	for _, n := range strings.Split(find, ",") {
+		if n = normFindName(n); n != "" {
+			names = append(names, n)
+		}
+	}
+	var out []api.CodeRow
+	for _, r := range rows {
+		if under != "" && r.ParentCode != under {
+			continue
+		}
+		if level > 0 && r.Level != level {
+			continue
+		}
+		if axis != "" && !axisMatches(r, axis) {
+			continue
+		}
+		if len(names) > 0 {
+			hit := false
+			for _, n := range names {
+				if strings.Contains(normFindName(r.Name), n) {
+					hit = true
+					break
+				}
+			}
+			if !hit {
+				continue
+			}
+		}
+		out = append(out, r)
+	}
+	return out
 }
 
 // axisMatches --axis 값: item, class1…class8(플래그 이름), 또는 분류 이름 일부(공백 무시).

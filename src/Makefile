@@ -10,7 +10,7 @@
 BIN  := bin
 APPS := ../apps
 
-.PHONY: build native clean test
+.PHONY: build native mcp clean test
 
 build:
 	@echo "▶ 멀티플랫폼 빌드 시작..."
@@ -29,6 +29,12 @@ native:
 	CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 go build -o $(BIN)/kosis-darwin-arm64 .
 	@cp $(BIN)/kosis-darwin-arm64 $(APPS)/
 	@echo "✅ 네이티브 빌드 완료"
+
+# MCP 서버 (stdio) — 현재 플랫폼만. 릴리스 자산 kosis-mcp-<os>-<arch> 는 CI 가 만든다
+mcp:
+	@mkdir -p $(BIN)
+	go build -o $(BIN)/kosis-mcp-$$(go env GOOS)-$$(go env GOARCH) ./cmd/kosis-mcp
+	@echo "✅ MCP 서버 빌드 완료 — $(BIN)/kosis-mcp-$$(go env GOOS)-$$(go env GOARCH)"
 
 clean:
 	rm -f $(BIN)/kosis-* $(APPS)/kosis-*

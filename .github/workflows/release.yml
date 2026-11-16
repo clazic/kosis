@@ -32,23 +32,28 @@ jobs:
             goos: linux
             goarch: amd64
             artifact: kosis-linux-amd64
+            mcp_artifact: kosis-mcp-linux-amd64
           - os: ubuntu-latest
             goos: linux
             goarch: arm64
             artifact: kosis-linux-arm64
+            mcp_artifact: kosis-mcp-linux-arm64
             cc: aarch64-linux-gnu-gcc
           - os: macos-latest
             goos: darwin
             goarch: arm64
             artifact: kosis-darwin-arm64
+            mcp_artifact: kosis-mcp-darwin-arm64
           - os: macos-latest
             goos: darwin
             goarch: amd64
             artifact: kosis-darwin-amd64
+            mcp_artifact: kosis-mcp-darwin-amd64
           - os: windows-latest
             goos: windows
             goarch: amd64
             artifact: kosis-windows-amd64.exe
+            mcp_artifact: kosis-mcp-windows-amd64.exe
 
     runs-on: ${{ matrix.os }}
     name: Build (${{ matrix.goos }}/${{ matrix.goarch }})
@@ -78,11 +83,27 @@ jobs:
           CC: ${{ matrix.cc || '' }}
         run: go build -ldflags "-s -w -X main.version=${{ github.ref_name }}" -o ${{ matrix.artifact }} .
 
+      # MCP 서버 (stdio) — CLI 와 같은 태그·같은 SHA256SUMS
+      - name: Build MCP server
+        working-directory: src
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "1"
+          CC: ${{ matrix.cc || '' }}
+        run: go build -ldflags "-s -w -X main.version=${{ github.ref_name }}" -o ${{ matrix.mcp_artifact }} ./cmd/kosis-mcp
+
       - name: Upload artifact
         uses: actions/upload-artifact@v5
         with:
           name: ${{ matrix.artifact }}
           path: src/${{ matrix.artifact }}
+
+      - name: Upload MCP artifact
+        uses: actions/upload-artifact@v5
+        with:
+          name: ${{ matrix.mcp_artifact }}
+          path: src/${{ matrix.mcp_artifact }}
 
   skill-package:
     needs: test

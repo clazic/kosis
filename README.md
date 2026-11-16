@@ -184,6 +184,106 @@ kosis d ... -o data.db     # SQLite 저장
 
 ---
 
+## MCP 서버 (kosis-mcp)
+
+같은 저장소에 **stdio MCP 서버** `kosis-mcp` 가 있습니다. CLI(`kosis`)와 같은 API 클라이언트·키 풀(429 쿨다운)·4만 셀 자동 분할·파일 캐시·조회 전후 검사(빠진/없는 분류 축, 없는 주기, 결과에 없는 코드, 잠정치·전망 시점 안내 등)를 함수로 직접 씁니다. 도구는 모두 **읽기 전용**이고, 파일은 캐시(`~/.kosis/cache`) 말고는 쓰지 않습니다. CLI 명령·동작은 그대로입니다.
+
+### 설치 (릴리스 자산)
+
+릴리스마다 CLI 와 같은 태그로 `kosis-mcp-<os>-<arch>` 가 올라가고, 같은 `SHA256SUMS` 에 들어 있습니다.
+
+| OS / ARCH | 자산 |
+|-----------|------|
+| macOS Apple Silicon | `kosis-mcp-darwin-arm64` |
+| macOS Intel | `kosis-mcp-darwin-amd64` |
+| Linux | `kosis-mcp-linux-amd64`, `kosis-mcp-linux-arm64` |
+| Windows | `kosis-mcp-windows-amd64.exe` |
+
+```bash
+# 예: macOS Apple Silicon
+VER=v0.6.0   # 원하는 릴리스 태그
+BASE=https://github.com/clazic/kosis/releases/download/$VER
+curl -fsSLO $BASE/kosis-mcp-darwin-arm64 && curl -fsSLO $BASE/SHA256SUMS
+grep ' kosis-mcp-darwin-arm64$' SHA256SUMS | shasum -a 256 -c -
+install -m 755 kosis-mcp-darwin-arm64 ~/.local/bin/kosis-mcp
+kosis-mcp --version
+```
+
+소스에서: `cd src && make mcp` (→ `src/bin/kosis-mcp-<os>-<arch>`) 또는 `go build -o kosis-mcp ./cmd/kosis-mcp`.
+
+### 연결 (stdio)
+
+Claude Code:
+
+```bash
+claude mcp add kosis --env KOSIS_API_KEYS=<키1>,<키2> -- ~/.local/bin/kosis-mcp
+```
+
+또는 `.mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "kosis": { "command": "/Users/me/.local/bin/kosis-mcp", "env": { "KOSIS_API_KEYS": "<키1>,<키2>" } }
+  }
+}
+```
+
+Codex (`~/.codex/config.toml`):
+
+```toml
+[mcp_servers.kosis]
+command = "/Users/me/.local/bin/kosis-mcp"
+env = { KOSIS_API_KEYS = "<키1>,<키2>" }
+```
+
+`KOSIS_API_KEYS` 를 빼면 `~/.kosis/config.yaml`(`kosis config set-key`/`add-key` 로 넣은 키, `KOSIS_API_KEY` 환경변수 포함)을 씁니다.
+
+### 키
+
+| 방법 | 설명 |
+|------|------|
+| `KOSIS_API_KEYS` | 기본 키. 쉼표로 여러 개 (여러 개면 병렬 분할 조회·429 쿨다운에 고루 쓰임) |
+| `~/.kosis/config.yaml` | `KOSIS_API_KEYS` 가 없을 때 기본 키 (CLI 설정 그대로) |
+| `params._meta["kr.pes/keys"]` | `tools/call` 마다 줄 키 (문자열 배열). 있으면 **그 키들만** 그 요청 전용 키 풀로 쓰고 기본 키로 넘어가지 않습니다. 빈 배열·형식 오류는 오류 |
+
+```json
+{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{
+  "name":"kosis_search","arguments":{"keyword":"인구","limit":1},
+  "_meta":{"kr.pes/keys":["<요청별 키>"]}}}
+```
+
+키가 하나도 없으면 도구 결과가 `isError: true` 와 "API 키가 없어요" 안내입니다. 키는 인자·로그·stderr·결과·오류 어디에도 원문으로 나가지 않습니다 — 응답 직전 모든 텍스트에서 요청 키와 기본 키(그대로·URL 인코딩)를 `***<끝4자리>` 로, 남은 `apiKey=값` 은 `apiKey=***` 로 바꿉니다. 파일 캐시의 키·파일 이름·내용에도 API 키가 들어가지 않습니다(응답에 키가 섞여 오면 캐시하지 않음).
+
+### 도구
+
+| 도구 | 하는 일 | 주요 인자 |
+|------|---------|-----------|
+| `kosis_search` | 통계표 검색 (`kosis s`) | `keyword`(필수), `limit`, `page`, `sort`(RANK/DATE), `org`, `stat`, `region` |
+| `kosis_meta` | 분류 축·항목·주기 (`kosis m`) — 요약, 코드 고르기(`data_params` 를 `kosis_data` 에 그대로), 원본 메타 | `org_id`·`tbl_id`(필수), `type`, `find`, `under`, `level`, `axis` |
+| `kosis_data` | 값 조회 (`kosis d`) — 조회 전 검사, 4만 셀 자동 분할, 결과 `notices`(조용한 오답 경고) | `org_id`·`tbl_id`·`item`·`period`(필수), `class1`…`class8`, `start`+`end` \| `latest` \| `periods`, `fields` |
+| `kosis_list` | 통계목록 트리 (`kosis ls`) | `view`, `parent` |
+| `kosis_explain` | 조사 설명·주석·원표 링크 (`kosis ex`) | `org_id`·`tbl_id`(필수) |
+| `kosis_indicator` | 주요지표 (`kosis ind`) | `action`(search/data/info/list, 필수), `name`, `id`, `list_id`, `limit` |
+
+결과는 JSON 텍스트입니다. 약 200KB 를 넘으면 앞부분만 담고 `truncated`("잘림: … 범위를 좁히세요")를 붙입니다. `tools/call` 여러 개가 동시에 와도 따로 처리합니다. 대량 다운로드·차트·설정·업데이트·즐겨찾기·이력 명령은 MCP 도구에 없습니다.
+
+### smoke (게이트웨이 자동 업그레이드용)
+
+1. 키 없이: `initialize` → `notifications/initialized` → `tools/list` 가 성공하고 도구 6개(`kosis_search`, `kosis_meta`, `kosis_data`, `kosis_list`, `kosis_explain`, `kosis_indicator`)가 나와야 합니다.
+2. 키가 있으면: 도구 `kosis_search`, 인자 `{"keyword":"인구","limit":1}` → `isError: false`, `results` 1개.
+
+```bash
+printf '%s\n' \
+  '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"smoke","version":"0"}}}' \
+  '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
+  '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' \
+  '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"kosis_search","arguments":{"keyword":"인구","limit":1}}}' \
+  | KOSIS_API_KEYS=<키> kosis-mcp
+```
+
+---
+
 ## 개발 & 릴리스
 
 > 기여자·메인테이너용. 이 repo에는 **CLI 코드(`src/`)와 스킬 문서(`SKILL.md`·`references/`·`LEARNINGS.md`)가 함께** 들어 있습니다.
@@ -192,7 +292,7 @@ kosis d ... -o data.db     # SQLite 저장
 
 | 경로 | 내용 |
 |------|------|
-| `src/` | Go CLI 소스 (cmd/, internal/) |
+| `src/` | Go CLI 소스 (cmd/, internal/) · MCP 서버 `src/cmd/kosis-mcp/` |
 | `SKILL.md` · `references/` · `LEARNINGS.md` | AI 스킬 문서 |
 | `Makefile` | 멀티플랫폼 빌드 |
 | `npm/` | npm 패키지(`@clazic/kosis`) — install/uninstall 스크립트 |
@@ -234,7 +334,7 @@ git push origin v0.6.0          # ← 이 한 줄이 릴리스 전체를 트리�
 
 | CI Job | 동작 |
 |--------|------|
-| `build` | 5개 플랫폼 바이너리 빌드 |
+| `build` | 5개 플랫폼 바이너리 빌드 (CLI `kosis-*` + MCP 서버 `kosis-mcp-*`) |
 | `skill-package` | SKILL.md·LEARNINGS.md·references 등 스킬 tarball 생성 + `VERSION` 갱신 |
 | `release` | GitHub Release 생성 (바이너리 + 스킬 tarball + SHA256SUMS) |
 | `npm-publish` | `@clazic/kosis@<버전>` publish (OIDC) |

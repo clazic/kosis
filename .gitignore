@@ -17,6 +17,7 @@
 # 빌드 바이너리 (빌드/Release로 생성 — git에 올리지 않음)
 apps/kosis-*
 src/bin/kosis-*
+src/kosis-mcp*
 src/dist/
 
 # 환경 변수 / 시크릿
