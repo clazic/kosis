@@ -189,7 +189,7 @@ func (c *Client) DataWithPeriods(orgID, tblID string, periods []string, opts Dat
 		optsCopy.StartPrdDe = period
 		optsCopy.EndPrdDe = period
 
-		results, err := c.Data(orgID, tblID, optsCopy)
+		results, err := c.dataBounded(orgID, tblID, optsCopy)
 		if err != nil {
 			// API 오류 30: 해당 시점에 데이터가 없음 → 건너뛰고 계속 진행
 			if strings.Contains(err.Error(), "API 오류 [30]") {

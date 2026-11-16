@@ -49,6 +49,12 @@ func (c *Client) DataWithAutoSplit(orgID, tblID string, opts DataOptions, splitO
 		splitOpts.MaxCells = 40000
 	}
 
+	// 0. 코드를 + 로 길게 나열해 URL 이 KOSIS 한도를 넘으면 그 인자를 묶음으로 나눠 묶음마다 조회한다 (413/414 방지)
+	if subs := c.splitForURL(orgID, tblID, opts); len(subs) > 1 {
+		fmt.Fprintf(os.Stderr, "ℹ 요청 URL 이 길어(코드 나열) %d개 묶음으로 나눠 조회합니다.\n", len(subs))
+		return c.dataBySubOptions(orgID, tblID, subs, splitOpts, progressFn)
+	}
+
 	// 1. Meta API로 예상 셀 수 계산
 	summary, summaryErr := c.MetaSummary(orgID, tblID)
 	if summaryErr != nil {
@@ -130,6 +136,8 @@ func (c *Client) DataWithAutoSplit(orgID, tblID string, opts DataOptions, splitO
 		cellsPerPeriod := (estimatedCells + np - 1) / np
 		if cellsPerPeriod > splitOpts.MaxCells {
 			if subOpts, ok := c.subdivideByClass(summary, opts, splitOpts.MaxCells, cellsPerPeriod); ok {
+				// 묶음의 코드 나열이 URL 한도를 넘으면 더 잘게 (진행 n/전체가 실제 묶음 수가 되게 여기서 나눈다)
+				subOpts = c.splitAllForURL(orgID, tblID, subOpts)
 				fmt.Fprintf(os.Stderr, "ℹ 단일 시점이 %d셀 제한을 초과하여 분류 축으로 %d개 그룹으로 2차 분할합니다.\n", splitOpts.MaxCells, len(subOpts))
 				return c.dataBySubOptions(orgID, tblID, subOpts, splitOpts, progressFn)
 			}
@@ -556,10 +564,19 @@ func setClassByIndex(opts *DataOptions, idx int, val string) {
 // dataBySubOptions 분류 축 2차 분할로 생성된 각 그룹을 조회(각 그룹은 다시 시점 분할+병렬)하고 병합합니다.
 func (c *Client) dataBySubOptions(orgID, tblID string, subOpts []DataOptions, splitOpts SplitOptions, progressFn func(current, total int)) ([]DataRow, error) {
 	var all []DataRow
+	var noData error
 	total := len(subOpts)
 	for i, so := range subOpts {
 		// 각 그룹은 분류 축이 좁혀져 단일 시점이 maxCells 이하 → 일반 시점 분할 경로를 재사용
 		part, err := c.DataWithAutoSplit(orgID, tblID, so, splitOpts, nil)
+		if err != nil && strings.Contains(err.Error(), "API 오류 [30]") {
+			// 이 묶음의 코드엔 이 시점 값이 없다(폐지·신설 코드만 든 묶음) — 다른 묶음은 이어서 받는다
+			noData = err
+			if progressFn != nil {
+				progressFn(i+1, total)
+			}
+			continue
+		}
 		if err != nil {
 			return nil, fmt.Errorf("분류 그룹 [%d/%d] 조회 실패: %w", i+1, total, err)
 		}
@@ -567,6 +584,9 @@ func (c *Client) dataBySubOptions(orgID, tblID string, subOpts []DataOptions, sp
 		if progressFn != nil {
 			progressFn(i+1, total)
 		}
+	}
+	if len(all) == 0 && noData != nil {
+		return nil, noData // 모든 묶음이 [30]
 	}
 	sortByPeriod(all)
 	all = deduplicateRows(all)
