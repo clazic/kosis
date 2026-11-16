@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -29,6 +28,8 @@ type param struct {
 	Min, Max int
 	Enum     []string
 	Default  any
+	Schema   map[string]any           // 있으면 이 JSON Schema (객체·여러 형식 인자)
+	Check    func(v any) (any, error) // 있으면 이 검사로 (Type 대신)
 
 	re *regexp.Regexp
 }
@@ -38,7 +39,8 @@ type tool struct {
 	Title       string
 	Description string
 	Params      []*param
-	run         func(ctx context.Context, c *api.Client, in args, prog *progress) (string, error)
+	NoKeys      bool // 저장된 결과만 읽는 도구 — API 키가 없어도 된다
+	run         func(rc *runCtx, in args) (*toolResult, error)
 }
 
 // args 검증을 통과한 인자 (문자열은 string, 정수는 int).
@@ -47,6 +49,11 @@ type args map[string]any
 func (a args) str(k string) string {
 	s, _ := a[k].(string)
 	return s
+}
+
+func (a args) flag(k string) bool {
+	b, _ := a[k].(bool)
+	return b
 }
 
 func (a args) num(k string) int {
@@ -109,8 +116,9 @@ var tools = []*tool{
 			"코드 규칙: ALL=전체, \"00+11\"=여러 개, \"11*\"=하위 전체(상위 포함), level:N=그 축 N단계 전부(\"level:1+!03\" 은 03 제외). " +
 			"시점은 하나만 고른다: latest(최근 N개) | start+end(연속) | periods(\"2020,2022\") — 없으면 최근 1개. 4만 셀을 넘으면 자동 분할 조회한다. " +
 			"결과 notices 는 조용한 오답 경고(결과에 없는 코드·일찍 끊긴 코드·잠정치·전망 시점·모두 0·단위 없음)다 — 답에 반영한다. 안내 문구의 -cN=classN, -i=item, -p=period, kosis m=kosis_meta. " +
-			"rows 는 API 키(C1·C1_NM … ITM_ID·ITM_NM·PRD_DE·DT·UNIT_NM), columns 는 키와 이 표의 열 이름. X(비공개)·빈 값은 그대로 두고 추정하지 않는다.",
-		Params: []*param{
+			"rows 는 API 키(C1·C1_NM … ITM_ID·ITM_NM·PRD_DE·DT·UNIT_NM), labels 는 이 표의 열 이름. X(비공개)·빈 값은 그대로 두고 추정하지 않는다. " +
+			"큰 표(약 200KB 초과)는 저장되어 첫 쪽(format=columns)·next_cursor(kosis_result_page)·result_id(kosis_result_query)·CSV download 를 준다 — 큰 표는 먼저 latest/filter/aggregate/pivot 으로 줄이고, 전체가 필요하면 download 를 쓴다.",
+		Params: append([]*param{
 			{Name: "org_id", Type: "string", Required: true, Pattern: patOrgID, Desc: "기관 코드 (예: 101)"},
 			{Name: "tbl_id", Type: "string", Required: true, Pattern: patTblID, Desc: "통계표 ID (예: DT_1IN1502)"},
 			{Name: "class1", Type: "string", MaxLen: 4000, Pattern: patCodes, Desc: "분류1 코드 (kosis_meta axes 의 class1)"},
@@ -125,11 +133,37 @@ var tools = []*tool{
 			{Name: "period", Type: "string", Required: true, Pattern: patPeriod, Desc: "수록주기: Y=년, M=월, Q=분기, H=반기, F=2년 이상 여러 해 (kosis_meta periods 의 period)"},
 			{Name: "start", Type: "string", Pattern: patPrdDe, Desc: "시작 시점 (end 와 함께. 연 2020, 월 202401, 분기 202401)"},
 			{Name: "end", Type: "string", Pattern: patPrdDe, Desc: "종료 시점 (start 와 함께)"},
-			{Name: "latest", Type: "integer", Min: 1, Max: 1000, Desc: "표의 최근 N개 시점"},
+			{Name: "latest", Schema: map[string]any{"oneOf": []any{map[string]any{"type": "integer", "minimum": 1, "maximum": 1000}, map[string]any{"type": "boolean"}}}, Check: checkLatest,
+				Desc: "정수 N: 표의 최근 N개 시점을 받는다. true: 받은 뒤 계열(코드 조합)마다 가장 최근 시점 행만 남긴다 (start/end 와 함께 — 코드마다 끝 시점이 달라도)"},
 			{Name: "periods", Type: "string", MaxLen: 2000, Pattern: patPeriods, Desc: "비연속 시점 (쉼표, 예: 2020,2022,2025)"},
 			{Name: "fields", Type: "string", MaxLen: 500, Pattern: patText, Desc: "남길 열 (쉼표, API 키 또는 열 이름. 예: C1_NM,PRD_DE,DT) — 임의로 줄이지 않는다"},
-		},
+		}, bigResultParams()...),
 		run: runData,
+	},
+	{
+		Name:  "kosis_result_page",
+		Title: "저장된 결과의 다음 쪽",
+		Description: "큰 결과(kosis_data·kosis_result_query)의 다음 쪽을 같은 형식으로 받는다 — 다시 조회하지 않는다. cursor 는 앞 응답의 next_cursor. 마지막 쪽에는 next_cursor 가 없다. " +
+			"API 키가 필요 없다. 결과는 1시간 뒤 만료된다(그러면 다시 조회). 전체가 필요하면 쪽을 다 넘기기보다 download(CSV)를 쓴다.",
+		NoKeys: true,
+		Params: []*param{
+			{Name: "cursor", Type: "string", Required: true, MaxLen: 300, Pattern: `^[A-Za-z0-9_-]+$`, Desc: "앞 응답의 next_cursor"},
+			{Name: "limit", Type: "integer", Min: 1, Max: 100000, Desc: "이 쪽 최대 행 수 (없으면 약 200KB 에 드는 만큼)"},
+		},
+		run: runResultPage,
+	},
+	{
+		Name:  "kosis_result_query",
+		Title: "저장된 결과 줄이기·집계",
+		Description: "저장된 결과(result_id)에 다시 조회 없이 filter → latest → aggregate → pivot 을 건다. 큰 표는 이것으로 먼저 줄여서 본다. API 키가 필요 없다. " +
+			"결과가 크면 다시 저장해 새 result_id·next_cursor·CSV 를 준다.",
+		NoKeys: true,
+		Params: append([]*param{
+			{Name: "result_id", Type: "string", Required: true, Pattern: `^[A-Za-z0-9_-]{22,64}$`, Desc: "앞 응답의 result_id"},
+			{Name: "latest", Schema: map[string]any{"type": "boolean"}, Check: checkLatestBool, Desc: "true: 계열(코드 조합)마다 가장 최근 시점(PRD_DE) 행만"},
+			{Name: "limit", Type: "integer", Min: 1, Max: 100000, Desc: "첫 쪽 최대 행 수"},
+		}, bigResultParams()...),
+		run: runResultQuery,
 	},
 	{
 		Name:        "kosis_list",
@@ -194,6 +228,12 @@ func (s *server) toolList() []map[string]any {
 		required := []string{}
 		for _, p := range t.Params {
 			s := map[string]any{"type": p.Type, "description": p.Desc}
+			if p.Schema != nil {
+				s = map[string]any{"description": p.Desc}
+				for k, v := range p.Schema {
+					s[k] = v
+				}
+			}
 			if p.Pattern != "" {
 				s["pattern"] = p.Pattern
 			}
@@ -267,7 +307,23 @@ func validateArgs(t *tool, raw json.RawMessage) (args, error) {
 			}
 			continue
 		}
+		if p.Check != nil {
+			cv, err := p.Check(v)
+			if err != nil {
+				return nil, fmt.Errorf("%s: %v", p.Name, err)
+			}
+			if cv != nil {
+				out[p.Name] = cv
+			}
+			continue
+		}
 		switch p.Type {
+		case "boolean":
+			b, ok := v.(bool)
+			if !ok {
+				return nil, fmt.Errorf("%s 는 true/false 여야 합니다", p.Name)
+			}
+			out[p.Name] = b
 		case "string":
 			s, ok := v.(string)
 			if !ok {
@@ -378,27 +434,29 @@ func toAny[T any](xs []T) []any {
 
 // ── 도구 실행 ─────────────────────────────────────────────────
 
-func runSearch(_ context.Context, c *api.Client, in args, prog *progress) (string, error) {
+func runSearch(rc *runCtx, in args) (*toolResult, error) {
+	c := rc.client
 	ans, err := cmd.MCPSearch(c, cmd.SearchQuery{
 		Keyword: in.str("keyword"), Limit: in.num("limit"), Page: in.num("page"), Sort: in.str("sort"),
 		Org: in.str("org"), Stat: in.str("stat"), Region: in.str("region"),
 	})
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	obj := map[string]any{"total": ans.Total, "count": len(ans.Results)}
 	if len(ans.Notices) > 0 {
 		obj["notices"] = ans.Notices
 	}
-	return fitResult(obj, "results", toAny(ans.Results), "limit 을 줄이세요"), nil
+	return textResult(fitResult(obj, "results", toAny(ans.Results), "limit 을 줄이세요")), nil
 }
 
-func runMeta(_ context.Context, c *api.Client, in args, prog *progress) (string, error) {
+func runMeta(rc *runCtx, in args) (*toolResult, error) {
+	c := rc.client
 	org, tbl, typ := in.str("org_id"), in.str("tbl_id"), in.str("type")
 	find, under, level, axis := in.str("find"), in.str("under"), in.num("level"), in.str("axis")
 	selecting := find != "" || under != "" || level > 0 || axis != ""
 	if selecting && typ != "" && typ != "ITM" {
-		return "", fmt.Errorf("find/under/level/axis 는 분류·항목 코드에만 씁니다 — type %s 와 함께 쓸 수 없습니다", typ)
+		return nil, fmt.Errorf("find/under/level/axis 는 분류·항목 코드에만 씁니다 — type %s 와 함께 쓸 수 없습니다", typ)
 	}
 	if selecting {
 		obj := ""
@@ -407,42 +465,42 @@ func runMeta(_ context.Context, c *api.Client, in args, prog *progress) (string,
 		}
 		rows, err := c.MetaCodes(org, tbl, obj)
 		if err != nil {
-			return "", fmt.Errorf("메타데이터 조회 실패: %w", err)
+			return nil, fmt.Errorf("메타데이터 조회 실패: %w", err)
 		}
 		out, params, err := cmd.MCPFilterCodes(rows, find, under, level, axis)
 		if err != nil {
-			return "", err
+			return nil, err
 		}
 		res := map[string]any{"org_id": org, "tbl_id": tbl, "count": len(out), "data_params": params}
-		return fitResult(res, "rows", toAny(out), "find·under·level·axis 로 더 좁히세요"), nil
+		return textResult(fitResult(res, "rows", toAny(out), "find·under·level·axis 로 더 좁히세요")), nil
 	}
 	if typ == "" {
 		summary, err := c.MetaSummary(org, tbl)
 		if err != nil {
-			return "", fmt.Errorf("메타데이터 조회 실패: %w", err)
+			return nil, fmt.Errorf("메타데이터 조회 실패: %w", err)
 		}
 		res := cmd.MCPMetaSummary(summary, org, tbl)
 		if cm, cerr := c.MetaRaw(org, tbl, "CMMT"); cerr == nil && len(cm) > 0 {
 			res["comments"] = fmt.Sprintf("주석 %d개 — 조사 대상·정의·잠정 여부: kosis_meta type=CMMT", len(cm))
 		}
 		items, _ := res["items"].([]map[string]string)
-		return fitResult(res, "items", toAny(items), "항목은 kosis_meta axis=item find=<이름> 으로 고르세요"), nil
+		return textResult(fitResult(res, "items", toAny(items), "항목은 kosis_meta axis=item find=<이름> 으로 고르세요")), nil
 	}
 	rows, err := c.MetaRaw(org, tbl, typ)
 	if err != nil && strings.Contains(err.Error(), "[30]") {
 		rows, err = nil, nil
 	}
 	if err != nil {
-		return "", fmt.Errorf("메타데이터 조회 실패: %w", err)
+		return nil, fmt.Errorf("메타데이터 조회 실패: %w", err)
 	}
 	res := map[string]any{"org_id": org, "tbl_id": tbl, "type": typ, "count": len(rows)}
 	if len(rows) == 0 {
 		res["notice"] = fmt.Sprintf("'%s' 타입의 메타데이터가 없습니다", typ)
 	}
-	return fitResult(res, "rows", toAny(rows), "type=ITM 은 find·under·level·axis 로 고르세요"), nil
+	return textResult(fitResult(res, "rows", toAny(rows), "type=ITM 은 find·under·level·axis 로 고르세요")), nil
 }
 
-func runData(_ context.Context, c *api.Client, in args, prog *progress) (string, error) {
+func runData(rc *runCtx, in args) (*toolResult, error) {
 	q := cmd.DataQuery{
 		OrgID: in.str("org_id"), TblID: in.str("tbl_id"),
 		Item: in.str("item"), Period: in.str("period"),
@@ -452,24 +510,50 @@ func runData(_ context.Context, c *api.Client, in args, prog *progress) (string,
 	for i := range q.Classes {
 		q.Classes[i] = in.str(fmt.Sprintf("class%d", i+1))
 	}
-	if prog != nil {
-		q.Progress = func(done, total int) { prog.step(done, total, "분할 조회 조각") }
+	if rc.prog != nil {
+		q.Progress = func(done, total int) { rc.prog.step(done, total, "분할 조회 조각") }
 	}
-	ans, err := cmd.MCPData(c, q)
+	tr, err := transformArgs(in)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	obj := map[string]any{"org_id": ans.OrgID, "tbl_id": ans.TblID, "columns": ans.Columns, "row_count": len(ans.Rows)}
-	if len(ans.Notices) > 0 {
-		obj["notices"] = ans.Notices
+	ans, err := cmd.MCPData(rc.client, q)
+	if err != nil {
+		return nil, err
 	}
-	return fitResult(obj, "rows", toAny(ans.Rows), "분류 코드·항목·시점(latest, start/end)을 줄이거나 fields 로 열을 고르세요"), nil
+	t := &table{}
+	for _, c := range ans.Columns {
+		t.Columns = append(t.Columns, column{Key: c.Key, Label: c.Label})
+	}
+	for _, r := range ans.Rows {
+		row := make([]string, len(t.Columns))
+		for i, c := range t.Columns {
+			row[i] = r[c.Key]
+		}
+		t.Rows = append(t.Rows, row)
+	}
+	notices := ans.Notices
+	if !tr.empty() {
+		before := len(t.Rows)
+		var notes []string
+		if t, notes, err = tr.apply(t); err != nil {
+			return nil, err
+		}
+		notices = append(notices, notes...)
+		notices = append(notices, fmt.Sprintf("서버에서 줄임: 받은 %d행 → %d행 (filter·latest·aggregate·pivot)", before, len(t.Rows)))
+	}
+	head := []kv{{"org_id", ans.OrgID}, {"tbl_id", ans.TblID}}
+	if len(notices) > 0 {
+		head = append(head, kv{"notices", notices})
+	}
+	return rc.respondTable(t, in.str("format"), in.flag("save"), 0, head)
 }
 
-func runList(_ context.Context, c *api.Client, in args, prog *progress) (string, error) {
+func runList(rc *runCtx, in args) (*toolResult, error) {
+	c := rc.client
 	rows, notices, err := cmd.MCPList(c, in.str("view"), in.str("parent"))
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	obj := map[string]any{"view": in.str("view"), "count": len(rows)}
 	if p := in.str("parent"); p != "" {
@@ -478,19 +562,21 @@ func runList(_ context.Context, c *api.Client, in args, prog *progress) (string,
 	if len(notices) > 0 {
 		obj["notices"] = notices
 	}
-	return fitResult(obj, "rows", toAny(rows), "parent 로 한 단계 내려가세요"), nil
+	return textResult(fitResult(obj, "rows", toAny(rows), "parent 로 한 단계 내려가세요")), nil
 }
 
-func runExplain(_ context.Context, c *api.Client, in args, prog *progress) (string, error) {
+func runExplain(rc *runCtx, in args) (*toolResult, error) {
+	c := rc.client
 	res, err := cmd.MCPExplain(c, in.str("org_id"), in.str("tbl_id"))
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	notes, _ := res["notes"].([]string)
-	return fitResult(res, "notes", toAny(notes), "주석이 많습니다 — kosis_meta type=CMMT 로 보세요"), nil
+	return textResult(fitResult(res, "notes", toAny(notes), "주석이 많습니다 — kosis_meta type=CMMT 로 보세요")), nil
 }
 
-func runIndicator(_ context.Context, c *api.Client, in args, prog *progress) (string, error) {
+func runIndicator(rc *runCtx, in args) (*toolResult, error) {
+	c := rc.client
 	action, name, limit := in.str("action"), in.str("name"), in.num("limit")
 	var (
 		res []api.IndicatorResult
@@ -499,7 +585,7 @@ func runIndicator(_ context.Context, c *api.Client, in args, prog *progress) (st
 	switch action {
 	case "search", "data":
 		if name == "" {
-			return "", fmt.Errorf("action=%s 에는 name(지표명)이 필요합니다", action)
+			return nil, fmt.Errorf("action=%s 에는 name(지표명)이 필요합니다", action)
 		}
 		if action == "search" {
 			res, err = c.IndicatorSearchByName(name, api.PaginationOptions{NumOfRows: limit})
@@ -508,7 +594,7 @@ func runIndicator(_ context.Context, c *api.Client, in args, prog *progress) (st
 		}
 	case "info":
 		if in.str("id") == "" {
-			return "", fmt.Errorf("action=info 에는 id(지표 ID)가 필요합니다")
+			return nil, fmt.Errorf("action=info 에는 id(지표 ID)가 필요합니다")
 		}
 		res, err = c.IndicatorSearchByID(in.str("id"), api.PaginationOptions{})
 	case "list":
@@ -518,11 +604,11 @@ func runIndicator(_ context.Context, c *api.Client, in args, prog *progress) (st
 		res, err = nil, nil
 	}
 	if err != nil {
-		return "", fmt.Errorf("지표 조회 실패: %w", err)
+		return nil, fmt.Errorf("지표 조회 실패: %w", err)
 	}
 	obj := map[string]any{"action": action, "count": len(res)}
 	if len(res) == 0 {
 		obj["notice"] = "결과가 없습니다. 지표(e-나라지표)는 이름이 좁습니다 — 통계표는 kosis_search 로 찾으세요"
 	}
-	return fitResult(obj, "results", toAny(res), "limit 을 줄이세요"), nil
+	return textResult(fitResult(obj, "results", toAny(res), "limit 을 줄이세요")), nil
 }

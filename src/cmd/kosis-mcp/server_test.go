@@ -174,7 +174,7 @@ func TestInitializeAndToolsList(t *testing.T) {
 		`{"jsonrpc":"2.0","method":"notifications/initialized"}`,
 		`{"jsonrpc":"2.0","id":2,"method":"tools/list"}`,
 		`{"jsonrpc":"2.0","id":3,"method":"ping"}`,
-		`{"jsonrpc":"2.0","id":4,"method":"resources/list"}`,
+		`{"jsonrpc":"2.0","id":4,"method":"prompts/list"}`,
 	)
 	if len(got) != 4 {
 		t.Fatalf("응답 4개(알림 제외)를 기대: %d", len(got))
@@ -195,7 +195,7 @@ func TestInitializeAndToolsList(t *testing.T) {
 			t.Errorf("%s 설명 없음", m["name"])
 		}
 	}
-	if strings.Join(names, ",") != "kosis_search,kosis_meta,kosis_data,kosis_list,kosis_explain,kosis_indicator" {
+	if strings.Join(names, ",") != "kosis_search,kosis_meta,kosis_data,kosis_result_page,kosis_result_query,kosis_list,kosis_explain,kosis_indicator" {
 		t.Errorf("도구 목록: %v", names)
 	}
 	if got["4"]["error"] == nil {

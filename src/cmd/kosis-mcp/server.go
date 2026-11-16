@@ -32,6 +32,7 @@ type server struct {
 	version     string
 	defaultKeys []string
 	cache       *cache.Cache
+	results     *resultStore // 큰 결과 저장소 (nil 이면 첫 쪽만)
 	tools       []*tool
 
 	// newClient 요청마다 그 요청의 키로 클라이언트를 만든다 (테스트에서 바꾼다).
@@ -157,6 +158,12 @@ func (s *server) handleRequest(env callEnv, req rpcRequest) map[string]any {
 		return resultMsg(req.ID, map[string]any{"tools": s.toolList()})
 	case "tools/call":
 		return s.toolsCall(env, req.ID, req.Params)
+	case "resources/list":
+		return resultMsg(req.ID, map[string]any{"resources": []any{}}) // 결과는 임시라 목록에 올리지 않는다 (resource_link 로 알림)
+	case "resources/templates/list":
+		return resultMsg(req.ID, map[string]any{"resourceTemplates": []any{}})
+	case "resources/read":
+		return s.resourcesRead(req.ID, req.Params)
 	default:
 		return errorMsg(req.ID, -32601, "지원하지 않는 메서드: "+req.Method)
 	}
@@ -180,7 +187,7 @@ func (s *server) initialize(params json.RawMessage) map[string]any {
 	}
 	return map[string]any{
 		"protocolVersion": v,
-		"capabilities":    map[string]any{"tools": map[string]any{"listChanged": false}},
+		"capabilities":    map[string]any{"tools": map[string]any{"listChanged": false}, "resources": map[string]any{}},
 		"serverInfo":      map[string]any{"name": "kosis-mcp", "version": s.version},
 		"instructions": "KOSIS(국가통계포털) 읽기 전용 조회. 순서: kosis_search(표 찾기) → kosis_meta(분류·항목 코드와 주기 확인) → kosis_data(값 조회). " +
 			"코드는 짐작하지 말고 kosis_meta 결과를 그대로 쓴다. kosis_data 의 notices(결과에 없는 코드·잠정치·전망 시점·단위)는 답에 반영한다.",
@@ -221,14 +228,15 @@ func (s *server) toolsCall(env callEnv, id json.RawMessage, raw json.RawMessage)
 	keys, kerr := s.callKeys(env, p.Meta)
 	prog := newProgress(p.Meta["progressToken"], env.notify)
 	start := time.Now()
-	text, isErr := s.runTool(ctx, t, p.Arguments, keys, kerr, prog)
+	text, extra, isErr := s.runTool(ctx, t, p.Arguments, keys, kerr, prog)
 	if ctx.Err() != nil { // 취소됨 (notifications/cancelled · 연결 끊김) — 규격대로 답하지 않는다
 		accessLog("tools/call", t.Name, start, "취소")
 		return nil
 	}
 	accessLog("tools/call", t.Name, start, "")
+	content := []map[string]any{{"type": "text", "text": text}}
 	return resultMsg(id, map[string]any{
-		"content": []map[string]any{{"type": "text", "text": text}},
+		"content": append(content, extra...),
 		"isError": isErr,
 	})
 }
@@ -242,33 +250,38 @@ func accessLog(method, tool string, start time.Time, note string) {
 }
 
 // runTool 인자 검증 → 키 확인 → 클라이언트 → 실행 (시작·끝 진행 알림). 패닉도 오류 결과로.
-func (s *server) runTool(ctx context.Context, t *tool, args json.RawMessage, keys []string, keyErr error, prog *progress) (text string, isErr bool) {
+// 저장된 결과만 읽는 도구(NoKeys)는 키도 클라이언트도 쓰지 않는다.
+func (s *server) runTool(ctx context.Context, t *tool, args json.RawMessage, keys []string, keyErr error, prog *progress) (text string, extra []map[string]any, isErr bool) {
 	defer func() {
 		if r := recover(); r != nil {
 			fmt.Fprintf(os.Stderr, "kosis-mcp: %s 처리 중 패닉: %s\n", t.Name, s.scrub(fmt.Sprintf("%v\n%s", r, debug.Stack()), keys))
-			text, isErr = "내부 오류가 났습니다 — 인자를 바꿔 다시 시도하세요", true
+			text, extra, isErr = "내부 오류가 났습니다 — 인자를 바꿔 다시 시도하세요", nil, true
 		}
 	}()
 	in, err := validateArgs(t, args)
 	if err != nil {
-		return "인자 오류: " + err.Error(), true
+		return "인자 오류: " + err.Error(), nil, true
 	}
-	if keyErr != nil {
-		return keyErr.Error(), true
+	rc := &runCtx{ctx: ctx, prog: prog, store: s.results, tool: t.Name, argsRaw: args}
+	if !t.NoKeys {
+		if keyErr != nil {
+			return keyErr.Error(), nil, true
+		}
+		client, err := s.newClient(keys)
+		if err != nil {
+			return s.scrub("클라이언트를 만들지 못했습니다: "+err.Error(), keys), nil, true
+		}
+		client.SetContext(ctx)
+		defer client.CloseIdleConnections()
+		rc.client = client
 	}
-	client, err := s.newClient(keys)
-	if err != nil {
-		return s.scrub("클라이언트를 만들지 못했습니다: "+err.Error(), keys), true
-	}
-	client.SetContext(ctx)
-	defer client.CloseIdleConnections()
 	prog.start(t.Name)
-	out, err := t.run(ctx, client, in, prog)
+	out, err := t.run(rc, in)
 	prog.finish()
 	if err != nil {
-		return s.scrub(err.Error(), keys), true
+		return s.scrub(err.Error(), keys), nil, true
 	}
-	return s.scrub(out, keys), false
+	return s.scrub(out.Text, keys), out.Extra, false
 }
 
 // scrub 출력 직전: 이 요청의 키와 기본 키를 모두 가린다.
@@ -379,4 +392,33 @@ func (s *server) write(v any) {
 	if _, err := s.out.Write(append(b, '\n')); err != nil {
 		fmt.Fprintf(os.Stderr, "kosis-mcp: 응답 쓰기 실패: %v\n", err)
 	}
+}
+
+// resourcesRead kosis://results/<id>.csv (또는 .jsonl) 를 contents 로. 20MB 를 넘으면 오류 (내려받기를 쓰라고).
+func (s *server) resourcesRead(id json.RawMessage, raw json.RawMessage) map[string]any {
+	var p struct {
+		URI string `json:"uri"`
+	}
+	if json.Unmarshal(raw, &p) != nil || !strings.HasPrefix(p.URI, resultScheme) {
+		return errorMsg(id, -32602, "모르는 리소스 URI 입니다 (kosis://results/<id>.csv)")
+	}
+	rid, ext, ok := parseResultName(strings.TrimPrefix(p.URI, resultScheme))
+	if !ok || s.results == nil {
+		return errorMsg(id, -32002, "리소스를 찾을 수 없습니다: "+p.URI)
+	}
+	if _, err := s.results.meta(rid); err != nil {
+		return errorMsg(id, -32002, err.Error())
+	}
+	info, err := os.Stat(s.results.path(rid, ext))
+	if err != nil {
+		return errorMsg(id, -32002, errExpired.Error())
+	}
+	if info.Size() > maxResourceReadBytes {
+		return errorMsg(id, -32603, fmt.Sprintf("파일이 %dMB 를 넘습니다(%d바이트) — HTTP GET /results/%s.%s 로 내려받거나 kosis_result_query 로 줄이세요", maxResourceReadBytes>>20, info.Size(), rid, ext))
+	}
+	b, err := os.ReadFile(s.results.path(rid, ext))
+	if err != nil {
+		return errorMsg(id, -32002, errExpired.Error())
+	}
+	return resultMsg(id, map[string]any{"contents": []map[string]any{{"uri": p.URI, "mimeType": mimeOf(ext), "text": string(b)}}})
 }

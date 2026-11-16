@@ -312,16 +312,39 @@ curl -sN -H 'Content-Type: application/json' -H 'Accept: application/json, text/
 |------|---------|-----------|
 | `kosis_search` | 통계표 검색 (`kosis s`) | `keyword`(필수), `limit`, `page`, `sort`(RANK/DATE), `org`, `stat`, `region` |
 | `kosis_meta` | 분류 축·항목·주기 (`kosis m`) — 요약, 코드 고르기(`data_params` 를 `kosis_data` 에 그대로), 원본 메타 | `org_id`·`tbl_id`(필수), `type`, `find`, `under`, `level`, `axis` |
-| `kosis_data` | 값 조회 (`kosis d`) — 조회 전 검사, 4만 셀 자동 분할, 결과 `notices`(조용한 오답 경고) | `org_id`·`tbl_id`·`item`·`period`(필수), `class1`…`class8`, `start`+`end` \| `latest` \| `periods`, `fields` |
+| `kosis_data` | 값 조회 (`kosis d`) — 조회 전 검사, 4만 셀·URL 길이 자동 분할, 결과 `notices`(조용한 오답 경고), 큰 결과는 저장·쪽 나누기 | `org_id`·`tbl_id`·`item`·`period`(필수), `class1`…`class8`, `start`+`end` \| `latest`(정수 N 또는 `true`) \| `periods`, `fields`, `format`, `save`, `filter`, `aggregate`, `pivot` |
 | `kosis_list` | 통계목록 트리 (`kosis ls`) | `view`, `parent` |
 | `kosis_explain` | 조사 설명·주석·원표 링크 (`kosis ex`) | `org_id`·`tbl_id`(필수) |
 | `kosis_indicator` | 주요지표 (`kosis ind`) | `action`(search/data/info/list, 필수), `name`, `id`, `list_id`, `limit` |
+| `kosis_result_page` | 저장된 큰 결과의 다음 쪽 (다시 조회 안 함, **키 불필요**) | `cursor`(필수, 앞 응답의 `next_cursor`), `limit` |
+| `kosis_result_query` | 저장된 결과에 filter → latest → aggregate → pivot (**키 불필요**) | `result_id`(필수), `latest`, `filter`, `aggregate`, `pivot`, `format`, `save`, `limit` |
 
-결과는 JSON 텍스트입니다. 약 200KB 를 넘으면 앞부분만 담고 `truncated`("잘림: … 범위를 좁히세요")를 붙입니다. `tools/call` 여러 개가 동시에 와도 따로 처리합니다. 대량 다운로드·차트·설정·업데이트·즐겨찾기·이력 명령은 MCP 도구에 없습니다.
+결과는 JSON 텍스트입니다. 검색·메타·목록 등은 약 200KB 를 넘으면 앞부분만 담고 `truncated`("잘림: … 범위를 좁히세요")를 붙입니다(표 결과는 아래 "큰 결과"). `tools/call` 여러 개가 동시에 와도 따로 처리합니다. 대량 다운로드·차트·설정·업데이트·즐겨찾기·이력 명령은 MCP 도구에 없습니다.
+
+### 큰 결과 (압축 형식 · 쪽 나누기 · 서버 집계 · 전체 파일)
+
+도구 응답 상한(약 200KB, AI 맥락 보호)은 그대로 두고, 표 결과(`kosis_data`, `kosis_result_query`)를 더 촘촘히 · 나눠서 · 줄여서 · 파일로 받습니다.
+
+- **요약 칸**(응답 맨 앞): `total_rows`, `returned_rows`, `truncated`, `format`, `result_id`, `next_cursor`, `download`.
+- **작은 결과**(상한 안, `save` 아님): 예전처럼 바로, 형식 기본 `json`(`rows` = 객체 배열, `labels` = 열 이름).
+- **큰 결과** 또는 `save: true`: 결과 저장소에 두고 첫 쪽만 돌려준다. 형식 기본 `columns`:
+  `{"columns":["C1","ITM_ID","PRD_DE","DT",…], "rows":[["11","T20","202401","9384512"],…], "dict":{"C1":{"11":"서울특별시",…},"ITM_ID":{"T20":"총인구수",…}}}` — 이름 열(C1_NM·ITM_NM)은 `dict` 로 한 번만. `format: "csv"` 는 `csv` 칸에 머리줄+행.
+- **다음 쪽**: `kosis_result_page {cursor: next_cursor}` — 같은 형식, 마지막 쪽엔 `next_cursor` 없음. 만료되면 "결과가 만료됐어요 — 다시 조회하세요".
+- **서버 집계**: `kosis_data`·`kosis_result_query` 에 `filter`(`{"C1":["11","26"],"PRD_DE":{"from":"2020","to":"2024"}}`), `latest: true`(계열마다 가장 최근 시점), `aggregate`(`{"group_by":["C1","PRD_DE"],"op":"sum|avg|min|max|count","value":"DT"}` — 숫자 아닌 값은 건너뛰고 알림), `pivot`(`{"rows":["C1"],"cols":"PRD_DE","value":"DT"}`). 순서는 filter → latest → aggregate → pivot.
+- **전체 파일**: 저장된 결과는 `resource_link`(`kosis://results/<id>.csv`, `text/csv`, 크기·행 수) 로 알린다. `resources/read {uri}` 로 받거나(20MB 넘으면 오류 — 내려받기를 쓰라고), HTTP 모드에서는 `GET /results/<id>.csv`(같은 Bearer 토큰, Content-Length·Content-Disposition). CSV 는 UTF-8(BOM), 머리줄은 API 키.
+- 저장 파일: `<id>.jsonl`(쪽 나누기) · `<id>.csv` · `<id>.meta.json`. id 는 무작위 144bit(맞히기 불가 = 읽기 권한). 키·토큰은 파일에 넣지 않는다. 임시 파일 → rename 이라 여러 프로세스가 같은 폴더를 써도 된다.
+
+| 환경변수 | 기본 | 설명 |
+|----------|------|------|
+| `MCP_RESULTS_DIR` | `~/.kosis/cache/mcp-results` | 결과 저장 폴더 (게이트웨이가 정해 넘기면 게이트웨이가 같은 폴더에서 직접 내려준다) |
+| `MCP_RESULTS_TTL` | `1h` | 보관 기간 (초 또는 `90m` 같은 기간). 시작할 때와 10분마다 정리 |
+| `MCP_RESULTS_MAX_BYTES` | `1073741824` (1GB) | 폴더 상한 — 넘으면 오래된 결과부터 지운다 |
+
+실측(2026-11-16, 101/DT_1B040A3 주민등록인구 월별, 시군구 ALL × 3항목 × 2011.01~2025.12 = 153,531행, 60조각 분할): `fields: "C1,PRD_DE,DT"` 일 때 첫 쪽 `columns` 7,263행 / `json` 4,291행, 전체 열이면 `columns` 3,426행 · 45쪽 합계 153,531행, CSV 10,093,238바이트, `kosis_result_query` 집계(C1=00, ITM_ID·PRD_DE 별 sum → 540행) 0.08초.
 
 ### smoke (게이트웨이 자동 업그레이드용)
 
-1. 키 없이: `initialize` → `notifications/initialized` → `tools/list` 가 성공하고 도구 6개(`kosis_search`, `kosis_meta`, `kosis_data`, `kosis_list`, `kosis_explain`, `kosis_indicator`)가 나와야 합니다.
+1. 키 없이: `initialize` → `notifications/initialized` → `tools/list` 가 성공하고 도구 8개(`kosis_search`, `kosis_meta`, `kosis_data`, `kosis_result_page`, `kosis_result_query`, `kosis_list`, `kosis_explain`, `kosis_indicator`)가 나와야 합니다.
 2. 키가 있으면: 도구 `kosis_search`, 인자 `{"keyword":"인구","limit":1}` → `isError: false`, `results` 1개.
 
 ```bash

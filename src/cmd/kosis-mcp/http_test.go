@@ -2,7 +2,6 @@ package main
 
 import (
 	"bufio"
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -94,8 +93,8 @@ func TestHTTPSessionFlow(t *testing.T) {
 		t.Errorf("알림만 온 POST 는 202: %d", r.StatusCode)
 	}
 	list := readJSON(t, c.do("POST", `{"jsonrpc":"2.0","id":2,"method":"tools/list"}`, "MCP-Protocol-Version", "2025-06-18"))
-	if n := len(list["result"].(map[string]any)["tools"].([]any)); n != 6 {
-		t.Errorf("도구 6개: %d", n)
+	if n := len(list["result"].(map[string]any)["tools"].([]any)); n != 8 {
+		t.Errorf("도구 8개: %d", n)
 	}
 	call := readJSON(t, c.do("POST", `{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"kosis_search","arguments":{"keyword":"인구"}}}`))
 	if text, isErr := callResult(t, call); !isErr || !strings.Contains(text, "API 키가 없어요") {
@@ -231,11 +230,11 @@ func sseEvents(t *testing.T, r io.Reader) []map[string]any {
 
 // 진행 조각을 내는 가짜 도구 (네트워크 없이).
 func chunkTool() *tool {
-	return &tool{Name: "test_chunks", Description: "test", run: func(ctx context.Context, c *api.Client, in args, prog *progress) (string, error) {
+	return &tool{Name: "test_chunks", Description: "test", run: func(rc *runCtx, in args) (*toolResult, error) {
 		time.Sleep(progressInterval + 50*time.Millisecond)
-		prog.step(1, 3, "조각")
-		prog.step(2, 3, "조각") // 1초 안 — 건너뜀
-		return `{"ok":true}`, nil
+		rc.prog.step(1, 3, "조각")
+		rc.prog.step(2, 3, "조각") // 1초 안 — 건너뜀
+		return textResult(`{"ok":true}`), nil
 	}}
 }
 
@@ -286,15 +285,15 @@ func TestHTTPSSEProgressBeforeResult(t *testing.T) {
 
 // 취소 알림을 기다리는 가짜 도구.
 func blockTool(started chan<- struct{}, stopped chan<- bool) *tool {
-	return &tool{Name: "test_block", Description: "test", run: func(ctx context.Context, c *api.Client, in args, prog *progress) (string, error) {
+	return &tool{Name: "test_block", Description: "test", run: func(rc *runCtx, in args) (*toolResult, error) {
 		close(started)
 		select {
-		case <-ctx.Done():
+		case <-rc.ctx.Done():
 			stopped <- true
-			return "", ctx.Err()
+			return nil, rc.ctx.Err()
 		case <-time.After(5 * time.Second):
 			stopped <- false
-			return "끝까지 돌았다", nil
+			return textResult("끝까지 돌았다"), nil
 		}
 	}}
 }

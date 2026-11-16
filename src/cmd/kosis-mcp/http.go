@@ -169,7 +169,8 @@ func httpError(w http.ResponseWriter, code int, msg string) {
 
 // ServeHTTP 출처·인증·버전 검사 뒤 메서드별 처리.
 func (h *httpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path != "/mcp" {
+	results := strings.HasPrefix(r.URL.Path, "/results/")
+	if r.URL.Path != "/mcp" && !results {
 		http.NotFound(w, r)
 		return
 	}
@@ -180,6 +181,10 @@ func (h *httpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if h.cfg.Token != "" && !tokenOK(r.Header.Get("Authorization"), h.cfg.Token) {
 		w.Header().Set("WWW-Authenticate", `Bearer realm="kosis-mcp"`)
 		httpError(w, http.StatusUnauthorized, "인증이 필요합니다 (Authorization: Bearer <토큰>)")
+		return
+	}
+	if results {
+		h.serveResult(w, r)
 		return
 	}
 	if v := r.Header.Get("MCP-Protocol-Version"); v != "" && !supportedVersions[v] {
@@ -456,4 +461,39 @@ func (s *sseWriter) comment(c string) {
 	defer s.mu.Unlock()
 	fmt.Fprintf(s.w, ": %s\n\n", c)
 	s.f.Flush()
+}
+
+// serveResult GET /results/<id>.csv|.jsonl — 저장된 결과 파일을 스트리밍 (토큰 검사는 ServeHTTP 에서 이미 했다).
+func (h *httpServer) serveResult(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		w.Header().Set("Allow", "GET, HEAD")
+		httpError(w, http.StatusMethodNotAllowed, "GET 만 씁니다")
+		return
+	}
+	name := strings.TrimPrefix(r.URL.Path, "/results/")
+	id, ext, ok := parseResultName(name)
+	st := h.s.results
+	if !ok || st == nil {
+		http.NotFound(w, r)
+		return
+	}
+	if _, err := st.meta(id); err != nil {
+		httpError(w, http.StatusNotFound, err.Error())
+		return
+	}
+	f, err := os.Open(st.path(id, ext))
+	if err != nil {
+		httpError(w, http.StatusNotFound, errExpired.Error())
+		return
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil {
+		httpError(w, http.StatusNotFound, errExpired.Error())
+		return
+	}
+	w.Header().Set("Content-Type", mimeOf(ext))
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, name))
+	w.Header().Set("Cache-Control", "private, no-store")
+	http.ServeContent(w, r, name, info.ModTime(), f) // Content-Length·Range 처리
 }

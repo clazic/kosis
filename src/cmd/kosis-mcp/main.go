@@ -32,11 +32,17 @@ const usage = `kosis-mcp — KOSIS(국가통계포털) 조회 MCP 서버 (stdio)
   _meta["kr.pes/keys"] tools/call 마다 줄 키 (문자열 배열). 있으면 그 키만 쓴다
   X-Api-Keys: k1,k2    (HTTP) 그 POST 의 tools/call 에 요청별 키로
 
+결과 저장 (큰 결과의 쪽 나누기·CSV 내려받기):
+  MCP_RESULTS_DIR            저장 폴더 (기본 ~/.kosis/cache/mcp-results)
+  MCP_RESULTS_TTL            보관 기간 (기본 1h, 초 또는 1h30m)
+  MCP_RESULTS_MAX_BYTES      폴더 상한 (기본 1073741824, 넘으면 오래된 것부터 지움)
+
 HTTP:
   KOSIS_MCP_TOKEN            있으면 Authorization: Bearer <토큰> 필수. loopback 이 아닌 주소는 토큰 없이 시작 거부
   KOSIS_MCP_ALLOWED_ORIGINS  허용할 Origin (쉼표). loopback 출처는 늘 허용
 
-도구: kosis_search, kosis_meta, kosis_data, kosis_list, kosis_explain, kosis_indicator (읽기 전용)
+도구: kosis_search, kosis_meta, kosis_data, kosis_list, kosis_explain, kosis_indicator,
+      kosis_result_page, kosis_result_query (읽기 전용)
 `
 
 func main() {
@@ -67,6 +73,7 @@ func main() {
 	if httpAddr != "" {
 		os.Stdout = os.Stderr
 		s := newServer(nil, version, loadDefaultKeys(), openCache())
+		s.results = openResults()
 		if err := newHTTPServer(s, httpConfigFromEnv()).listenAndServe(httpAddr); err != nil {
 			fmt.Fprintf(os.Stderr, "kosis-mcp: %v\n", s.scrub(err.Error(), nil))
 			os.Exit(1)
@@ -79,10 +86,22 @@ func main() {
 	os.Stdout = os.Stderr
 
 	s := newServer(rpcOut, version, loadDefaultKeys(), openCache())
+	s.results = openResults()
 	if err := s.serve(os.Stdin); err != nil {
 		fmt.Fprintf(os.Stderr, "kosis-mcp: %v\n", s.scrub(err.Error(), nil))
 		os.Exit(1)
 	}
+}
+
+// openResults 큰 결과 저장소 (MCP_RESULTS_DIR, 없으면 ~/.kosis/cache/mcp-results). 시작할 때와 10분마다 정리. 실패하면 저장 없이(첫 쪽만).
+func openResults() *resultStore {
+	st, err := resultStoreFromEnv(filepath.Join(config.ConfigDir(), "cache"))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "kosis-mcp: 결과 저장소 없이 실행합니다: %v\n", err)
+		return nil
+	}
+	st.runCleaner()
+	return st
 }
 
 // openCache CLI 와 같은 파일 캐시(~/.kosis/cache, TTL config cache_ttl_hours). 실패하면 캐시 없이.
