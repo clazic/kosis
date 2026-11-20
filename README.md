@@ -321,6 +321,19 @@ curl -sN -H 'Content-Type: application/json' -H 'Accept: application/json, text/
   "_meta":{"kr.pes/keys":["<요청별 키>"]}}}
 ```
 
+**키별 사용량** — 요청별 키(`_meta["kr.pes/keys"]` 또는 HTTP `X-Api-Keys`)로 한 `tools/call` 이 KOSIS 에 요청을 보냈으면, 도구 결과(`result`, `content`·`isError` 옆)의 `_meta["kr.pes/key-usage"]` 에 키별 요청 수가 붙습니다 (부른 쪽이 키마다 사용량을 세는 데 씁니다).
+
+```json
+{"jsonrpc":"2.0","id":7,"result":{
+  "content":[{"type":"text","text":"…"}],"isError":false,
+  "_meta":{"kr.pes/key-usage":[{"i":0,"calls":3,"errors":0,"limited":1},{"i":2,"calls":1,"errors":1,"limited":0}]}}}
+```
+
+- `i`: 받은 요청별 키 목록에서 그 키의 자리(0부터). 같은 키가 여러 번 오면 처음 자리, `X-Api-Keys` 는 빈 칸을 뺀 자리. 키 값은 어떤 꼴로도 넣지 않습니다.
+- `calls`: 그 키로 KOSIS 에 보낸 HTTP 요청 수(429 재시도도 한 번씩). `errors`: 그중 실패(전송 오류·HTTP 오류·KOSIS 오류 본문). `limited`: 그중 HTTP 429 (`errors` 에 포함).
+- 요청을 보내지 않은 키는 빠지고, 요청이 하나도 없으면(캐시에서 답함, `kosis_result_page`·`kosis_result_query`) 항목 자체가 없습니다. 성공·`isError: true` 결과 모두에 붙고, stdio·HTTP(JSON·SSE) 같습니다.
+- 기본 키(`KOSIS_API_KEYS`·설정 파일)로 한 호출에는 붙지 않습니다.
+
 키가 하나도 없으면 도구 결과가 `isError: true` 와 "API 키가 없어요" 안내입니다. 키는 인자·로그·stderr·결과·오류 어디에도 원문으로 나가지 않습니다 — 응답 직전 모든 텍스트에서 요청 키와 기본 키(그대로·URL 인코딩)를 `***<끝4자리>` 로, 남은 `apiKey=값` 은 `apiKey=***` 로 바꿉니다. 파일 캐시의 키·파일 이름·내용에도 API 키가 들어가지 않습니다(응답에 키가 섞여 오면 캐시하지 않음).
 
 ### 도구

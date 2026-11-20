@@ -9,11 +9,15 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/clazic/kosis/internal/api"
 	"github.com/clazic/kosis/internal/config"
 )
 
 // metaKeysField tools/call params._meta 안의 요청별 키 이름.
 const metaKeysField = "kr.pes/keys"
+
+// metaKeyUsageField tools/call 결과 _meta 안의 키별 사용량 이름 (요청별 키를 쓴 호출에만 붙는다).
+const metaKeyUsageField = "kr.pes/key-usage"
 
 const (
 	maxRequestKeys = 50
@@ -47,35 +51,77 @@ var errNoKey = fmt.Errorf("API 키가 없어요 — KOSIS_API_KEYS 환경변수(
 // selectKeys 이 요청에 쓸 키. _meta 에 요청별 키가 있으면 그것만 (형식이 틀려도 기본 키로 넘어가지 않고 오류),
 // 없으면 기본 키. perRequest 는 요청별 키를 썼는지.
 func selectKeys(meta map[string]json.RawMessage, defaults []string) (keys []string, perRequest bool, err error) {
+	keys, _, perRequest, err = selectKeysIndexed(meta, defaults)
+	return keys, perRequest, err
+}
+
+// selectKeysIndexed selectKeys 와 같고, 요청별 키면 keys[j] 가 받은 목록의 몇 번째(0부터)였는지 origIdx[j] 도 준다
+// (같은 키가 여러 번 오면 처음 자리). 기본 키면 origIdx 는 nil.
+func selectKeysIndexed(meta map[string]json.RawMessage, defaults []string) (keys []string, origIdx []int, perRequest bool, err error) {
 	raw, ok := meta[metaKeysField]
 	if !ok {
 		if len(defaults) == 0 {
-			return nil, false, errNoKey
+			return nil, nil, false, errNoKey
 		}
-		return defaults, false, nil
+		return defaults, nil, false, nil
 	}
 	var list []string
 	if err := json.Unmarshal(raw, &list); err != nil {
-		return nil, true, fmt.Errorf("_meta[\"%s\"] 는 문자열 배열이어야 합니다", metaKeysField)
+		return nil, nil, true, fmt.Errorf("_meta[\"%s\"] 는 문자열 배열이어야 합니다", metaKeysField)
 	}
 	if len(list) == 0 {
-		return nil, true, fmt.Errorf("_meta[\"%s\"] 가 비어 있습니다 — 요청별 키를 줄 때는 키가 하나 이상 있어야 합니다 (기본 키로 넘어가지 않습니다)", metaKeysField)
+		return nil, nil, true, fmt.Errorf("_meta[\"%s\"] 가 비어 있습니다 — 요청별 키를 줄 때는 키가 하나 이상 있어야 합니다 (기본 키로 넘어가지 않습니다)", metaKeysField)
 	}
 	if len(list) > maxRequestKeys {
-		return nil, true, fmt.Errorf("_meta[\"%s\"] 키는 %d개까지입니다 (받은 %d개)", metaKeysField, maxRequestKeys, len(list))
+		return nil, nil, true, fmt.Errorf("_meta[\"%s\"] 키는 %d개까지입니다 (받은 %d개)", metaKeysField, maxRequestKeys, len(list))
 	}
 	seen := map[string]bool{}
 	for i, k := range list {
 		k = strings.TrimSpace(k)
 		if k == "" || len(k) > maxKeyLen || strings.ContainsAny(k, " ,\t\r\n") || hasControl(k) {
-			return nil, true, fmt.Errorf("_meta[\"%s\"] 의 %d번째 키 형식이 맞지 않습니다 (빈 값·공백·쉼표·%d자 초과 불가)", metaKeysField, i+1, maxKeyLen)
+			return nil, nil, true, fmt.Errorf("_meta[\"%s\"] 의 %d번째 키 형식이 맞지 않습니다 (빈 값·공백·쉼표·%d자 초과 불가)", metaKeysField, i+1, maxKeyLen)
 		}
 		if !seen[k] {
 			seen[k] = true
 			keys = append(keys, k)
+			origIdx = append(origIdx, i)
 		}
 	}
-	return keys, true, nil
+	return keys, origIdx, true, nil
+}
+
+// keyUsageEntry 결과 _meta["kr.pes/key-usage"] 의 한 항목. i 는 받은 요청별 키 목록의 자리(0부터) — 키 값은 넣지 않는다.
+type keyUsageEntry struct {
+	I       int `json:"i"`
+	Calls   int `json:"calls"`
+	Errors  int `json:"errors"`
+	Limited int `json:"limited"`
+}
+
+// keyUsageEntries 클라이언트가 센 키별 요청 수를 받은 목록의 자리로 옮긴다. 요청을 보낸 키가 없으면 nil.
+func keyUsageEntries(used []api.KeyUsage, origIdx []int) []keyUsageEntry {
+	var out []keyUsageEntry
+	for _, u := range used {
+		if u.Index < 0 || u.Index >= len(origIdx) || u.Calls == 0 {
+			continue
+		}
+		out = append(out, keyUsageEntry{I: origIdx[u.Index], Calls: u.Calls, Errors: u.Errors, Limited: u.Limited})
+	}
+	return out
+}
+
+// withKeyUsage 도구 결과(result)의 _meta 에 키별 사용량을 넣는다 (이미 있는 _meta 항목은 그대로 둔다). 비면 손대지 않는다.
+func withKeyUsage(result map[string]any, usage []keyUsageEntry) map[string]any {
+	if len(usage) == 0 {
+		return result
+	}
+	meta, _ := result["_meta"].(map[string]any)
+	if meta == nil {
+		meta = map[string]any{}
+	}
+	meta[metaKeyUsageField] = usage
+	result["_meta"] = meta
+	return result
 }
 
 func hasControl(s string) bool {

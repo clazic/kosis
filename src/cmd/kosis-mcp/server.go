@@ -143,6 +143,7 @@ type callEnv struct {
 	ctx      context.Context
 	notify   func(msg any) // 이 요청에 묶인 알림(진행) 보내기
 	hdrKeys  []string      // HTTP X-Api-Keys (있으면 _meta 가 없는 tools/call 에 요청별 키로)
+	hdrIdx   []int         // hdrKeys[j] 가 머리글 목록의 몇 번째였는지 (키별 사용량의 i)
 	hasHdr   bool
 	inflight *inflightSet
 }
@@ -201,12 +202,13 @@ type callParams struct {
 }
 
 // callKeys tools/call 의 키: _meta["kr.pes/keys"] → HTTP X-Api-Keys → 기본 키. 요청별 키가 있으면 기본 키로 넘어가지 않는다.
-func (s *server) callKeys(env callEnv, meta map[string]json.RawMessage) ([]string, error) {
+// origIdx 는 요청별 키일 때만: keys[j] 가 받은 목록의 몇 번째였는지 (기본 키면 nil — 키별 사용량을 붙이지 않는다).
+func (s *server) callKeys(env callEnv, meta map[string]json.RawMessage) (keys []string, origIdx []int, err error) {
 	if _, ok := meta[metaKeysField]; ok || !env.hasHdr {
-		keys, _, err := selectKeys(meta, s.defaultKeys)
-		return keys, err
+		keys, origIdx, _, err = selectKeysIndexed(meta, s.defaultKeys)
+		return keys, origIdx, err
 	}
-	return env.hdrKeys, nil
+	return env.hdrKeys, env.hdrIdx, nil
 }
 
 func (s *server) toolsCall(env callEnv, id json.RawMessage, raw json.RawMessage) map[string]any {
@@ -225,20 +227,23 @@ func (s *server) toolsCall(env callEnv, id json.RawMessage, raw json.RawMessage)
 		env.inflight.add(k, cancel)
 		defer env.inflight.remove(k)
 	}
-	keys, kerr := s.callKeys(env, p.Meta)
+	keys, origIdx, kerr := s.callKeys(env, p.Meta)
 	prog := newProgress(p.Meta["progressToken"], env.notify)
 	start := time.Now()
-	text, extra, isErr := s.runTool(ctx, t, p.Arguments, keys, kerr, prog)
+	var used []api.KeyUsage
+	text, extra, isErr := s.runTool(ctx, t, p.Arguments, keys, kerr, prog, &used)
 	if ctx.Err() != nil { // 취소됨 (notifications/cancelled · 연결 끊김) — 규격대로 답하지 않는다
 		accessLog("tools/call", t.Name, start, "취소")
 		return nil
 	}
 	accessLog("tools/call", t.Name, start, "")
 	content := []map[string]any{{"type": "text", "text": text}}
-	return resultMsg(id, map[string]any{
+	result := map[string]any{
 		"content": append(content, extra...),
 		"isError": isErr,
-	})
+	}
+	// 요청별 키로 상위 요청을 보냈으면 키별 사용량 (성공·오류 결과 모두, 기본 키면 origIdx 가 nil 이라 붙지 않는다)
+	return resultMsg(id, withKeyUsage(result, keyUsageEntries(used, origIdx)))
 }
 
 // accessLog stderr 접근 기록: 메서드·도구 이름·걸린 시간만 (인자·키·토큰 없음).
@@ -251,7 +256,14 @@ func accessLog(method, tool string, start time.Time, note string) {
 
 // runTool 인자 검증 → 키 확인 → 클라이언트 → 실행 (시작·끝 진행 알림). 패닉도 오류 결과로.
 // 저장된 결과만 읽는 도구(NoKeys)는 키도 클라이언트도 쓰지 않는다.
-func (s *server) runTool(ctx context.Context, t *tool, args json.RawMessage, keys []string, keyErr error, prog *progress) (text string, extra []map[string]any, isErr bool) {
+// used 가 nil 이 아니면 끝날 때(오류·패닉 포함) 클라이언트가 센 키별 상위 요청 수를 담는다.
+func (s *server) runTool(ctx context.Context, t *tool, args json.RawMessage, keys []string, keyErr error, prog *progress, used *[]api.KeyUsage) (text string, extra []map[string]any, isErr bool) {
+	var client *api.Client
+	defer func() {
+		if used != nil && client != nil {
+			*used = client.KeyUsage()
+		}
+	}()
 	defer func() {
 		if r := recover(); r != nil {
 			fmt.Fprintf(os.Stderr, "kosis-mcp: %s 처리 중 패닉: %s\n", t.Name, s.scrub(fmt.Sprintf("%v\n%s", r, debug.Stack()), keys))
@@ -267,10 +279,11 @@ func (s *server) runTool(ctx context.Context, t *tool, args json.RawMessage, key
 		if keyErr != nil {
 			return keyErr.Error(), nil, true
 		}
-		client, err := s.newClient(keys)
+		c, err := s.newClient(keys)
 		if err != nil {
 			return s.scrub("클라이언트를 만들지 못했습니다: "+err.Error(), keys), nil, true
 		}
+		client = c
 		client.SetContext(ctx)
 		defer client.CloseIdleConnections()
 		rc.client = client

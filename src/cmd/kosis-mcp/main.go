@@ -4,6 +4,7 @@
 //
 // 키: 기본은 환경변수 KOSIS_API_KEYS(쉼표로 여러 개), 없으면 ~/.kosis/config.yaml.
 // tools/call 의 params._meta["kr.pes/keys"](문자열 배열)가 있으면 그 키들만 쓴다 (기본 키로 넘어가지 않는다).
+// 요청별 키로 KOSIS 에 요청을 보낸 호출은 결과의 _meta["kr.pes/key-usage"] 에 키 자리별 요청 수를 붙인다 (키 값 없이).
 package main
 
 import (
@@ -31,6 +32,8 @@ const usage = `kosis-mcp — KOSIS(국가통계포털) 조회 MCP 서버 (stdio)
   KOSIS_API_KEYS       기본 API 키 (쉼표로 여러 개). 없으면 ~/.kosis/config.yaml 의 api_keys
   _meta["kr.pes/keys"] tools/call 마다 줄 키 (문자열 배열). 있으면 그 키만 쓴다
   X-Api-Keys: k1,k2    (HTTP) 그 POST 의 tools/call 에 요청별 키로
+  결과 _meta["kr.pes/key-usage"]
+                       요청별 키로 KOSIS 를 부른 호출의 키별 요청 수 [{i, calls, errors, limited}] (i = 받은 목록의 자리)
 
 결과 저장 (큰 결과의 쪽 나누기·CSV 내려받기):
   MCP_RESULTS_DIR            저장 폴더 (기본 ~/.kosis/cache/mcp-results)

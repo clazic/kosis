@@ -292,13 +292,14 @@ func (h *httpServer) post(w http.ResponseWriter, r *http.Request) {
 
 	// 요청별 키 머리글 (형식 오류면 그 POST 의 tools/call 모두 오류 — 기본 키로 넘어가지 않는다)
 	var hdrKeys []string
+	var hdrIdx []int // hdrKeys[j] 가 머리글의 (빈 칸을 뺀) 몇 번째 키였는지
 	var hdrErr error
 	hasHdr := false
 	if v, ok := r.Header["X-Api-Keys"]; ok {
 		hasHdr = true
 		list := splitKeys(strings.Join(v, ","))
 		raw, _ := json.Marshal(list)
-		hdrKeys, _, hdrErr = selectKeys(map[string]json.RawMessage{metaKeysField: raw}, nil)
+		hdrKeys, hdrIdx, _, hdrErr = selectKeysIndexed(map[string]json.RawMessage{metaKeysField: raw}, nil)
 		if hdrErr != nil {
 			hdrErr = errors.New(strings.ReplaceAll(hdrErr.Error(), `_meta["`+metaKeysField+`"]`, "X-Api-Keys 머리글"))
 		}
@@ -335,7 +336,7 @@ func (h *httpServer) post(w http.ResponseWriter, r *http.Request) {
 	if sse {
 		notify = func(m any) { out.event(h.s.encodeMsg(m, hdrKeys)) }
 	}
-	env := callEnv{ctx: r.Context(), notify: notify, hdrKeys: hdrKeys, hasHdr: hasHdr, inflight: &ss.inflight}
+	env := callEnv{ctx: r.Context(), notify: notify, hdrKeys: hdrKeys, hdrIdx: hdrIdx, hasHdr: hasHdr, inflight: &ss.inflight}
 
 	responses := make([]map[string]any, len(reqs))
 	var wg sync.WaitGroup

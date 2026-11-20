@@ -13,6 +13,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/clazic/kosis/internal/cache"
@@ -45,7 +46,39 @@ type Client struct {
 	keyIndexMu sync.Mutex
 	keyPool    chan int        // 키 풀(설계서 Step 2): 가용 키 인덱스를 버퍼드 채널로 관리(borrow/return)
 	ctx        context.Context // nil 이면 context.Background (MCP 서버가 요청 취소에 쓴다)
+	usage      []keyCounter    // 키 인덱스별 상위 HTTP 요청 수 (KeyUsage 로 읽는다)
 }
+
+// keyCounter 키 하나의 상위 HTTP 요청 수 (분할 조회 워커가 함께 올리므로 atomic).
+type keyCounter struct {
+	calls, errors, limited atomic.Int64
+}
+
+// KeyUsage 키 하나(Index = NewClient 에 준 키 목록의 0부터 자리)로 보낸 상위 HTTP 요청 수.
+// Errors 는 실패한 요청(전송 오류 · HTTP 200 아님 · KOSIS 오류 본문), Limited 는 그중 HTTP 429.
+// 키 값은 담지 않는다.
+type KeyUsage struct {
+	Index   int
+	Calls   int
+	Errors  int
+	Limited int
+}
+
+// KeyUsage 이 클라이언트가 지금까지 키별로 보낸 상위 HTTP 요청 수 (요청을 한 번도 보내지 않은 키는 뺀다, 자리 순).
+// 캐시에서 답한 조회는 요청을 보내지 않았으니 세지 않는다. 재시도는 한 번마다 한 요청이다.
+func (c *Client) KeyUsage() []KeyUsage {
+	var out []KeyUsage
+	for i := range c.usage {
+		u := &c.usage[i]
+		if n := u.calls.Load(); n > 0 {
+			out = append(out, KeyUsage{Index: i, Calls: int(n), Errors: int(u.errors.Load()), Limited: int(u.limited.Load())})
+		}
+	}
+	return out
+}
+
+// SetBaseURL KOSIS OpenAPI 주소를 바꾼다 (다른 패키지의 테스트가 가짜 상위 서버를 붙일 때만 쓴다).
+func (c *Client) SetBaseURL(u string) { c.baseURL = strings.TrimRight(u, "/") }
 
 // SetContext 이 클라이언트의 모든 HTTP 호출·재시도 대기를 ctx 에 묶는다. ctx 가 끝나면 진행 중 호출이 끊기고
 // 이후 호출은 바로 실패한다 (분할 조회 워커도 남은 조각을 곧바로 끝낸다). CLI 는 부르지 않는다.
@@ -98,6 +131,7 @@ func NewClient(apiKeys []string) (*Client, error) {
 		cache:    nil, // 나중에 InitCache로 초기화
 		keyIndex: start,
 		keyStart: start,
+		usage:    make([]keyCounter, len(apiKeys)),
 	}, nil
 }
 
@@ -117,12 +151,17 @@ func (c *Client) InitCache(cacheDir string, ttlHours int) error {
 
 // getNextAPIKey returns the next API key in round-robin fashion.
 func (c *Client) getNextAPIKey() string {
+	return c.apiKeys[c.nextKeyIndex()]
+}
+
+// nextKeyIndex 라운드로빈으로 다음 키의 자리(인덱스).
+func (c *Client) nextKeyIndex() int {
 	c.keyIndexMu.Lock()
 	defer c.keyIndexMu.Unlock()
 
-	key := c.apiKeys[c.keyIndex]
+	idx := c.keyIndex
 	c.keyIndex = (c.keyIndex + 1) % len(c.apiKeys)
-	return key
+	return idx
 }
 
 // borrowKey 키 풀에서 가용 키 인덱스를 하나 빌려옵니다(설계서 Step 2).
@@ -185,10 +224,12 @@ func (c *Client) requestWithKey(endpoint string, params map[string]string, noCac
 
 	// API 키 선택: keyIndex >= 0이면 특정 키, -1이면 라운드로빈
 	if keyIndex < 0 {
-		params["apiKey"] = c.getNextAPIKey()
+		keyIndex = c.nextKeyIndex()
 	} else {
-		params["apiKey"] = c.apiKeys[keyIndex%len(c.apiKeys)]
+		keyIndex %= len(c.apiKeys)
 	}
+	params["apiKey"] = c.apiKeys[keyIndex]
+	used := &c.usage[keyIndex] // 이 키로 보낸 상위 요청 수 (시도마다 한 번)
 	params["format"] = defaultFormat
 	// 메타 API(getMeta)는 jsonVD/jsonMVD 없이 호출해야 OBJ_NM, ITM_NM 등 전체 필드를 받음
 	if !strings.Contains(endpoint, "getMeta") {
@@ -221,8 +262,10 @@ func (c *Client) requestWithKey(endpoint string, params map[string]string, noCac
 			return nil, fmt.Errorf("failed to create request: %w", err)
 		}
 
+		used.calls.Add(1)
 		resp, err := c.httpClient.Do(req)
 		if err != nil {
+			used.errors.Add(1)
 			if re, ok := relay.Unwrap(err); ok { // 중계가 낸 오류는 글 그대로 (주소 · 자리표시 없이)
 				return nil, re
 			}
@@ -233,12 +276,15 @@ func (c *Client) requestWithKey(endpoint string, params map[string]string, noCac
 		body, err := io.ReadAll(resp.Body)
 		resp.Body.Close() // 루프 내에서 명시적으로 닫음 (defer는 함수 종료 시에만 실행되므로 루프 내 리소스 누수 방지)
 		if err != nil {
+			used.errors.Add(1)
 			return nil, fmt.Errorf("failed to read response: %w", err)
 		}
 		body = stripBreakTags(body)
 
 		// 429 Too Many Requests 에러 처리
 		if resp.StatusCode == http.StatusTooManyRequests {
+			used.errors.Add(1)
+			used.limited.Add(1)
 			lastErr = fmt.Errorf("API rate limit exceeded (429)")
 			if attempt < maxRetries {
 				// Exponential backoff: 1초, 2초, 4초
@@ -255,12 +301,14 @@ func (c *Client) requestWithKey(endpoint string, params map[string]string, noCac
 
 		// Check HTTP status code
 		if resp.StatusCode != http.StatusOK {
+			used.errors.Add(1)
 			return nil, fmt.Errorf("API returned status %d: %s", resp.StatusCode, maskAPIKey(string(body)))
 		}
 
 		// Check for API error response (err field)
 		// Handle both object and array responses
 		if err := apiError(body); err != nil {
+			used.errors.Add(1)
 			// [30](그 메타·검색 결과 없음)은 바뀌지 않는 답이라 캐시한다 — 주석 없는 표에 d 마다 CMMT 를 다시 묻지 않게
 			if !noCache && c.cache != nil && strings.Contains(err.Error(), "[30]") && strings.Contains(cacheKey, "type=CMMT") { // 주석 없음만 — 메타 갱신 중 일시 [30] 을 굳히지 않게
 				_ = c.cache.Set(cacheKey, body)
