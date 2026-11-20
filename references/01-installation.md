@@ -90,7 +90,7 @@ kosis config key-list              # 등록된 키 확인
 
 > 한도는 키 하나당 1분 200건이다. `kosis`는 실행할 때마다 시작 키를 무작위로 고르므로, `kosis`를 여러 번 따로 실행해도 등록한 키가 고루 쓰인다.
 
-> **PES 중계 모드:** 환경변수 `PES_RELAY_URL` 이 있으면(PES 외부 AI · pes-bridge 가 줌) 위 키 설정을 쓰지 않는다. 키 풀은 `PES_RELAY_KOSIS_KEYS` 개의 자리표시(`__PES_KEY_0__` …)이고, KOSIS 로 가는 모든 요청은 `{PES_RELAY_URL}/kosis/<scheme>/<host>/<path>?<query>` 로 `X-PES-Relay-Token: $PES_RELAY_TOKEN` 머리글과 함께 간다. 키 수가 0 이면 "PES 에 kosis 키가 없어요. PES 「조사 도구 · 그림 키」에서 키를 넣으세요." 로 끝난다(종료 코드 1). 중계 오류도 글 그대로 보여 주고 종료 코드 1. 업데이트 확인 알림은 꺼진다.
+> **PES 중계 모드:** 환경변수 `PES_RELAY_URL` 이 있으면(PES 외부 AI · pes-bridge 가 줌) 위 키 설정을 쓰지 않는다. 키 풀은 `PES_RELAY_KOSIS_KEYS` 개의 자리표시(`__PES_KEY_0__` …)이고, KOSIS 로 가는 모든 요청은 `{PES_RELAY_URL}/kosis/<scheme>/<host>/<path>?<query>` 로 `X-PES-Relay-Token: $PES_RELAY_TOKEN` 머리글과 함께 간다. 키 수가 0 이면 "PES 에 KOSIS 키가 없어요. PES 「조사 도구 · 그림 키」에서 키를 넣으세요." 로 끝난다(종료 코드 1). 중계 오류도 글 그대로 보여 주고 종료 코드 1. 업데이트 확인 알림은 꺼진다.
 
 > **API 키 발급 절차:**
 > 1. https://kosis.kr/openapi/ 접속

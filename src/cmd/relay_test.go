@@ -73,7 +73,7 @@ func TestRelayCmdClientNoKeys(t *testing.T) {
 
 	for name, mk := range map[string]func() (*api.Client, error){"newCmdClient": newCmdClient, "NewAPIClient": NewAPIClient} {
 		_, err := mk()
-		if err == nil || err.Error() != "PES 에 kosis 키가 없어요. PES 「조사 도구 · 그림 키」에서 키를 넣으세요." {
+		if err == nil || err.Error() != "PES 에 KOSIS 키가 없어요. PES 「조사 도구 · 그림 키」에서 키를 넣으세요." {
 			t.Errorf("%s: %v", name, err)
 		}
 	}

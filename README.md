@@ -131,7 +131,7 @@ PES 의 외부 AI(pes-bridge)가 `kosis` 를 돌릴 때는 CLI 가 키를 받지
 
 - `~/.kosis/config.yaml` 의 키와 `KOSIS_API_KEY` 는 쓰지 않습니다. 키 풀은 자리표시 `__PES_KEY_0__` … 이고(병렬 · 돌려 쓰기 · 429 쿨다운은 그대로), 중계가 실제 키로 바꿉니다.
 - KOSIS 로 가는 모든 요청은 `{PES_RELAY_URL}/kosis/<scheme>/<host>/<path>?<query>` 로 갑니다 (예: `…/kosis/https/kosis.kr/openapi/statisticsSearch.do?…`).
-- 키 수가 0 이거나 변수가 없으면 기관을 부르지 않고 `PES 에 kosis 키가 없어요. PES 「조사 도구 · 그림 키」에서 키를 넣으세요.` 를 알리고 0 이 아닌 코드로 끝납니다.
+- 키 수가 0 이거나 변수가 없으면 기관을 부르지 않고 `PES 에 KOSIS 키가 없어요. PES 「조사 도구 · 그림 키」에서 키를 넣으세요.` 를 알리고 0 이 아닌 코드로 끝납니다.
 - 중계가 낸 오류(`X-PES-Relay-Error: 1`)는 그 글을 그대로 보여 주고 0 이 아닌 코드로 끝납니다 (다른 키로 다시 해 보지 않음).
 - 업데이트 확인 알림은 꺼지고, `kosis config setup` 은 쓸 수 없습니다. `kosis config key-list` 는 PES 키 수를 알려 줍니다.
 - `kosis-mcp` 서버는 중계 모드를 쓰지 않습니다 (지금처럼 자기 키로 KOSIS 를 직접 부름).
