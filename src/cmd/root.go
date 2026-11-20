@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
+	"github.com/clazic/kosis/internal/relay"
 	"github.com/clazic/kosis/internal/tui"
 )
 
@@ -129,7 +130,12 @@ var rootCmd = &cobra.Command{
 func Execute() {
 	rootCmd.Version = appVersion
 	rootCmd.SetArgs(normalizeClassShortFlags(os.Args[1:]))
+	relay.EnableCLI() // PES_RELAY_URL 이 있으면 중계 모드 (kosis-mcp 는 부르지 않는다)
 	if err := rootCmd.Execute(); err != nil {
+		os.Exit(1)
+	}
+	// 중계 오류 · PES 키 없음은 명령이 오류를 찍고 그냥 돌아와도 0 이 아닌 코드로 끝낸다
+	if relay.Failed() != nil {
 		os.Exit(1)
 	}
 }

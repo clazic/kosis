@@ -11,6 +11,7 @@
 Constraints:
 - 엔드포인트 URL과 필수 파라미터는 설계서와 일치해야 한다.
 - 데이터 조회 계열은 캐시 정책을 임의로 바꾸지 않는다.
+- HTTP 호출은 `Client.httpClient` 한 곳으로만 나간다. PES 중계 모드는 그 Transport 를 `relay.Wrap` 으로 감싸 주소를 바꾼다(`internal/relay`) — 새 호출 경로를 만들 때 다른 `http.Client` 를 쓰지 않는다.
 - 입력 검증과 API 에러 감지는 사용자 메시지로 이어지므로 의미를 보존한다.
 
 # Implementation Patterns

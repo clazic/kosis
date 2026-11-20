@@ -9,6 +9,7 @@
 
 Constraints:
 - `KOSIS_API_KEY` 우선순위를 깨지 않는다.
+- PES 중계 모드(`relay.Active()` — CLI 이고 `PES_RELAY_URL` 이 있을 때)에서는 `GetAPIKeys`·`HasAPIKey` 가 설정 파일 · `KOSIS_API_KEY` 대신 자리표시 키를 돌려준다. `Load`·`Save` 는 바꾸지 않는다(자리표시가 설정 파일에 저장되면 안 된다).
 - 테스트는 실제 홈 디렉토리를 오염시키지 않아야 한다.
 
 # Implementation Patterns

@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/clazic/kosis/internal/relay"
 )
 
 // SplitOptions 분할 조회 옵션
@@ -279,7 +281,7 @@ func (c *Client) runParallelChunks(chunks []PeriodChunk, concurrency int, progre
 				case j := <-jobs:
 					keyIdx := c.borrowKey()
 					data, err := fetch(keyIdx, j.chunk)
-					if err != nil && strings.Contains(err.Error(), "429") && j.requeues < maxRequeue {
+					if err != nil && !relay.IsError(err) && strings.Contains(err.Error(), "429") && j.requeues < maxRequeue {
 						// 429: 키 쿨다운 반납 후 청크 재투입. jobs는 닫지 않으므로 send 안전.
 						backoff := time.Duration(1<<uint(j.requeues)) * initialBackoff
 						c.cooldownReturn(keyIdx, backoff)
@@ -308,7 +310,7 @@ func (c *Client) runParallelChunks(chunks []PeriodChunk, concurrency int, progre
 			if strings.Contains(r.Err.Error(), "API 오류 [30]") {
 				continue // 데이터 없음 → 건너뜀
 			}
-			if strings.Contains(r.Err.Error(), "429") {
+			if !relay.IsError(r.Err) && strings.Contains(r.Err.Error(), "429") {
 				lastErr = r.Err // 재투입 한도 소진된 429 → 경고 후 계속
 				continue
 			}

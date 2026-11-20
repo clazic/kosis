@@ -11,6 +11,7 @@ import (
 	"github.com/clazic/kosis/internal/api"
 	"github.com/clazic/kosis/internal/cache"
 	"github.com/clazic/kosis/internal/config"
+	"github.com/clazic/kosis/internal/relay"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )
@@ -190,6 +191,9 @@ var keyListCmd = &cobra.Command{
   kosis config add-key <KEY>       키 추가 (병렬 조회 속도 향상)
   kosis config remove-key <INDEX>  키 제거`,
 	Run: func(cmd *cobra.Command, args []string) {
+		if relayKeyNotice() {
+			return
+		}
 		cfg, err := config.Load()
 		if err != nil {
 			fmt.Printf("오류: %v\n", err)
@@ -408,6 +412,10 @@ var setupCmd = &cobra.Command{
   kosis s "인구"            통계표 검색으로 동작 확인
   kosis config add-key ...  키를 더 추가해 병렬 조회 속도 향상`,
 	Run: func(cmd *cobra.Command, args []string) {
+		if relay.Active() { // 중계 모드에서는 키를 받지도 보내지도 않는다
+			fmt.Fprintln(os.Stderr, "오류: PES 중계 모드에서는 키를 PES 에서 관리해요 (kosis config setup 을 쓰지 않습니다)")
+			os.Exit(1)
+		}
 		fmt.Println("KOSIS API 키 설정")
 		fmt.Println("─────────────────────────────────────")
 		fmt.Println("키 발급: https://kosis.kr/openapi/")
@@ -463,6 +471,21 @@ var setupCmd = &cobra.Command{
 			return
 		}
 	},
+}
+
+// relayKeyNotice PES 중계 모드면 키 목록 대신 PES 에 등록된 키 수를 알리고 true (설정 파일 키는 쓰지 않는다).
+// 키가 없으면 규약의 안내를 찍고, Execute 가 0 이 아닌 코드로 끝낸다.
+func relayKeyNotice() bool {
+	if !relay.Active() {
+		return false
+	}
+	keys, err := relay.Keys()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "오류: %v\n", err)
+		return true
+	}
+	fmt.Printf("PES 중계 모드: PES 에 등록된 KOSIS 키 %d개를 씁니다 (이 컴퓨터의 설정 파일 · KOSIS_API_KEY 는 쓰지 않음)\n", len(keys))
+	return true
 }
 
 func init() {

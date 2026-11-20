@@ -8,11 +8,15 @@ import (
 
 	"github.com/clazic/kosis/internal/api"
 	"github.com/clazic/kosis/internal/config"
+	"github.com/clazic/kosis/internal/relay"
 )
 
 // NewAPIClient는 API 키를 로드하고 클라이언트를 생성한 후 캐시를 초기화합니다.
 // 검색·메타·목록·설명 응답은 캐시(TTL: config cache_ttl_hours)를 쓰고, 데이터 조회(d)는 쓰지 않는다.
 func NewAPIClient() (*api.Client, error) {
+	if err := relayKeyCheck(); err != nil {
+		return nil, err
+	}
 	// Get API keys from config
 	keys, err := config.GetAPIKeys()
 	if err != nil {
@@ -46,10 +50,22 @@ func NewAPIClient() (*api.Client, error) {
 
 // newCmdClient 명령용 클라이언트(캐시 포함). 키가 없으면 발급 안내까지 담은 오류를 돌려준다.
 func newCmdClient() (*api.Client, error) {
+	if err := relayKeyCheck(); err != nil {
+		return nil, err
+	}
 	if keys, _ := config.GetAPIKeys(); len(keys) == 0 {
 		return nil, fmt.Errorf("API 키가 설정되지 않았습니다\n\n%s", config.NoAPIKeyMessage())
 	}
 	return NewAPIClient()
+}
+
+// relayKeyCheck PES 중계 모드인데 PES 에 KOSIS 키가 없으면 그 안내 오류 (기관을 부르지 않는다). 그 밖에는 nil.
+func relayKeyCheck() error {
+	if !relay.Active() {
+		return nil
+	}
+	_, err := relay.Keys()
+	return err
 }
 
 // checkFormat 이 명령이 stdout 에 쓸 수 있는 형식인지 API 를 부르기 전에 확인한다.

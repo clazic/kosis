@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/clazic/kosis/internal/relay"
 	"github.com/spf13/viper"
 )
 
@@ -127,7 +128,11 @@ func Save(cfg *Config) error {
 
 // GetAPIKeys는 설정된 API 키 목록을 반환합니다.
 // 환경변수 KOSIS_API_KEY가 있으면 최우선으로 반환합니다.
+// PES 중계 모드에서는 설정 파일 · 환경변수 키를 쓰지 않고 자리표시 키를 돌려준다.
 func GetAPIKeys() ([]string, error) {
+	if relay.Active() {
+		return relay.Keys()
+	}
 	cfg, err := Load()
 	if err != nil {
 		return nil, err
@@ -215,6 +220,9 @@ https://kosis.kr/
 
 // HasAPIKey는 API 키가 설정되어 있는지 확인합니다.
 func HasAPIKey() bool {
+	if relay.Active() {
+		return relay.KeyCount() > 0
+	}
 	if os.Getenv("KOSIS_API_KEY") != "" {
 		return true
 	}

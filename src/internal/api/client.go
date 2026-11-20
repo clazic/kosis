@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/clazic/kosis/internal/cache"
+	"github.com/clazic/kosis/internal/relay"
 )
 
 const (
@@ -59,6 +60,14 @@ func (c *Client) context() context.Context {
 
 // NewClient creates a new KOSIS API client.
 func NewClient(apiKeys []string) (*Client, error) {
+	// PES 중계 모드(CLI 전용): 받은 키는 쓰지 않고 자리표시 키 풀을 쓴다. 키가 없으면 기관을 부르지 않는다.
+	if relay.Active() {
+		keys, err := relay.Keys()
+		if err != nil {
+			return nil, err
+		}
+		apiKeys = keys
+	}
 	if len(apiKeys) == 0 {
 		return nil, fmt.Errorf("at least one API key is required")
 	}
@@ -76,14 +85,15 @@ func NewClient(apiKeys []string) (*Client, error) {
 		keyPool: keyPool,
 		httpClient: &http.Client{
 			Timeout: httpTimeout,
-			Transport: &http.Transport{
+			// relay.Wrap: 중계 모드에서만 모든 요청을 PES 중계 주소로 바꿔 보낸다 (아니면 그대로)
+			Transport: relay.Wrap(&http.Transport{
 				Proxy:               http.ProxyFromEnvironment, // 기본 프록시 동작 보존
 				MaxIdleConns:        maxIdleConns,
 				MaxIdleConnsPerHost: maxIdleConnsPerHost,
 				MaxConnsPerHost:     0, // 무제한 (rate limiter/세마포어가 제어)
 				IdleConnTimeout:     idleConnTimeout,
 				ForceAttemptHTTP2:   true,
-			},
+			}),
 		},
 		cache:    nil, // 나중에 InitCache로 초기화
 		keyIndex: start,
@@ -213,6 +223,9 @@ func (c *Client) requestWithKey(endpoint string, params map[string]string, noCac
 
 		resp, err := c.httpClient.Do(req)
 		if err != nil {
+			if re, ok := relay.Unwrap(err); ok { // 중계가 낸 오류는 글 그대로 (주소 · 자리표시 없이)
+				return nil, re
+			}
 			return nil, fmt.Errorf("API request failed: %w", err)
 		}
 

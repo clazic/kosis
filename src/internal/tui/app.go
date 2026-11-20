@@ -14,6 +14,7 @@ import (
 	"github.com/clazic/kosis/internal/bookmark"
 	"github.com/clazic/kosis/internal/config"
 	"github.com/clazic/kosis/internal/history"
+	"github.com/clazic/kosis/internal/relay"
 	"github.com/muesli/termenv"
 )
 
@@ -113,12 +114,16 @@ func New() Model {
 	// API 클라이언트 초기화
 	keys, err := config.GetAPIKeys()
 	if err != nil || len(keys) == 0 {
+		statusMsg := "⚠ API 키 미설정. kosis config set-key <KEY> 로 설정하세요"
+		if relay.IsError(err) { // PES 중계 모드: PES 에 키가 없다
+			statusMsg = "⚠ " + err.Error()
+		}
 		// API 키 미설정 상태로 반환
 		return Model{
 			width:       80,
 			height:      24,
 			activePanel: PanelSearch,
-			statusMsg:   "⚠ API 키 미설정. kosis config set-key <KEY> 로 설정하세요",
+			statusMsg:   statusMsg,
 			err:         fmt.Errorf("API 키 없음"),
 			cursor:      0,
 			typing:      false,

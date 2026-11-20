@@ -21,6 +21,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/clazic/kosis/internal/config"
+	"github.com/clazic/kosis/internal/relay"
 )
 
 const updateRepo = "clazic/kosis"
@@ -383,6 +384,10 @@ func saveUpdateCache(latestKnown string) error {
 func shouldCheckUpdate() bool {
 	// 명시적 비활성화
 	if os.Getenv("KOSIS_NO_UPDATE_CHECK") != "" {
+		return false
+	}
+	// PES 중계 모드에서는 업데이트 확인 알림을 끈다
+	if relay.Active() {
 		return false
 	}
 	// config update_check=false

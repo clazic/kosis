@@ -36,6 +36,7 @@ KOSIS 명령 실행 전 반드시 다음 순서를 따를 것:
 
 0. **바이너리 확인**: PATH에 `kosis`가 없으면(`command -v kosis` 또는 `where kosis` 실패 시) `scripts/install.sh`(macOS/Linux) 또는 `scripts/install.ps1`(Windows)로 설치한다.
 1. `kosis config key-list` 실행 → 키 존재 여부 확인
+   - **PES 중계 모드**(환경변수 `PES_RELAY_URL` 이 있을 때 — PES 외부 AI): 키는 PES 가 관리한다. 2~5 를 건너뛰고 사용자에게 키를 묻지 않는다. `config set-key`/`add-key`/`setup` 도 하지 않는다. "PES 에 kosis 키가 없어요 …" 가 나오면 PES 「조사 도구 · 그림 키」에서 키를 넣으라고 안내하고 멈춘다.
 2. 키 0개이고 `KOSIS_API_KEY` 환경변수도 없으면 → **실행 중단 후 안내:**
    - "KOSIS API 키가 필요합니다. https://kosis.kr/openapi/ 에서 발급 후 알려주시면 자동으로 등록합니다."
 3. 사용자가 키 제공 → `kosis config set-key <KEY>` 자동 실행
@@ -117,7 +118,8 @@ make build      # 5개 플랫폼 빌드 후 src/bin/ 과 apps/ 두 곳에 자동
 | 캐시 | `~/.kosis/cache/` | 메타/검색만, TTL 설정 가능 |
 
 > Windows: `~` → `%USERPROFILE%`, 한글 깨짐 시 `chcp 65001`  
-> 환경변수 `KOSIS_API_KEY` 설정 시 config.yaml보다 우선 적용
+> 환경변수 `KOSIS_API_KEY` 설정 시 config.yaml보다 우선 적용  
+> 환경변수 `PES_RELAY_URL` 이 있으면 **PES 중계 모드** — config.yaml 키와 `KOSIS_API_KEY` 를 쓰지 않고, 모든 KOSIS 요청을 PES 중계로 보낸다 (`PES_RELAY_TOKEN`, `PES_RELAY_KOSIS_KEYS` 와 함께. 상세: `references/01-installation.md` 1.2)
 
 ---
 
