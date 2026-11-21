@@ -54,7 +54,7 @@ func TestActiveAndKeys(t *testing.T) {
 	}
 
 	t.Setenv("PES_RELAY_KOSIS_KEYS", "0")
-	if _, err := Keys(); err != ErrNoKey || err.Error() != "PES 에 KOSIS 키가 없어요. PES 「조사 도구 · 그림 키」에서 키를 넣으세요." {
+	if _, err := Keys(); err != ErrNoKey || err.Error() != "PES 에 KOSIS 키가 없어요. PES 「도구」에서 키를 넣으세요." {
 		t.Errorf("키 없음 글: %v", err)
 	}
 	if Failed() == nil {

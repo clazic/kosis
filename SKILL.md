@@ -36,7 +36,7 @@ KOSIS 명령 실행 전 반드시 다음 순서를 따를 것:
 
 0. **바이너리 확인**: PATH에 `kosis`가 없으면(`command -v kosis` 또는 `where kosis` 실패 시) `scripts/install.sh`(macOS/Linux) 또는 `scripts/install.ps1`(Windows)로 설치한다.
 1. `kosis config key-list` 실행 → 키 존재 여부 확인
-   - **PES 중계 모드**(환경변수 `PES_RELAY_URL` 이 있을 때 — PES 외부 AI): 키는 PES 가 관리한다. 2~5 를 건너뛰고 사용자에게 키를 묻지 않는다. `config set-key`/`add-key`/`setup` 도 하지 않는다. "PES 에 KOSIS 키가 없어요 …" 가 나오면 PES 「조사 도구 · 그림 키」에서 키를 넣으라고 안내하고 멈춘다.
+   - **PES 중계 모드**(환경변수 `PES_RELAY_URL` 이 있을 때 — PES 외부 AI): 키는 PES 가 관리한다. 2~5 를 건너뛰고 사용자에게 키를 묻지 않는다. `config set-key`/`add-key`/`setup` 도 하지 않는다. "PES 에 KOSIS 키가 없어요 …" 가 나오면 PES 「도구」에서 키를 넣으라고 안내하고 멈춘다.
 2. 키 0개이고 `KOSIS_API_KEY` 환경변수도 없으면 → **실행 중단 후 안내:**
    - "KOSIS API 키가 필요합니다. https://kosis.kr/openapi/ 에서 발급 후 알려주시면 자동으로 등록합니다."
 3. 사용자가 키 제공 → `kosis config set-key <KEY>` 자동 실행

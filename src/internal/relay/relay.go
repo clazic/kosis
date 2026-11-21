@@ -34,7 +34,7 @@ const (
 	errorHeader = "X-PES-Relay-Error"
 
 	// NoKeyMessage 키 수가 0 이거나 변수가 없을 때 알리는 글 (규약 3번 그대로).
-	NoKeyMessage = "PES 에 KOSIS 키가 없어요. PES 「조사 도구 · 그림 키」에서 키를 넣으세요."
+	NoKeyMessage = "PES 에 KOSIS 키가 없어요. PES 「도구」에서 키를 넣으세요."
 
 	maxErrorBody = 64 << 10 // 중계 오류 본문은 짧은 JSON — 그 이상은 읽지 않는다
 )

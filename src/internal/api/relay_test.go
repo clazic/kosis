@@ -108,7 +108,7 @@ func TestRelayNoKeys(t *testing.T) {
 		srv, seen := fakeRelay(t, nil)
 		relayEnv(t, srv.URL, n)
 		_, err := NewClient([]string{relayTestRealKey})
-		if err == nil || err.Error() != "PES 에 KOSIS 키가 없어요. PES 「조사 도구 · 그림 키」에서 키를 넣으세요." {
+		if err == nil || err.Error() != "PES 에 KOSIS 키가 없어요. PES 「도구」에서 키를 넣으세요." {
 			t.Errorf("n=%q: 오류 글이 다르다: %v", n, err)
 		}
 		if relay.Failed() == nil {
