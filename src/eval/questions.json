@@ -1,0 +1,3084 @@
+{
+ "version": 1,
+ "note": "kosis AI 평가 문항. 형식·채점은 src/tools/run_eval.py 머리말, 설명은 src/eval/README.md",
+ "questions": [
+  {
+   "id": "unsold-month",
+   "type": "find",
+   "question": "2026년 8월 전국 미분양 주택은 몇 호인가?",
+   "source": "LEARNINGS RSI R2 — 월간 전국 미분양을 찾다 명령 19개",
+   "answers": [
+    {
+     "table": "116/DT_MLTM_2080",
+     "value": 69134,
+     "unit": "호",
+     "period": "202608",
+     "truth": {
+      "cmd": "d 116 DT_MLTM_2080 -c1 13102792722A.0001 -c2 13102792722B.0001 -c3 13102792722C.0001 -i 13103792722T1 -p M -s 202608 -e 202608"
+     }
+    }
+   ]
+  },
+  {
+   "id": "cpi-rate-month",
+   "type": "find",
+   "question": "2026년 8월 소비자물가 상승률(전년동월비)은 몇 %인가?",
+   "source": "LEARNINGS RSI R1 — 상승률 표 이름이 '등락률'",
+   "answers": [
+    {
+     "table": "101/DT_1J22042",
+     "value": 3.1,
+     "unit": "%",
+     "period": "202608",
+     "truth": {
+      "cmd": "d 101 DT_1J22042 -c1 0 -i T03 -p M -s 202608 -e 202608"
+     },
+     "abs_tol": 0.05
+    }
+   ]
+  },
+  {
+   "id": "unemp-sa",
+   "type": "find",
+   "question": "2026년 8월 계절조정 실업률은 몇 %인가?",
+   "source": "rules.yaml tables 101/DT_1DA9001S — 검색 9번째",
+   "answers": [
+    {
+     "table": "101/DT_1DA9001S",
+     "value": 2.7,
+     "unit": "%",
+     "period": "202608",
+     "truth": {
+      "cmd": "d 101 DT_1DA9001S -c1 00 -i T80 -p M -s 202608 -e 202608"
+     },
+     "abs_tol": 0.05
+    }
+   ]
+  },
+  {
+   "id": "smallbiz-count",
+   "type": "find",
+   "question": "2023년 전국 소상공인 기업 수는 몇 개인가?",
+   "source": "LEARNINGS RSI R7 — 표 이름에 '소상공인'이 없음",
+   "answers": [
+    {
+     "table": "142/DT_BR_A008",
+     "value": 7906861,
+     "unit": "개",
+     "period": "2023",
+     "truth": {
+      "cmd": "d 142 DT_BR_A008 -c1 15142N.00 -c2 15142700 -c3 16142T2524 -i T001 -p Y -s 2023 -e 2023"
+     }
+    }
+   ]
+  },
+  {
+   "id": "service-sales",
+   "type": "find",
+   "question": "서비스업조사 기준 2024년 전국 도매 및 소매업 매출액은 얼마인가?",
+   "source": "rules.yaml tables 101/DT_3KB9001 — 검색에 잘 안 나옴",
+   "answers": [
+    {
+     "table": "101/DT_3KB9001",
+     "value": 1719516835,
+     "unit": "백만원",
+     "period": "2024",
+     "truth": {
+      "cmd": "d 101 DT_3KB9001 -c1 00 -c2 G -i T03 -p Y -s 2024 -e 2024"
+     }
+    }
+   ]
+  },
+  {
+   "id": "ghg-total",
+   "type": "find",
+   "question": "2023년 우리나라 온실가스 총배출량은 얼마인가?",
+   "source": "rules.yaml tables 106/DT_106N_99_2800021 — 일반 검색에 안 나옴",
+   "answers": [
+    {
+     "table": "106/DT_106N_99_2800021",
+     "value": 707.2,
+     "unit": "백만t CO2eq",
+     "period": "2023",
+     "truth": {
+      "cmd": "d 106 DT_106N_99_2800021 -c1 13102130538A.4100001 -i 13103130538T.1100001 -p Y -s 2023 -e 2023"
+     },
+     "abs_tol": 0.1
+    }
+   ]
+  },
+  {
+   "id": "rice-production",
+   "type": "find",
+   "question": "2025년 전국 쌀 생산량은 몇 톤인가?",
+   "source": "rules.yaml tables 101/DT_1ET0221 — '미곡'으로 검색",
+   "answers": [
+    {
+     "table": "101/DT_1ET0221",
+     "value": 3539432.6551,
+     "unit": "톤",
+     "period": "2025",
+     "truth": {
+      "cmd": "d 101 DT_1ET0221 -c1 00 -i T06 -p Y -s 2025 -e 2025"
+     }
+    }
+   ]
+  },
+  {
+   "id": "life-expectancy",
+   "type": "find",
+   "question": "2024년 우리나라 기대수명(남녀 전체)은 몇 세인가?",
+   "source": "rules.yaml tables 101/DT_1B41 — 0세 기대여명",
+   "answers": [
+    {
+     "table": "101/DT_1B41",
+     "value": 83.7,
+     "unit": "세",
+     "period": "2024",
+     "truth": {
+      "cmd": "d 101 DT_1B41 -c1 01 -i T6 -p Y -s 2024 -e 2024"
+     },
+     "abs_tol": 0.05
+    }
+   ]
+  },
+  {
+   "id": "kospi-month-end",
+   "type": "find",
+   "question": "2026년 8월 말 코스피 지수는 얼마인가?",
+   "source": "rules.yaml tables 343/DT_343_2010_S0027",
+   "answers": [
+    {
+     "table": "343/DT_343_2010_S0027",
+     "value": 6820.02,
+     "unit": "지수",
+     "period": "202608",
+     "truth": {
+      "cmd": "d 343 DT_343_2010_S0027 -c1 13102792814A.02 -i ALL -p M -s 202608 -e 202608"
+     }
+    }
+   ]
+  },
+  {
+   "id": "exchange-rate",
+   "type": "find",
+   "question": "2026년 8월 원/달러 환율(월평균)은 얼마인가?",
+   "source": "rules.yaml tables 101/DT_2IFS011 — 한국은행 환율 표는 2014 에서 끝",
+   "answers": [
+    {
+     "table": "101/DT_2IFS011",
+     "value": 1406.3,
+     "unit": "원/달러",
+     "period": "202608",
+     "truth": {
+      "cmd": "d 101 DT_2IFS011 -c1 1005 -c2 B2 -i T004 -p M -s 202608 -e 202608"
+     },
+     "abs_tol": 0.5
+    }
+   ]
+  },
+  {
+   "id": "m2",
+   "type": "find",
+   "question": "2026년 7월 M2(평잔, 원계열)는 얼마인가?",
+   "source": "rules.yaml tables 301/DT_161Y006 — '구 M2' 를 쓰지 않는다",
+   "answers": [
+    {
+     "table": "301/DT_161Y006",
+     "value": 4225455.940595,
+     "unit": "십억원",
+     "period": "202607",
+     "truth": {
+      "cmd": "d 301 DT_161Y006 -c1 13102852603ACC_ITEM.BBHA00 -i 13103852603999 -p M -s 202607 -e 202607"
+     }
+    }
+   ]
+  },
+  {
+   "id": "national-debt",
+   "type": "find",
+   "question": "2025년 국가채무(D1)는 몇 조원인가?",
+   "source": "rules.yaml tables 184/DT_102006_001",
+   "answers": [
+    {
+     "table": "184/DT_102006_001",
+     "value": 1305.2,
+     "unit": "조원",
+     "period": "2025",
+     "truth": {
+      "cmd": "d 184 DT_102006_001 -c1 A01 -i T001 -p Y -s 2025 -e 2025"
+     },
+     "abs_tol": 0.1
+    }
+   ]
+  },
+  {
+   "id": "household-credit",
+   "type": "find",
+   "question": "2026년 2분기 말 가계부채(가계신용) 잔액은 얼마인가?",
+   "source": "rules.yaml tables 301/DT_151Y001",
+   "answers": [
+    {
+     "table": "301/DT_151Y001",
+     "value": 2020786.584067,
+     "unit": "십억원",
+     "period": "202602",
+     "truth": {
+      "cmd": "d 301 DT_151Y001 -c1 13102134771ACC_ITEM.1000000 -i 13103134771999 -p Q -s 202602 -e 202602"
+     }
+    }
+   ]
+  },
+  {
+   "id": "suicide-rate",
+   "type": "find",
+   "question": "2025년 전국 자살률(인구 10만 명당)은 얼마인가?",
+   "source": "rules.yaml tables 101/DT_1YL21121E — 축 순서 성별 → 지역",
+   "answers": [
+    {
+     "table": "101/DT_1YL21121E",
+     "value": 27.8,
+     "unit": "명(십만명당)",
+     "period": "2025",
+     "truth": {
+      "cmd": "d 101 DT_1YL21121E -c1 0 -c2 00 -i T4 -p Y -s 2025 -e 2025"
+     },
+     "abs_tol": 0.05
+    }
+   ]
+  },
+  {
+   "id": "daycare",
+   "type": "find",
+   "question": "2025년 전국 어린이집은 몇 곳인가?",
+   "source": "rules.yaml tables 112/DT_15407_NN001",
+   "answers": [
+    {
+     "table": "112/DT_15407_NN001",
+     "value": 26064,
+     "unit": "개소",
+     "period": "2025",
+     "truth": {
+      "cmd": "d 112 DT_15407_NN001 -c1 01 -i A -p Y -s 2025 -e 2025"
+     }
+    }
+   ]
+  },
+  {
+   "id": "smoking-male",
+   "type": "find",
+   "question": "2024년 19세 이상 성인 남자의 현재흡연율(연령표준화하지 않은 값)은 몇 %인가?",
+   "source": "rules.yaml tables 177/DT_11702_N001 — 표준화 값 28.5 와 구분",
+   "answers": [
+    {
+     "table": "177/DT_11702_N001",
+     "value": 28.0,
+     "unit": "%",
+     "period": "2024",
+     "truth": {
+      "cmd": "d 177 DT_11702_N001 -c1 2 -c2 101 -i T20 -p Y -s 2024 -e 2024"
+     },
+     "abs_tol": 0.05
+    }
+   ]
+  },
+  {
+   "id": "private-edu",
+   "type": "find",
+   "question": "2025년 초중고 학생 1인당 월평균 사교육비는 얼마인가?",
+   "source": "rules.yaml tables 101/DT_1PE201",
+   "answers": [
+    {
+     "table": "101/DT_1PE201",
+     "value": 45.75,
+     "unit": "만원",
+     "period": "2025",
+     "truth": {
+      "cmd": "d 101 DT_1PE201 -c1 10 -i T01 -p Y -s 2025 -e 2025"
+     },
+     "abs_tol": 0.05
+    }
+   ]
+  },
+  {
+   "id": "foreign-residents",
+   "type": "find",
+   "question": "2024년 전국 외국인주민은 몇 명인가?",
+   "source": "rules.yaml tables 110/TX_11025_A000_A",
+   "answers": [
+    {
+     "table": "110/TX_11025_A000_A",
+     "value": 2583626,
+     "unit": "명",
+     "period": "2024",
+     "truth": {
+      "cmd": "d 110 TX_11025_A000_A -c1 1110100A00 -c2 15110AA000 -c3 A001A -i 16110AAA0 -p Y -s 2024 -e 2024"
+     }
+    }
+   ]
+  },
+  {
+   "id": "disabled",
+   "type": "find",
+   "question": "2025년 전국 등록장애인은 몇 명인가?",
+   "source": "rules.yaml tables 117/DT_11761_N005",
+   "answers": [
+    {
+     "table": "117/DT_11761_N005",
+     "value": 2627761,
+     "unit": "명",
+     "period": "2025",
+     "truth": {
+      "cmd": "d 117 DT_11761_N005 -c1 00 -c2 CHUT0 -c3 TT -i 00 -p Y -s 2025 -e 2025"
+     }
+    }
+   ]
+  },
+  {
+   "id": "pension",
+   "type": "find",
+   "question": "2025년 국민연금 수급자(일시금 수급자 포함 전체)는 몇 명인가?",
+   "source": "rules.yaml tables 322/DT_32202_A015",
+   "answers": [
+    {
+     "table": "322/DT_32202_A015",
+     "value": 7935170,
+     "unit": "명",
+     "period": "2025",
+     "truth": {
+      "cmd": "d 322 DT_32202_A015 -c1 11101HJG00 -c2 15322AA800 -i 16322AAA2 -p Y -s 2025 -e 2025"
+     }
+    }
+   ]
+  },
+  {
+   "id": "health-insurance",
+   "type": "find",
+   "question": "2024년 건강보험 적용인구(의료급여 제외)는 몇 명인가?",
+   "source": "rules.yaml tables 350/TX_35001_A001 — 의료보장 합계와 구분",
+   "answers": [
+    {
+     "table": "350/TX_35001_A001",
+     "value": 51439246,
+     "unit": "명",
+     "period": "2024",
+     "truth": {
+      "cmd": "d 350 TX_35001_A001 -c1 B -i T01 -p Y -s 2024 -e 2024"
+     }
+    }
+   ]
+  },
+  {
+   "id": "current-account",
+   "type": "find",
+   "question": "2026년 8월 경상수지는 얼마인가?",
+   "source": "rules.yaml tables 301/DT_301Y013",
+   "answers": [
+    {
+     "table": "301/DT_301Y013",
+     "value": 46113,
+     "unit": "백만달러",
+     "period": "202608",
+     "truth": {
+      "cmd": "d 301 DT_301Y013 -c1 13102134519ACC_CD.000000 -i 13103134519999 -p M -s 202608 -e 202608"
+     },
+     "tol": 0.001
+    }
+   ]
+  },
+  {
+   "id": "gni-per-capita",
+   "type": "find",
+   "question": "2025년 1인당 국민총소득(GNI)은 몇 달러인가?",
+   "source": "rules.yaml tables 301/DT_200Y101",
+   "answers": [
+    {
+     "table": "301/DT_200Y101",
+     "value": 36963.4,
+     "unit": "달러",
+     "period": "2025",
+     "truth": {
+      "cmd": "d 301 DT_200Y101 -c1 13102136288ACC_ITEM.1010601 -i 13103136288999 -p Y -s 2025 -e 2025"
+     }
+    }
+   ]
+  },
+  {
+   "id": "waste",
+   "type": "find",
+   "question": "2024년 전국 생활폐기물 발생량은 연간 몇 톤인가?",
+   "source": "rules.yaml tables 106/DT_106N_29_2020005",
+   "answers": [
+    {
+     "table": "106/DT_106N_29_2020005",
+     "value": 17045141.1,
+     "unit": "톤/년",
+     "period": "2024",
+     "truth": {
+      "cmd": "d 106 DT_106N_29_2020005 -c1 13102134417A.50002 -c2 13102134417T.10001 -i 13103134417I119 -p Y -s 2024 -e 2024"
+     }
+    }
+   ]
+  },
+  {
+   "id": "elderly-facilities",
+   "type": "find",
+   "question": "2025년 전국 노인복지시설은 모두 몇 곳인가?",
+   "source": "rules.yaml tables 117/DT_117N_B00003 — 하위 코드와 합계를 함께 더하면 중복",
+   "answers": [
+    {
+     "table": "117/DT_117N_B00003",
+     "value": 97233,
+     "unit": "개소",
+     "period": "2025",
+     "truth": {
+      "cmd": "d 117 DT_117N_B00003 -c1 A -i 217001 -p Y -s 2025 -e 2025"
+     }
+    }
+   ]
+  },
+  {
+   "id": "deaths-2025",
+   "type": "find",
+   "question": "2025년 전국 사망자 수는 몇 명인가?",
+   "source": "rules.yaml tables 101/DT_1B8000G — 축 2개(행정구역 × 종류)",
+   "answers": [
+    {
+     "table": "101/DT_1B8000G",
+     "value": 362968,
+     "unit": "명",
+     "period": "2025",
+     "truth": {
+      "cmd": "d 101 DT_1B8000G -c1 00 -c2 15 -i T1 -p Y -s 2025 -e 2025"
+     }
+    }
+   ]
+  },
+  {
+   "id": "crude-marriage-seoul",
+   "type": "find",
+   "question": "2024년 서울의 조혼인율은 얼마인가?",
+   "source": "rules.yaml tables 101/DT_1B8000G",
+   "answers": [
+    {
+     "table": "101/DT_1B8000G",
+     "value": 4.6,
+     "unit": "천명당 건",
+     "period": "2024",
+     "truth": {
+      "cmd": "d 101 DT_1B8000G -c1 11 -c2 21 -i T1 -p Y -s 2024 -e 2024"
+     },
+     "abs_tol": 0.05
+    }
+   ]
+  },
+  {
+   "id": "merged-region-aging",
+   "type": "codes",
+   "question": "2025년 전라남도의 고령인구비율(65세 이상 인구 비율)은 몇 %인가?",
+   "source": "LEARNINGS RSI R3 — 전남이 통합시 12 아래 1236",
+   "answers": [
+    {
+     "table": "101/DT_1YL20631",
+     "value": 28.5,
+     "unit": "%",
+     "period": "2025",
+     "truth": {
+      "cmd": "d 101 DT_1YL20631 -c1 1236 -i T10 -p Y -s 2025 -e 2025"
+     },
+     "abs_tol": 0.05
+    },
+    {
+     "table": "101/DT_1YL20632",
+     "value": 27.3,
+     "unit": "%",
+     "period": "2025",
+     "truth": {
+      "cmd": "d 101 DT_1YL20632 -c1 1236 -i T001 -p Y -s 2025 -e 2025"
+     },
+     "abs_tol": 0.05,
+     "note": "인구총조사 기준 표. 질문이 기준(주민등록·총조사)을 정하지 않아 둘 다 정답"
+    }
+   ]
+  },
+  {
+   "id": "ulsan-namgu-pop",
+   "type": "codes",
+   "question": "2025년 울산광역시 남구의 주민등록인구(총인구수)는 몇 명인가?",
+   "source": "rules.yaml tables 101/DT_1B040A3 — 행정안전부 코드라 울산 = 31",
+   "answers": [
+    {
+     "table": "101/DT_1B040A3",
+     "value": 304128,
+     "unit": "명",
+     "period": "2025",
+     "truth": {
+      "cmd": "d 101 DT_1B040A3 -c1 31140 -i T20 -p Y -s 2025 -e 2025"
+     }
+    }
+   ]
+  },
+  {
+   "id": "gwangju-bukgu-pop",
+   "type": "codes",
+   "question": "2026년 9월 광주 북구의 주민등록인구(총인구수)는 몇 명인가?",
+   "source": "LEARNINGS RSI R5 — 2026.07 부터 광주 구 코드가 통합시 아래 새 코드",
+   "answers": [
+    {
+     "table": "101/DT_1B040A3",
+     "value": 416528,
+     "unit": "명",
+     "period": "202609",
+     "truth": {
+      "cmd": "d 101 DT_1B040A3 -c1 12300 -i T20 -p M -s 202609 -e 202609"
+     }
+    }
+   ]
+  },
+  {
+   "id": "middle-students",
+   "type": "codes",
+   "question": "2025년 전국 중학교 학생 수는 몇 명인가?",
+   "source": "LEARNINGS RSI R3 — 초등 C_1=학생수, 중·고 C_1=직원수",
+   "answers": [
+    {
+     "table": "334/DT_1963003_003",
+     "value": 1370356,
+     "unit": "명",
+     "period": "2025",
+     "truth": {
+      "cmd": "d 334 DT_1963003_003 -c1 00 -c2 A001 -c3 H_1 -i 00 -p Y -s 2025 -e 2025"
+     }
+    }
+   ]
+  },
+  {
+   "id": "gini",
+   "type": "codes",
+   "question": "2024년 처분가능소득 기준 지니계수는 얼마인가?",
+   "source": "LEARNINGS RSI R9 — 축 번호가 2부터",
+   "answers": [
+    {
+     "table": "101/DT_1HDALF05",
+     "value": 0.325,
+     "period": "2024",
+     "truth": {
+      "cmd": "d 101 DT_1HDALF05 -c2 10 -i T002 -p Y -s 2024 -e 2024"
+     },
+     "abs_tol": 0.0005
+    }
+   ]
+  },
+  {
+   "id": "traffic-deaths",
+   "type": "codes",
+   "question": "2025년 전국 교통사고 사망자는 몇 명인가?",
+   "source": "rules.yaml tables 132/DT_V_MOTA_016 — 전국 합계 행이 없어 17개 시도를 더한다",
+   "answers": [
+    {
+     "table": "132/DT_V_MOTA_016",
+     "value": 2549,
+     "unit": "명",
+     "period": "2025",
+     "truth": {
+      "cmd": "d 132 DT_V_MOTA_016 -c1 ALL -c2 13102112880M00 -i 13103112880NO_DEATH -p Y -s 2025 -e 2025",
+      "agg": "sum"
+     }
+    }
+   ]
+  },
+  {
+   "id": "library-count",
+   "type": "codes",
+   "question": "2024년 전국 공공도서관은 몇 곳인가?",
+   "source": "rules.yaml tables 113/DT_113_STBL_1028308 — 축 이름 '지역'이 실제로는 지표 목록",
+   "answers": [
+    {
+     "table": "113/DT_113_STBL_1028308",
+     "value": 1296,
+     "unit": "개관",
+     "period": "2024",
+     "truth": {
+      "cmd": "d 113 DT_113_STBL_1028308 -c1 131021253111.001 -i 13103125311T1 -p Y -s 2024 -e 2024"
+     }
+    }
+   ]
+  },
+  {
+   "id": "working-hours",
+   "type": "codes",
+   "question": "2025년 상용근로자 5인 이상 사업체의 월평균 총근로시간은 몇 시간인가?",
+   "source": "rules.yaml tables 118/DT_118N_MON051 — 규모 이름 ' -5인이상'",
+   "answers": [
+    {
+     "table": "118/DT_118N_MON051",
+     "value": 162.3,
+     "unit": "시간",
+     "period": "2025",
+     "truth": {
+      "cmd": "d 118 DT_118N_MON051 -c1 190326INDUSTRY_10S0 -c2 size02 -i 13103110311MD_8 -p Y -s 2025 -e 2025"
+     },
+     "abs_tol": 0.05
+    }
+   ]
+  },
+  {
+   "id": "multicultural-marriage",
+   "type": "codes",
+   "question": "2024년 다문화 혼인은 몇 건인가?",
+   "source": "rules.yaml tables 101/DT_1BB0001 — 성별 계 조합은 [30]",
+   "answers": [
+    {
+     "table": "101/DT_1BB0001",
+     "value": 21450,
+     "unit": "건",
+     "period": "2024",
+     "truth": {
+      "cmd": "d 101 DT_1BB0001 -c1 1 -c2 0 -i T00 -p Y -s 2024 -e 2024"
+     }
+    }
+   ]
+  },
+  {
+   "id": "death-cause-top",
+   "type": "codes",
+   "question": "2023년 우리나라 사망원인 1위는 무엇인가?",
+   "source": "LEARNINGS RSI R2 — 순위 표는 101/DT_1B34E20",
+   "answers": [
+    {
+     "table": "101/DT_1B34E20",
+     "value": "악성신생물",
+     "period": "2023",
+     "truth": {
+      "cmd": "d 101 DT_1B34E20 -c1 0 -c2 99 -c3 01 -i T1 -p Y -s 2023 -e 2023"
+     },
+     "aliases": [
+      "암"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "ulju-shipment",
+   "type": "codes",
+   "question": "광업제조업조사 기준 2024년 울산 울주군의 제조업 출하액은 얼마인가?",
+   "source": "rules.yaml tables 101/DT_1FS1101 — 울주군 코드가 26510 (다른 표는 26310)",
+   "answers": [
+    {
+     "table": "101/DT_1FS1101",
+     "value": 88840891,
+     "unit": "백만원",
+     "period": "2024",
+     "truth": {
+      "cmd": "d 101 DT_1FS1101 -c1 26510 -c2 C -i T04 -p Y -s 2024 -e 2024"
+     }
+    }
+   ]
+  },
+  {
+   "id": "local-tax-seoul",
+   "type": "codes",
+   "question": "2024년 서울특별시의 지방세 징수액은 얼마인가?",
+   "source": "rules.yaml tables 110/TX_11007_A074 — 서울만 '지방' 밖",
+   "answers": [
+    {
+     "table": "110/TX_11007_A074",
+     "value": 27366857111,
+     "unit": "천원",
+     "period": "2024",
+     "truth": {
+      "cmd": "d 110 TX_11007_A074 -c1 15110AA3Ac -i 16110AAW3 -p Y -s 2024 -e 2024"
+     }
+    }
+   ]
+  },
+  {
+   "id": "ulsan-namgu-workers",
+   "type": "codes",
+   "question": "고용노동부 사업체 통계 기준 2024년 울산 남구의 전 산업·전 규모 총종사자 수는 몇 명인가?",
+   "source": "rules.yaml tables 118/DT_118N_SAUPM75 — 전체 코드 INDUSTRY_11S0·15118SIZES_0700",
+   "answers": [
+    {
+     "table": "118/DT_118N_SAUPM75",
+     "value": 137274,
+     "unit": "명",
+     "period": "2024",
+     "truth": {
+      "cmd": "d 118 DT_118N_SAUPM75 -c1 15118ZONE2012_262602 -c2 INDUSTRY_11S0 -c3 15118SIZES_0700 -i 16118ED_9A -p Y -s 2024 -e 2024"
+     }
+    }
+   ]
+  },
+  {
+   "id": "seoul-unsold",
+   "type": "codes",
+   "question": "2026년 8월 서울의 미분양 주택은 몇 호인가?",
+   "source": "rules.yaml tables 101/DT_1YL202004E — 항목 코드가 T1 이 아님",
+   "answers": [
+    {
+     "table": "101/DT_1YL202004E",
+     "value": 898,
+     "unit": "호",
+     "period": "202608",
+     "truth": {
+      "cmd": "d 101 DT_1YL202004E -c1 13102871087A.0002 -c2 13102871087B.0001 -i 13103871087T1 -p M -s 202608 -e 202608"
+     }
+    },
+    {
+     "table": "116/DT_MLTM_2082",
+     "value": 898,
+     "unit": "호",
+     "period": "202608",
+     "truth": {
+      "cmd": "d 116 DT_MLTM_2082 -c1 13102871087A.0002 -c2 13102871087B.0001 -i 13103871087T1 -p M -s 202608 -e 202608"
+     }
+    }
+   ]
+  },
+  {
+   "id": "cpi-rate-year",
+   "type": "period",
+   "question": "2025년 연간 소비자물가 상승률은 몇 %인가?",
+   "source": "LEARNINGS RSI R6 — 월간 전용 표에 -p Y",
+   "answers": [
+    {
+     "table": "101/DT_1J22041",
+     "value": 2.1,
+     "unit": "%",
+     "period": "2025",
+     "truth": {
+      "cmd": "d 101 DT_1J22041 -c1 0 -i T -p Y -s 2025 -e 2025"
+     },
+     "abs_tol": 0.05
+    }
+   ]
+  },
+  {
+   "id": "unsold-dec",
+   "type": "period",
+   "question": "2025년 말(12월) 기준 전국 미분양 주택은 몇 호인가?",
+   "source": "rules.yaml tables 116/DT_MLTM_2086 — 연간표는 12월 기준",
+   "answers": [
+    {
+     "table": "116/DT_MLTM_2080",
+     "value": 66510,
+     "unit": "호",
+     "period": "202512",
+     "truth": {
+      "cmd": "d 116 DT_MLTM_2080 -c1 13102792722A.0001 -c2 13102792722B.0001 -c3 13102792722C.0001 -i 13103792722T1 -p M -s 202512 -e 202512"
+     }
+    },
+    {
+     "table": "116/DT_MLTM_2086",
+     "value": 66510,
+     "unit": "호",
+     "period": "2025",
+     "truth": {
+      "cmd": "d 116 DT_MLTM_2086 -c1 13102871014A.0002 -c2 13102871014B.0005 -i 13103871014T1 -p Y -s 2025 -e 2025"
+     }
+    }
+   ]
+  },
+  {
+   "id": "gdp-growth-q",
+   "type": "period",
+   "question": "2026년 2분기 실질 GDP 성장률(계절조정, 전기 대비)은 몇 %인가?",
+   "source": "rules.yaml tables 301/DT_200Y102 — 분기 시점 6자리",
+   "answers": [
+    {
+     "table": "301/DT_200Y102",
+     "value": 0.6,
+     "unit": "%",
+     "period": "202602",
+     "truth": {
+      "cmd": "d 301 DT_200Y102 -c1 13102136269ACC_ITEM.10111 -i 13103136269999 -p Q -s 202602 -e 202602"
+     },
+     "abs_tol": 0.05
+    }
+   ]
+  },
+  {
+   "id": "seoul-unemp-q",
+   "type": "period",
+   "question": "2025년 1분기 서울의 실업률은 몇 %인가?",
+   "source": "rules.yaml tables 101/DT_1DA7104S — 분기 YYYY0Q",
+   "answers": [
+    {
+     "table": "101/DT_1DA7104S",
+     "value": 4.5,
+     "unit": "%",
+     "period": "202501",
+     "truth": {
+      "cmd": "d 101 DT_1DA7104S -c1 11 -c2 0 -i T80 -p Q -s 202501 -e 202501"
+     },
+     "abs_tol": 0.05
+    }
+   ]
+  },
+  {
+   "id": "econ-census",
+   "type": "period",
+   "question": "2020년 경제총조사 기준 전국 사업체 수는 몇 개인가?",
+   "source": "LEARNINGS — 여러 해 주기 표는 -p F",
+   "answers": [
+    {
+     "table": "101/DT_2KI2001",
+     "value": 6032022,
+     "unit": "개",
+     "period": "2020",
+     "truth": {
+      "cmd": "d 101 DT_2KI2001 -c1 0 -i T10 -p F -s 2020 -e 2020"
+     }
+    }
+   ]
+  },
+  {
+   "id": "farm-households",
+   "type": "period",
+   "question": "2025년 농림어업총조사 기준 전국 농가는 몇 가구인가?",
+   "source": "LEARNINGS RSI R14 — 총조사(F)와 표본조사 구분",
+   "answers": [
+    {
+     "table": "101/DT_1AG25102",
+     "value": 1241730,
+     "unit": "가구",
+     "period": "2025",
+     "truth": {
+      "cmd": "d 101 DT_1AG25102 -c1 00 -c2 000 -i T00 -p F -s 2025 -e 2025"
+     }
+    }
+   ]
+  },
+  {
+   "id": "outbound",
+   "type": "period",
+   "question": "2025년 한 해 내국인 출국자는 몇 명인가?",
+   "source": "LEARNINGS RSI R11 — 연간 마지막 값이 부분 연도일 수 있음",
+   "answers": [
+    {
+     "table": "314/DT_SEX_DEP_AGG_MONTH",
+     "value": 29550177,
+     "unit": "명",
+     "period": "2025",
+     "truth": {
+      "cmd": "d 314 DT_SEX_DEP_AGG_MONTH -c1 13102314008A.1 -i 13103314008T01 -p Y -s 2025 -e 2025"
+     }
+    }
+   ]
+  },
+  {
+   "id": "apt-price-index",
+   "type": "period",
+   "question": "2026년 8월 전국 아파트 매매가격지수는 얼마인가? 지수의 기준시점도 밝혀라.",
+   "source": "LEARNINGS RSI R3 — 수록이 멈춘 표, 기준 개편마다 새 표",
+   "answers": [
+    {
+     "table": "408/DT_30404_C012",
+     "value": 100.827271,
+     "unit": "2026.6=100",
+     "period": "202608",
+     "truth": {
+      "cmd": "d 408 DT_30404_C012 -c1 01 -c2 a0 -i sales -p M -s 202608 -e 202608"
+     },
+     "abs_tol": 0.02
+    }
+   ]
+  },
+  {
+   "id": "housing-start-year",
+   "type": "period",
+   "question": "2025년 연간 전국 주택 착공 실적은 몇 호인가?",
+   "source": "rules.yaml tables 116/DT_MLTM_5386 — 월간만, 12개월 합",
+   "answers": [
+    {
+     "table": "116/DT_MLTM_5386",
+     "value": 272162,
+     "unit": "호",
+     "period": "2025",
+     "truth": {
+      "cmd": "d 116 DT_MLTM_5386 -c1 13102766971A.0001 -c2 13102766971B.0001 -c3 13102766971C.0001 -i 13103766971T1 -p M -s 202501 -e 202512",
+      "agg": "sum"
+     }
+    }
+   ]
+  },
+  {
+   "id": "permits-month",
+   "type": "period",
+   "question": "2026년 8월 한 달 동안의 전국 주택 인허가 실적(가구수 기준)은 몇 호인가?",
+   "source": "LEARNINGS RSI R10 — 월 값이 연초부터의 누계",
+   "answers": [
+    {
+     "table": "116/DT_MLTM_1948",
+     "value": 22058,
+     "unit": "호",
+     "period": "202608",
+     "truth": {
+      "cmd": "d 116 DT_MLTM_1948 -c1 13102871090A.0001 -c2 13102871090B.0002 -c3 13102871090C.0002 -c4 13102871090D.0002 -i ALL -p M -s 202607 -e 202608 --change prev",
+      "field": "DT_CHG"
+     }
+    }
+   ]
+  },
+  {
+   "id": "hanwoo",
+   "type": "period",
+   "question": "2026년 2분기 전국 한육우(한우+육우) 사육 마릿수는 몇 마리인가?",
+   "source": "rules.yaml tables 101/DT_1EO200",
+   "answers": [
+    {
+     "table": "101/DT_1EO200",
+     "value": 3348811.0,
+     "unit": "마리",
+     "period": "202602",
+     "truth": {
+      "cmd": "d 101 DT_1EO200 -c1 00 -i T02+T04 -p Q -s 202602 -e 202602",
+      "agg": "sum"
+     }
+    }
+   ]
+  },
+  {
+   "id": "class-size",
+   "type": "period",
+   "question": "2026년 전국 초등학교 학급당 학생 수는 몇 명인가?",
+   "source": "rules.yaml tables 101/DT_1YL15001 — 334 표보다 한 해 더 최신",
+   "answers": [
+    {
+     "table": "101/DT_1YL15001",
+     "value": 18.59,
+     "unit": "명",
+     "period": "2026",
+     "truth": {
+      "cmd": "d 101 DT_1YL15001 -c1 00 -i T003 -p Y -s 2026 -e 2026"
+     },
+     "abs_tol": 0.02
+    }
+   ]
+  },
+  {
+   "id": "tfr-top",
+   "type": "calc",
+   "question": "2025년 합계출산율이 가장 높은 시도는 어디인가?",
+   "source": "LEARNINGS RSI R4 — 눈으로 정렬해 순위를 틀림",
+   "answers": [
+    {
+     "table": "101/DT_1B81A21",
+     "value": "전라남도",
+     "period": "2025",
+     "truth": {
+      "cmd": "d 101 DT_1B81A21 -c1 level:1 -i T1 -p Y -s 2025 -e 2025 --no-total --sort desc --top 1",
+      "field": "C1_NM"
+     },
+     "aliases": [
+      "전남"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "tfr-lowest",
+   "type": "calc",
+   "question": "2025년 시도 가운데 가장 낮은 합계출산율은 얼마인가?",
+   "source": "rules.yaml tables 101/DT_1B81A21",
+   "answers": [
+    {
+     "table": "101/DT_1B81A21",
+     "value": 0.632,
+     "unit": "명",
+     "period": "2025",
+     "truth": {
+      "cmd": "d 101 DT_1B81A21 -c1 level:1 -i T1 -p Y -s 2025 -e 2025 --no-total --sort asc --top 1"
+     },
+     "abs_tol": 0.0005
+    }
+   ]
+  },
+  {
+   "id": "aging-rank3",
+   "type": "calc",
+   "question": "2025년 고령인구비율(65세 이상)이 세 번째로 높은 시도는 어디인가?",
+   "source": "LEARNINGS RSI R3 — 2자리 코드만 거르면 전남·광주가 빠짐",
+   "answers": [
+    {
+     "table": "101/DT_1YL20631",
+     "value": "강원특별자치도",
+     "period": "2025",
+     "truth": {
+      "cmd": "d 101 DT_1YL20631 -c1 11+21+22+23+25+26+29+31+32+33+34+35+37+38+39+1224+1236 -i T10 -p Y -s 2025 -e 2025 --sort desc --top 3",
+      "where": {
+       "RANK": "3"
+      },
+      "field": "C1_NM"
+     },
+     "aliases": [
+      "강원",
+      "강원도"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "ppi-yoy",
+   "type": "calc",
+   "question": "2026년 8월 생산자물가지수(총지수)는 전년 같은 달보다 몇 % 올랐는가?",
+   "source": "rules.yaml tables 301/DT_404Y014 — 코드에 별표가 글자로, 등락률 항목 없음",
+   "answers": [
+    {
+     "table": "301/DT_404Y014",
+     "value": 7.88,
+     "unit": "%",
+     "period": "202608",
+     "truth": {
+      "cmd": "d 301 DT_404Y014 -c1 13102134604ACC_CD.*AA -i 13103134604999 -p M -s 202508 -e 202608 --change yoy",
+      "where": {
+       "PRD_DE": "202608"
+      },
+      "field": "DT_CHG_PCT"
+     },
+     "abs_tol": 0.02
+    }
+   ]
+  },
+  {
+   "id": "housing-start-yoy",
+   "type": "calc",
+   "question": "2026년 8월 전국 주택 착공 실적은 전년 같은 달보다 몇 % 늘었는가?",
+   "source": "rules.yaml tables 116/DT_MLTM_5386",
+   "answers": [
+    {
+     "table": "116/DT_MLTM_5386",
+     "value": 9.28,
+     "unit": "%",
+     "period": "202608",
+     "truth": {
+      "cmd": "d 116 DT_MLTM_5386 -c1 13102766971A.0001 -c2 13102766971B.0001 -c3 13102766971C.0001 -i 13103766971T1 -p M -s 202508 -e 202608 --change yoy",
+      "where": {
+       "PRD_DE": "202608"
+      },
+      "field": "DT_CHG_PCT"
+     },
+     "abs_tol": 0.02
+    }
+   ]
+  },
+  {
+   "id": "one-person-ratio",
+   "type": "calc",
+   "question": "2025년 전국 일반가구 가운데 1인 가구의 비율은 몇 %인가?",
+   "source": "rules.yaml tables 101/DT_1JC1516 — --ratio 50/00",
+   "answers": [
+    {
+     "table": "101/DT_1JC1516",
+     "value": 36.65,
+     "unit": "%",
+     "period": "2025",
+     "truth": {
+      "cmd": "d 101 DT_1JC1516 -c1 00 -c2 50+00 -i T10 -p Y -s 2025 -e 2025 --ratio 50/00",
+      "where": {
+       "C2": "50"
+      },
+      "field": "DT_RATIO_PCT"
+     },
+     "abs_tol": 0.05
+    }
+   ]
+  },
+  {
+   "id": "biz-per-emp-seoul",
+   "type": "calc",
+   "question": "전국사업체조사 기준 2024년 서울의 사업체 1곳당 종사자 수는 몇 명인가?",
+   "source": "LEARNINGS RSI R9·R12 — 손으로 나눔",
+   "answers": [
+    {
+     "table": "101/DT_1K52F01",
+     "value": 4.91,
+     "unit": "명",
+     "period": "2024",
+     "truth": {
+      "cmd": "ratio --num \"101 DT_1K52F01 -c1 11 -c2 0 -c3 0 -i T2 -p Y -s 2024 -e 2024\" --den \"101 DT_1K52F01 -c1 11 -c2 0 -c3 0 -i T1 -p Y -s 2024 -e 2024\" --scale 1",
+      "field": "비율"
+     },
+     "abs_tol": 0.01
+    }
+   ]
+  },
+  {
+   "id": "middle-pupil-teacher",
+   "type": "calc",
+   "question": "2025년 전국 중학교의 교원 1인당 학생 수는 몇 명인가?",
+   "source": "rules.yaml tables 334/DT_1963003_002 — 학생수 ÷ 교원수, 전 학교급 합계 표를 쓰지 않는다",
+   "answers": [
+    {
+     "table": "334/DT_1963003_003",
+     "value": 11.8,
+     "unit": "명",
+     "period": "2025",
+     "truth": {
+      "cmd": "ratio --num \"334 DT_1963003_003 -c1 00 -c2 A001 -c3 H_1 -i 00 -p Y -s 2025 -e 2025\" --den \"334 DT_1963003_003 -c1 00 -c2 A001 -c3 B_1 -i 00 -p Y -s 2025 -e 2025\" --scale 1",
+      "field": "비율"
+     },
+     "abs_tol": 0.05
+    }
+   ]
+  },
+  {
+   "id": "wage-growth",
+   "type": "calc",
+   "question": "2025년 상용근로자 5인 이상 사업체의 상용근로자 임금총액은 전년보다 몇 % 올랐는가?",
+   "source": "rules.yaml tables 118/DT_118N_MON051",
+   "answers": [
+    {
+     "table": "118/DT_118N_MON051",
+     "value": 3.04,
+     "unit": "%",
+     "period": "2025",
+     "truth": {
+      "cmd": "d 118 DT_118N_MON051 -c1 190326INDUSTRY_10S0 -c2 size02 -i 13103110311MD_13 -p Y -s 2024 -e 2025 --change prev",
+      "field": "DT_CHG_PCT"
+     },
+     "abs_tol": 0.02
+    }
+   ]
+  },
+  {
+   "id": "unemp-top-sido",
+   "type": "calc",
+   "question": "2025년 연간 실업률이 가장 높은 시도는 어디인가?",
+   "source": "LEARNINGS RSI R12 — 2위 동률(대구·광주)",
+   "answers": [
+    {
+     "table": "101/DT_1DA7004S",
+     "value": "서울특별시",
+     "period": "2025",
+     "truth": {
+      "cmd": "d 101 DT_1DA7004S -c1 level:1 -i T80 -p Y -s 2025 -e 2025 --no-total --sort desc --top 1",
+      "field": "C1_NM"
+     },
+     "aliases": [
+      "서울"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "netmig-top",
+   "type": "calc",
+   "question": "2025년 순유입 인구가 가장 많은 시도는 어디인가?",
+   "source": "rules.yaml tables 101/INH_1B26001_A021",
+   "answers": [
+    {
+     "table": "101/INH_1B26001_A021",
+     "value": "경기도",
+     "period": "2025",
+     "truth": {
+      "cmd": "d 101 INH_1B26001_A021 -c1 level:1 -c2 0 -i T25 -p Y -s 2025 -e 2025 --no-total --sort desc --top 1",
+      "field": "C1_NM"
+     },
+     "aliases": [
+      "경기"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "grdp-top",
+   "type": "calc",
+   "question": "2024년 1인당 지역내총생산이 가장 높은 시도는 어디인가?",
+   "source": "rules.yaml tables 101/DT_1C96 — 전국 행은 뺀다",
+   "answers": [
+    {
+     "table": "101/DT_1C96",
+     "value": "울산광역시",
+     "period": "2024",
+     "truth": {
+      "cmd": "d 101 DT_1C96 -c1 level:1 -i T1 -p Y -s 2024 -e 2024 --no-total --sort desc --top 1",
+      "field": "C1_NM"
+     }
+    }
+   ]
+  },
+  {
+   "id": "home-ownership",
+   "type": "definition",
+   "question": "2024년 전국 일반가구 가운데 주택을 소유한 가구의 비율(자가보유율)은 몇 %인가?",
+   "source": "LEARNINGS RSI R18 — 자가점유율 58.4% 를 보유율로 답함",
+   "answers": [
+    {
+     "table": "101/DT_1YL202111",
+     "value": 56.9,
+     "unit": "%",
+     "period": "2024",
+     "truth": {
+      "cmd": "d 101 DT_1YL202111 -c1 00 -i T0021 -p Y -s 2024 -e 2024"
+     },
+     "abs_tol": 0.05
+    }
+   ],
+   "mention_any": [
+    "소유",
+    "보유"
+   ]
+  },
+  {
+   "id": "ulsan-production",
+   "type": "definition",
+   "question": "광업제조업조사 기준 2024년 울산광역시 광업 및 제조업의 생산액은 얼마인가?",
+   "source": "LEARNINGS — 출하액으로 생산액을 대신 답함",
+   "answers": [
+    {
+     "table": "101/DT_1FS1104",
+     "value": 278929223,
+     "unit": "백만원",
+     "period": "2024",
+     "truth": {
+      "cmd": "d 101 DT_1FS1104 -c1 26 -c2 0 -i T07 -p Y -s 2024 -e 2024"
+     },
+     "tol": 0.0005
+    }
+   ]
+  },
+  {
+   "id": "patent-total",
+   "type": "definition",
+   "question": "2025년 우리나라 특허 출원은 모두 몇 건인가? (내국인·외국인 합)",
+   "source": "LEARNINGS RSI R19 — 시도별 표는 내국인 출원만",
+   "answers": [
+    {
+     "table": "138/TX_13801_A004",
+     "value": 260797,
+     "unit": "건",
+     "period": "2025",
+     "truth": {
+      "cmd": "d 138 TX_13801_A004 -c1 15138AG1AA -i 16138AAA1 -p Y -s 2025 -e 2025"
+     }
+    }
+   ]
+  },
+  {
+   "id": "farm-income",
+   "type": "definition",
+   "question": "농가경제조사 기준 2025년 평균 농가소득(2인 이상 농가)은 얼마인가?",
+   "source": "rules.yaml tables 101/DT_1EA1501 — 1인 이상 보조지표와 구분",
+   "answers": [
+    {
+     "table": "101/DT_1EA1501",
+     "value": 54667.48451,
+     "unit": "천원",
+     "period": "2025",
+     "truth": {
+      "cmd": "d 101 DT_1EA1501 -c1 000 -i T100 -p Y -s 2025 -e 2025"
+     }
+    }
+   ]
+  },
+  {
+   "id": "museums",
+   "type": "definition",
+   "question": "2023년 전국 박물관은 몇 곳인가? (미술관 제외)",
+   "source": "rules.yaml tables 110/DT_110001_A034 — 문화기반시설 전체(3,337)는 박물관 수가 아님",
+   "answers": [
+    {
+     "table": "110/DT_110001_A034",
+     "value": 891,
+     "unit": "개",
+     "period": "2023",
+     "truth": {
+      "cmd": "d 110 DT_110001_A034 -c1 A001 -c2 H001 -i ALL -p Y -s 2023 -e 2023"
+     }
+    }
+   ]
+  },
+  {
+   "id": "fishery-households",
+   "type": "definition",
+   "question": "2025년 농림어업총조사 기준 전국 어가(해수면 + 내수면)는 모두 몇 가구인가?",
+   "source": "LEARNINGS RSI R14 — 합계 표가 없어 두 표를 더한다",
+   "answers": [
+    {
+     "table": "101/DT_1FS000",
+     "value": 50371,
+     "unit": "가구",
+     "period": "2025",
+     "truth": [
+      {
+       "cmd": "d 101 DT_1FS000 -c1 00 -i T00 -p F -s 2025 -e 2025"
+      },
+      {
+       "cmd": "d 101 DT_1FI000 -c1 00 -i T00 -p F -s 2025 -e 2025"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "returning-farm",
+   "type": "definition",
+   "question": "2025년 전국 귀농가구는 몇 가구인가?",
+   "source": "rules.yaml tables 101/DT_1A02008 — '귀농가구원'은 사람 수",
+   "answers": [
+    {
+     "table": "101/DT_1A02008",
+     "value": 8735,
+     "unit": "가구",
+     "period": "2025",
+     "truth": {
+      "cmd": "d 101 DT_1A02008 -c1 00 -c2 00 -i T01 -p Y -s 2025 -e 2025"
+     }
+    }
+   ]
+  },
+  {
+   "id": "permits-year",
+   "type": "definition",
+   "question": "2025년 연간 전국 주택건설 인허가 실적(호)은 얼마인가?",
+   "source": "rules.yaml tables 116/DT_MLTM_666 — 전국 합계는 '실적'(A.0002), '계획'(A.0001)은 계획물량",
+   "answers": [
+    {
+     "table": "116/DT_MLTM_666",
+     "value": 388362,
+     "unit": "호",
+     "period": "2025",
+     "truth": {
+      "cmd": "d 116 DT_MLTM_666 -c1 13102871094A.0002 -i 13103871094T1 -p Y -s 2025 -e 2025"
+     }
+    },
+    {
+     "table": "116/DT_MLTM_1948",
+     "value": 395019,
+     "unit": "호",
+     "period": "202512",
+     "truth": {
+      "cmd": "d 116 DT_MLTM_1948 -c1 13102871090A.0001 -c2 13102871090B.0002 -c3 13102871090C.0002 -c4 13102871090D.0002 -i 13103871090T1 -p M -s 202512 -e 202512"
+     },
+     "note": "월 누계표의 12월 값. 연간표(666) 388,362 와 다르다 — 어느 쪽이 확정치인지 미확인이라 둘 다 정답"
+    }
+   ]
+  },
+  {
+   "id": "labor-productivity",
+   "type": "definition",
+   "question": "2025년 제조업의 부가가치 기준 노동생산성지수는 얼마인가?",
+   "source": "rules.yaml tables 344/DT_344N_1D8B_BB — 산업생산 기준 지수(117.528)와 구분",
+   "answers": [
+    {
+     "table": "344/DT_344N_1D8B_BB",
+     "value": 122.282,
+     "unit": "2015=100",
+     "period": "2025",
+     "truth": {
+      "cmd": "d 344 DT_344N_1D8B_BB -c1 C -i T001 -p Y -s 2025 -e 2025"
+     },
+     "abs_tol": 0.01
+    }
+   ]
+  },
+  {
+   "id": "mfg-employees-survey",
+   "type": "definition",
+   "question": "사업체노동력조사 기준 2025년 제조업 종사자 수는 몇 명인가?",
+   "source": "rules.yaml tables 118/DT_118N_MOND66 — 전국사업체조사(전수)와 값이 다름",
+   "answers": [
+    {
+     "table": "118/DT_118N_MOND66",
+     "value": 3758196,
+     "unit": "명",
+     "period": "2025",
+     "truth": {
+      "cmd": "d 118 DT_118N_MOND66 -c1 ZONE2017A000000 -c2 260225INDUSTRY_11SC -i emp001 -p Y -s 2025 -e 2025"
+     }
+    }
+   ]
+  },
+  {
+   "id": "nts-revenue",
+   "type": "definition",
+   "question": "2025년 국세청 세수(국세청 총징수액에서 지방소비세 이체액 등을 뺀 것)는 얼마인가?",
+   "source": "LEARNINGS RSI R15 — 같은 해 합계 3종",
+   "answers": [
+    {
+     "table": "133/TX_13301_A075",
+     "value": 365051887,
+     "unit": "백만원",
+     "period": "2025",
+     "truth": {
+      "cmd": "d 133 TX_13301_A075 -c1 15133SMB00 -i 16133AAB1 -p Y -s 2025 -e 2025"
+     },
+     "tol": 0.0005
+    },
+    {
+     "table": "133/DT_13301_000",
+     "value": 3650519,
+     "unit": "억원",
+     "period": "2025",
+     "truth": {
+      "cmd": "d 133 DT_13301_000 -c1 15133SGB02 -i 16133AAC7 -p Y -s 2025 -e 2025"
+     },
+     "tol": 0.0005,
+     "note": "같은 값을 억원 단위로 주는 표 (기준선 MCP 실행에서 확인)"
+    }
+   ]
+  },
+  {
+   "id": "absent-college-rate",
+   "type": "absent",
+   "question": "2025년 전국 고등학교 졸업자의 대학 진학률은 몇 %인가?",
+   "source": "rules.yaml gaps college-entrance-rate",
+   "checked": "검색어 14종, --org 101/112/334, ls 주제·기관 뷰 (2026-10-13)"
+  },
+  {
+   "id": "absent-ei-insured",
+   "type": "absent",
+   "question": "2026년 8월 전국 고용보험 피보험자 수(재고)는 몇 명인가?",
+   "source": "rules.yaml gaps employment-insurance-insured",
+   "checked": "s 고용보험 피보험자 등 4종, --org 118, --stat 고용행정통계 (2026-10-13). 신규취득자 표는 대용 아님"
+  },
+  {
+   "id": "absent-pir",
+   "type": "absent",
+   "question": "2025년 수도권의 PIR(연소득 대비 주택가격 배수)은 얼마인가?",
+   "source": "rules.yaml gaps pir-recent",
+   "checked": "검색·--org 116/408/321·--stat 주거실태조사·ind s·ls 약 35개 명령 (2026-10-13)"
+  },
+  {
+   "id": "absent-ev",
+   "type": "absent",
+   "question": "2025년 12월 서울의 전기차 등록 대수는 몇 대인가?",
+   "source": "rules.yaml gaps ev-registrations-by-region",
+   "checked": "s 전기차 등 4종, ls --parent M2_18 (2026-10-13). 차종별 표만 있음"
+  },
+  {
+   "id": "u-power-sales",
+   "type": "find",
+   "set": "unseen",
+   "question": "2025년 전국 판매전력량(모든 용도 합계)은 몇 MWh인가?",
+   "source": "규칙·문서에 없는 표 (2026-11-23 검색으로 찾음)",
+   "answers": [
+    {
+     "table": "310/TX_31002_A019",
+     "value": 549417259,
+     "unit": "MWh",
+     "period": "2025",
+     "truth": {
+      "cmd": "d 310 TX_31002_A019 -c1 15310AB300 -c2 M0 -i 16310T2008_0126 -p Y -s 2025 -e 2025"
+     }
+    },
+    {
+     "table": "101/DT_1YL4801E",
+     "value": 549417259,
+     "unit": "MWh",
+     "period": "2025",
+     "truth": {
+      "cmd": "d 101 DT_1YL4801E -c1 15310HJG00 -i 16310T2008_0117 -p Y -s 2025 -e 2025"
+     }
+    }
+   ]
+  },
+  {
+   "id": "u-cancer-incidence",
+   "type": "find",
+   "set": "unseen",
+   "question": "2023년 새로 발생한 암 환자(모든 암, 남녀 전체)는 몇 명인가?",
+   "source": "규칙·문서에 없는 표 (2026-11-23 검색으로 찾음)",
+   "answers": [
+    {
+     "table": "117/DT_117N_A00023",
+     "value": 288613,
+     "unit": "명",
+     "period": "2023",
+     "truth": {
+      "cmd": "d 117 DT_117N_A00023 -c1 15117AC000101 -c2 11101SSB20 -c3 15117AC001101 -i 16117ac000101 -p Y -s 2023 -e 2023"
+     }
+    }
+   ]
+  },
+  {
+   "id": "u-union-rate",
+   "type": "find",
+   "set": "unseen",
+   "question": "2024년 우리나라 노동조합 조직률은 몇 %인가?",
+   "source": "규칙·문서에 없는 표 (2026-11-23 검색으로 찾음)",
+   "answers": [
+    {
+     "table": "118/TX_11824_A009",
+     "value": 13,
+     "unit": "%",
+     "period": "2024",
+     "truth": {
+      "cmd": "d 118 TX_11824_A009 -c1 15118AA0AF -i 16118AAA0 -p Y -s 2024 -e 2024"
+     },
+     "abs_tol": 0.05
+    }
+   ]
+  },
+  {
+   "id": "u-house-sales",
+   "type": "find",
+   "set": "unseen",
+   "question": "2026년 8월 전국 주택 매매거래량은 몇 호인가?",
+   "source": "규칙·문서에 없는 표 (2026-11-23 검색으로 찾음)",
+   "answers": [
+    {
+     "table": "408/DT_408_2006_S0061",
+     "value": 48359,
+     "unit": "호",
+     "period": "202608",
+     "truth": {
+      "cmd": "d 408 DT_408_2006_S0061 -c1 13102114445A.0001 -c2 13102114445B.0001 -i 13103114445T1 -p M -s 202608 -e 202608"
+     }
+    }
+   ]
+  },
+  {
+   "id": "u-median-age",
+   "type": "find",
+   "set": "unseen",
+   "question": "장래인구추계(중위 추계) 기준 2025년 우리나라 중위연령은 몇 세인가?",
+   "source": "규칙·문서에 없는 표 (2026-11-23 검색으로 찾음)",
+   "answers": [
+    {
+     "table": "101/DT_1BPA002",
+     "value": 46.7,
+     "unit": "세",
+     "period": "2025",
+     "truth": {
+      "cmd": "d 101 DT_1BPA002 -c1 1 -c2 60 -i T10 -p Y -s 2025 -e 2025"
+     },
+     "abs_tol": 0.05
+    }
+   ]
+  },
+  {
+   "id": "u-pop-2050",
+   "type": "period",
+   "set": "unseen",
+   "question": "장래인구추계(중위 추계) 기준 2050년 우리나라 총인구는 몇 명으로 전망되는가?",
+   "source": "규칙·문서에 없는 표 (2026-11-23 검색으로 찾음)",
+   "answers": [
+    {
+     "table": "101/DT_1BPA002",
+     "value": 47106960,
+     "unit": "명",
+     "period": "2050",
+     "truth": {
+      "cmd": "d 101 DT_1BPA002 -c1 1 -c2 10 -i T10 -p Y -s 2050 -e 2050"
+     }
+    }
+   ]
+  },
+  {
+   "id": "u-ccsi",
+   "type": "find",
+   "set": "unseen",
+   "question": "2026년 8월 소비자심리지수(CCSI)는 얼마인가?",
+   "source": "규칙·문서에 없는 표 (2026-11-23 검색으로 찾음)",
+   "answers": [
+    {
+     "table": "301/DT_511Y002",
+     "value": 104.5,
+     "period": "202608",
+     "truth": {
+      "cmd": "d 301 DT_511Y002 -c1 13102134688CSI_CD.FME -c2 13102134688CSI_CLF_CD.99988 -i 13103134688999 -p M -s 202608 -e 202608"
+     },
+     "abs_tol": 0.05
+    }
+   ]
+  },
+  {
+   "id": "u-apple",
+   "type": "find",
+   "set": "unseen",
+   "question": "2025년 전국 사과 생산량은 몇 톤인가?",
+   "source": "규칙·문서에 없는 표 (2026-11-23 검색으로 찾음)",
+   "answers": [
+    {
+     "table": "101/DT_1ET0292",
+     "value": 447952.5984,
+     "unit": "톤",
+     "period": "2025",
+     "truth": {
+      "cmd": "d 101 DT_1ET0292 -c1 00 -i T10 -p Y -s 2025 -e 2025"
+     }
+    }
+   ]
+  },
+  {
+   "id": "u-fishery",
+   "type": "find",
+   "set": "unseen",
+   "question": "2025년 우리나라 어업 총생산량(모든 어업 합계)은 몇 톤인가?",
+   "source": "규칙·문서에 없는 표 (2026-11-23 검색으로 찾음)",
+   "answers": [
+    {
+     "table": "101/DT_1EW0001",
+     "value": 3934971.32386,
+     "unit": "톤",
+     "period": "2025",
+     "truth": {
+      "cmd": "d 101 DT_1EW0001 -c1 0 -c2 00 -c3 0 -i T01 -p Y -s 2025 -e 2025"
+     }
+    }
+   ]
+  },
+  {
+   "id": "u-paternity-leave",
+   "type": "find",
+   "set": "unseen",
+   "question": "2024년 출생아 아버지의 육아휴직 사용률은 몇 %인가?",
+   "source": "규칙·문서에 없는 표 (2026-11-23 검색으로 찾음)",
+   "answers": [
+    {
+     "table": "101/DT_CC2024D001",
+     "value": 10.2,
+     "unit": "%",
+     "period": "2024",
+     "truth": {
+      "cmd": "d 101 DT_CC2024D001 -c1 G2 -i H1 -p Y -s 2024 -e 2024"
+     },
+     "abs_tol": 0.05
+    }
+   ]
+  },
+  {
+   "id": "u-fires",
+   "type": "find",
+   "set": "unseen",
+   "question": "2025년 전국 화재 발생 건수는 몇 건인가?",
+   "source": "규칙·문서에 없는 표 (2026-11-23 검색으로 찾음)",
+   "answers": [
+    {
+     "table": "156/TX_15601_A004",
+     "value": 38344,
+     "unit": "건",
+     "period": "2025",
+     "truth": {
+      "cmd": "d 156 TX_15601_A004 -c1 11101HJG00 -i 16156AAB2 -p Y -s 2025 -e 2025"
+     }
+    },
+    {
+     "table": "101/DT_1YL8601",
+     "value": 38344,
+     "unit": "건",
+     "period": "2025",
+     "truth": {
+      "cmd": "d 101 DT_1YL8601 -c1 00 -i T10 -p Y -s 2025 -e 2025"
+     }
+    }
+   ]
+  },
+  {
+   "id": "u-blood",
+   "type": "find",
+   "set": "unseen",
+   "question": "2025년 총 헌혈 실적은 몇 건인가?",
+   "source": "규칙·문서에 없는 표 (2026-11-23 검색으로 찾음)",
+   "answers": [
+    {
+     "table": "445/DT_445001_007",
+     "value": 2839632,
+     "unit": "건",
+     "period": "2025",
+     "truth": {
+      "cmd": "d 445 DT_445001_007 -c1 DATA -i T001 -p Y -s 2025 -e 2025"
+     }
+    }
+   ]
+  },
+  {
+   "id": "u-bill-default",
+   "type": "definition",
+   "set": "unseen",
+   "question": "2026년 8월 전국 어음부도율(금액 기준, 전자결제분 제외)은 몇 %인가?",
+   "source": "규칙·문서에 없는 표 (2026-11-23 검색으로 찾음)",
+   "answers": [
+    {
+     "table": "301/DT_801Y002",
+     "value": 0.13,
+     "unit": "%",
+     "period": "202608",
+     "truth": {
+      "cmd": "d 301 DT_801Y002 -c1 13102134545ACC_ITEM.1090000 -i 13103134545999 -p M -s 202608 -e 202608"
+     },
+     "abs_tol": 0.005
+    },
+    {
+     "table": "101/DT_1YL7101E",
+     "value": 0.13,
+     "unit": "%",
+     "period": "202608",
+     "truth": {
+      "cmd": "d 101 DT_1YL7101E -c1 13102134767ACC_ITEM.4010000 -i 13103134767999 -p M -s 202608 -e 202608"
+     },
+     "abs_tol": 0.005
+    }
+   ],
+   "note": "같은 표에 장수 기준 0.05, P-CBO 기술적부도 제외 0.08 도 있다"
+  },
+  {
+   "id": "u-rain-seoul",
+   "type": "find",
+   "set": "unseen",
+   "question": "2025년 서울의 연간 강수량은 얼마인가?",
+   "source": "규칙·문서에 없는 표 (2026-11-23 검색으로 찾음)",
+   "answers": [
+    {
+     "table": "101/DT_1YL9901",
+     "value": 1582.4,
+     "unit": "mm",
+     "period": "2025",
+     "truth": {
+      "cmd": "d 101 DT_1YL9901 -c1 11 -i T10 -p Y -s 2025 -e 2025"
+     }
+    }
+   ]
+  },
+  {
+   "id": "u-household-assets",
+   "type": "find",
+   "set": "unseen",
+   "question": "가계금융복지조사 기준 2025년 전체 가구의 평균 자산은 얼마인가?",
+   "source": "규칙·문서에 없는 표 (2026-11-23 검색으로 찾음)",
+   "answers": [
+    {
+     "table": "101/DT_1HDAAD01",
+     "value": 56677.5030033068,
+     "unit": "만원",
+     "period": "2025",
+     "truth": {
+      "cmd": "d 101 DT_1HDAAD01 -c1 B000 -c2 C05 -i T01 -p Y -s 2025 -e 2025"
+     }
+    }
+   ]
+  },
+  {
+   "id": "u-univ-students",
+   "type": "find",
+   "set": "unseen",
+   "question": "2026년 전국 대학교 재학생 수(일반대·전문대·교육대·산업대 합계)는 몇 명인가?",
+   "source": "규칙·문서에 없는 표 (2026-11-23 검색으로 찾음)",
+   "answers": [
+    {
+     "table": "101/DT_1YL8801",
+     "value": 2399413,
+     "unit": "명",
+     "period": "2026",
+     "truth": {
+      "cmd": "d 101 DT_1YL8801 -c1 00 -i T10 -p Y -s 2026 -e 2026"
+     }
+    }
+   ]
+  },
+  {
+   "id": "u-public-beds",
+   "type": "find",
+   "set": "unseen",
+   "question": "2025년 전국 공공의료기관의 병상 수는 모두 몇 개인가?",
+   "source": "규칙·문서에 없는 표 (2026-11-23 검색으로 찾음)",
+   "answers": [
+    {
+     "table": "411/DT_411002_02",
+     "value": 60409,
+     "unit": "개",
+     "period": "2025",
+     "truth": {
+      "cmd": "d 411 DT_411002_02 -c1 0001 -c2 0001 -i T001 -p Y -s 2025 -e 2025"
+     }
+    }
+   ]
+  },
+  {
+   "id": "u-post-parcel",
+   "type": "find",
+   "set": "unseen",
+   "question": "2025년 우체국택배(소포) 접수 물량은 얼마인가?",
+   "source": "규칙·문서에 없는 표 (2026-11-23 검색으로 찾음)",
+   "answers": [
+    {
+     "table": "127/TX_12002_A011",
+     "value": 223052,
+     "period": "2025",
+     "truth": {
+      "cmd": "d 127 TX_12002_A011 -c1 15120AA6A0 -i 16120AAA7 -p Y -s 2025 -e 2025"
+     }
+    }
+   ]
+  },
+  {
+   "id": "u-doctors",
+   "type": "find",
+   "set": "unseen",
+   "question": "2026년 2분기 기준 전체 요양기관에서 일하는 의사(치과의사·한의사 제외)는 몇 명인가?",
+   "source": "규칙·문서에 없는 표 (2026-11-23 검색으로 찾음)",
+   "answers": [
+    {
+     "table": "354/DT_HIRA44",
+     "value": 117608,
+     "unit": "명",
+     "period": "202602",
+     "truth": {
+      "cmd": "d 354 DT_HIRA44 -c1 1535413102140057B02.1 -c2 1635413103140057SC0 -i 00 -p Q -s 202602 -e 202602"
+     }
+    }
+   ]
+  },
+  {
+   "id": "u-base-rate",
+   "type": "find",
+   "set": "unseen",
+   "question": "2025년 말 기준 한국은행 기준금리(정책금리)는 몇 %인가?",
+   "source": "규칙·문서에 없는 표 (2026-11-23 검색으로 찾음)",
+   "answers": [
+    {
+     "table": "101/DT_2KAA703",
+     "value": 2.5,
+     "unit": "%",
+     "period": "2025",
+     "truth": {
+      "cmd": "d 101 DT_2KAA703 -c1 1005 -i T10 -p Y -s 2025 -e 2025"
+     },
+     "abs_tol": 0.005
+    }
+   ]
+  },
+  {
+   "id": "u-hospital-beds",
+   "type": "period",
+   "set": "unseen",
+   "question": "2026년 2분기 기준 전체 요양기관의 병상 수(모든 입원실 합계)는 몇 개인가?",
+   "source": "규칙·문서에 없는 표 (2026-11-23 검색으로 찾음)",
+   "answers": [
+    {
+     "table": "354/DT_HIRA45_1",
+     "value": 703784,
+     "unit": "개",
+     "period": "202602",
+     "truth": {
+      "cmd": "d 354 DT_HIRA45_1 -c1 1 -c2 1635413103140058SC0 -i 01 -p Q -s 202602 -e 202602"
+     }
+    }
+   ]
+  },
+  {
+   "id": "u-pm25-seoul",
+   "type": "codes",
+   "set": "unseen",
+   "question": "2025년 8월 서울의 초미세먼지(PM2.5) 월평균 농도는 얼마인가?",
+   "source": "규칙·문서에 없는 표 (2026-11-23 검색으로 찾음)",
+   "answers": [
+    {
+     "table": "106/DT_106N_03_0200145",
+     "value": 12,
+     "unit": "㎍/㎥",
+     "period": "202508",
+     "truth": {
+      "cmd": "d 106 DT_106N_03_0200145 -c1 13102128219A.4200003 -i 13103128219T.1100001 -p M -s 202508 -e 202508"
+     },
+     "abs_tol": 0.5
+    }
+   ],
+   "note": "시도 코드(4100002 서울특별시)에는 행이 없고 그 아래 도시 코드(4200003)에 값이 있다"
+  },
+  {
+   "id": "u-fires-haeundae",
+   "type": "codes",
+   "set": "unseen",
+   "question": "2025년 부산 해운대구의 화재 발생 건수는 몇 건인가?",
+   "source": "규칙·문서에 없는 표 (2026-11-23 검색으로 찾음)",
+   "answers": [
+    {
+     "table": "101/DT_1YL8601",
+     "value": 237,
+     "unit": "건",
+     "period": "2025",
+     "truth": {
+      "cmd": "d 101 DT_1YL8601 -c1 21090 -i T10 -p Y -s 2025 -e 2025"
+     }
+    }
+   ]
+  },
+  {
+   "id": "u-rnd-daejeon",
+   "type": "codes",
+   "set": "unseen",
+   "question": "2024년 대전의 연구개발비(모든 연구수행주체 합계)는 얼마인가?",
+   "source": "규칙·문서에 없는 표 (2026-11-23 검색으로 찾음)",
+   "answers": [
+    {
+     "table": "127/DT_KBA0019",
+     "value": 10770710,
+     "unit": "백만원",
+     "period": "2024",
+     "truth": {
+      "cmd": "d 127 DT_KBA0019 -c1 1511213102300328A.00 -c2 1611213103300328T7 -i 00 -p Y -s 2024 -e 2024"
+     }
+    }
+   ]
+  },
+  {
+   "id": "u-fire-deaths",
+   "type": "codes",
+   "set": "unseen",
+   "question": "2025년 전국 화재로 인한 사망자는 몇 명인가?",
+   "source": "규칙·문서에 없는 표 (2026-11-23 검색으로 찾음)",
+   "answers": [
+    {
+     "table": "156/TX_15601_A004",
+     "value": 346,
+     "unit": "명",
+     "period": "2025",
+     "truth": {
+      "cmd": "d 156 TX_15601_A004 -c1 11101HJG00 -i 16156AAB3 -p Y -s 2025 -e 2025"
+     }
+    }
+   ]
+  },
+  {
+   "id": "u-nonregular-top",
+   "type": "calc",
+   "set": "unseen",
+   "question": "2026년 비정규직근로자 비율이 가장 높은 시도는 어디인가?",
+   "source": "규칙·문서에 없는 표 (2026-11-23 검색으로 찾음)",
+   "answers": [
+    {
+     "table": "101/DT_1YL15002",
+     "value": "강원특별자치도",
+     "period": "2026",
+     "truth": {
+      "cmd": "d 101 DT_1YL15002 -c1 level:1 -i T001 -p Y -s 2026 -e 2026 --no-total --sort desc --top 1",
+      "field": "C1_NM"
+     },
+     "aliases": [
+      "강원",
+      "강원도"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "u-power-top",
+   "type": "calc",
+   "set": "unseen",
+   "question": "2025년 전력판매량이 가장 많은 시도는 어디인가?",
+   "source": "규칙·문서에 없는 표 (2026-11-23 검색으로 찾음)",
+   "answers": [
+    {
+     "table": "101/DT_1YL4801E",
+     "value": "경기도",
+     "period": "2025",
+     "truth": {
+      "cmd": "d 101 DT_1YL4801E -c1 ALL -i 16310T2008_0117 -p Y -s 2025 -e 2025 --no-total --sort desc --top 1",
+      "field": "C1_NM"
+     },
+     "aliases": [
+      "경기"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "u-apple-top",
+   "type": "calc",
+   "set": "unseen",
+   "question": "2025년 사과 생산량이 가장 많은 시도는 어디인가?",
+   "source": "규칙·문서에 없는 표 (2026-11-23 검색으로 찾음)",
+   "answers": [
+    {
+     "table": "101/DT_1ET0292",
+     "value": "경상북도",
+     "period": "2025",
+     "truth": {
+      "cmd": "d 101 DT_1ET0292 -c1 level:1 -i T10 -p Y -s 2025 -e 2025 --no-total --sort desc --top 1",
+      "field": "C1_NM"
+     },
+     "aliases": [
+      "경북"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "u-cancer-top",
+   "type": "calc",
+   "set": "unseen",
+   "question": "2023년 발생자 수가 가장 많은 암(암종)은 무엇인가? (남녀 전체, 모든 연령)",
+   "source": "규칙·문서에 없는 표 (2026-11-23 검색으로 찾음)",
+   "answers": [
+    {
+     "table": "117/DT_117N_A00023",
+     "value": "갑상선(C73)",
+     "period": "2023",
+     "truth": {
+      "cmd": "d 117 DT_117N_A00023 -c1 ALL -c2 11101SSB20 -c3 15117AC001101 -i 16117ac000101 -p Y -s 2023 -e 2023 --sort desc --top 2",
+      "where": {
+       "RANK": "2"
+      },
+      "field": "C1_NM"
+     },
+     "aliases": [
+      "갑상선",
+      "갑상선암"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "u-fishery-change",
+   "type": "calc",
+   "set": "unseen",
+   "question": "2025년 어업 총생산량은 전년보다 몇 % 늘거나 줄었는가? (늘었으면 양수, 줄었으면 음수)",
+   "source": "규칙·문서에 없는 표 (2026-11-23 검색으로 찾음)",
+   "answers": [
+    {
+     "table": "101/DT_1EW0001",
+     "value": 8.72,
+     "unit": "%",
+     "period": "2025",
+     "truth": {
+      "cmd": "d 101 DT_1EW0001 -c1 0 -c2 00 -c3 0 -i T01 -p Y -s 2024 -e 2025 --change prev",
+      "field": "DT_CHG_PCT"
+     },
+     "abs_tol": 0.05
+    }
+   ]
+  },
+  {
+   "id": "u-house-sales-yoy",
+   "type": "calc",
+   "set": "unseen",
+   "question": "2026년 8월 전국 주택 매매거래량은 전년 같은 달보다 몇 % 늘거나 줄었는가? (늘었으면 양수, 줄었으면 음수)",
+   "source": "규칙·문서에 없는 표 (2026-11-23 검색으로 찾음)",
+   "answers": [
+    {
+     "table": "408/DT_408_2006_S0061",
+     "value": 4.56,
+     "unit": "%",
+     "period": "202608",
+     "truth": {
+      "cmd": "d 408 DT_408_2006_S0061 -c1 13102114445A.0001 -c2 13102114445B.0001 -i 13103114445T1 -p M -s 202508 -e 202608 --change yoy",
+      "where": {
+       "PRD_DE": "202608"
+      },
+      "field": "DT_CHG_PCT"
+     },
+     "abs_tol": 0.05
+    }
+   ]
+  },
+  {
+   "id": "u-power-industrial-share",
+   "type": "calc",
+   "set": "unseen",
+   "question": "2025년 전국 판매전력량 가운데 산업용이 차지하는 비중은 몇 %인가?",
+   "source": "규칙·문서에 없는 표 (2026-11-23 검색으로 찾음)",
+   "answers": [
+    {
+     "table": "310/TX_31002_A019",
+     "value": 51.0,
+     "unit": "%",
+     "period": "2025",
+     "truth": {
+      "cmd": "d 310 TX_31002_A019 -c1 15310AB3A5+15310AB300 -c2 M0 -i 16310T2008_0126 -p Y -s 2025 -e 2025 --ratio 15310AB3A5/15310AB300",
+      "where": {
+       "C1": "15310AB3A5"
+      },
+      "field": "DT_RATIO_PCT"
+     },
+     "abs_tol": 0.05
+    }
+   ]
+  },
+  {
+   "id": "u-debt-asset-ratio",
+   "type": "calc",
+   "set": "unseen",
+   "question": "가계금융복지조사 기준 2025년 전체 가구의 평균 부채는 평균 자산의 몇 %인가?",
+   "source": "규칙·문서에 없는 표 (2026-11-23 검색으로 찾음)",
+   "answers": [
+    {
+     "table": "101/DT_1HDAAD01",
+     "value": 16.82,
+     "unit": "%",
+     "period": "2025",
+     "truth": {
+      "cmd": "d 101 DT_1HDAAD01 -c1 B000 -c2 C05+C06 -i T01 -p Y -s 2025 -e 2025 --ratio C06/C05",
+      "where": {
+       "C2": "C06"
+      },
+      "field": "DT_RATIO_PCT"
+     },
+     "abs_tol": 0.05
+    }
+   ]
+  },
+  {
+   "id": "c2-tfr-aging",
+   "type": "chain",
+   "set": "chain",
+   "steps": 2,
+   "question": "2025년 합계출산율이 가장 높은 시도를 찾고, 그 시도의 2025년 고령인구비율(주민등록인구 기준 65세 이상 비율)을 답하라.",
+   "source": "연쇄 문항 — 앞 표의 결과로 다음 표의 조회 대상이 정해진다 · 전남 코드가 표마다 다름(36 → 1236)",
+   "chain": [
+    {
+     "value": "전라남도",
+     "aliases": [
+      "전남"
+     ]
+    }
+   ],
+   "answers": [
+    {
+     "table": "101/DT_1YL20631",
+     "value": 28.5,
+     "truth": {
+      "steps": [
+       {
+        "cmd": "d 101 DT_1B81A21 -c1 level:1 -i T1 -p Y -s 2025 -e 2025 --no-total --sort desc --top 1",
+        "show": "C1_NM",
+        "save": {
+         "sido": "C1"
+        },
+        "map": {
+         "sido2": {
+          "from": "sido",
+          "table": {
+           "11": "11",
+           "21": "21",
+           "22": "22",
+           "23": "23",
+           "25": "25",
+           "26": "26",
+           "29": "29",
+           "31": "31",
+           "32": "32",
+           "33": "33",
+           "34": "34",
+           "35": "35",
+           "37": "37",
+           "38": "38",
+           "39": "39",
+           "24": "1224",
+           "36": "1236"
+          }
+         }
+        }
+       },
+       {
+        "cmd": "d 101 DT_1YL20631 -c1 {sido2} -i T10 -p Y -s 2025 -e 2025"
+       }
+      ]
+     },
+     "unit": "%",
+     "period": "2025",
+     "abs_tol": 0.05
+    }
+   ]
+  },
+  {
+   "id": "c2-grdp-pop",
+   "type": "chain",
+   "set": "chain",
+   "steps": 2,
+   "question": "2024년 1인당 지역내총생산이 가장 높은 시도를 찾고, 그 시도의 2025년 주민등록인구(총인구수)를 답하라.",
+   "source": "연쇄 문항 — 앞 표의 결과로 다음 표의 조회 대상이 정해진다 · 울산 코드가 표마다 다름(26 → 31)",
+   "chain": [
+    {
+     "value": "울산광역시",
+     "aliases": [
+      "울산"
+     ]
+    }
+   ],
+   "answers": [
+    {
+     "table": "101/DT_1B040A3",
+     "value": 1091948,
+     "truth": {
+      "steps": [
+       {
+        "cmd": "d 101 DT_1C96 -c1 level:1 -i T1 -p Y -s 2024 -e 2024 --no-total --sort desc --top 1",
+        "show": "C1_NM",
+        "save": {
+         "sido": "C1"
+        },
+        "map": {
+         "sido2": {
+          "from": "sido",
+          "table": {
+           "11": "11",
+           "21": "26",
+           "22": "27",
+           "23": "28",
+           "24": "29",
+           "25": "30",
+           "26": "31",
+           "29": "36",
+           "31": "41",
+           "33": "43",
+           "34": "44",
+           "36": "46",
+           "37": "47",
+           "38": "48",
+           "39": "50"
+          }
+         }
+        }
+       },
+       {
+        "cmd": "d 101 DT_1B040A3 -c1 {sido2} -i T20 -p Y -s 2025 -e 2025"
+       }
+      ]
+     },
+     "unit": "명",
+     "period": "2025"
+    }
+   ]
+  },
+  {
+   "id": "c2-netmig-tfr",
+   "type": "chain",
+   "set": "chain",
+   "steps": 2,
+   "question": "2025년 순유입 인구(전입 − 전출)가 가장 많은 시도를 찾고, 그 시도의 2025년 합계출산율을 답하라.",
+   "source": "연쇄 문항 — 앞 표의 결과로 다음 표의 조회 대상이 정해진다 · 경기 코드가 표마다 다름(41 → 31)",
+   "chain": [
+    {
+     "value": "경기도",
+     "aliases": [
+      "경기"
+     ]
+    }
+   ],
+   "answers": [
+    {
+     "table": "101/DT_1B81A21",
+     "value": 0.84,
+     "truth": {
+      "steps": [
+       {
+        "cmd": "d 101 INH_1B26001_A021 -c1 level:1 -c2 0 -i T25 -p Y -s 2025 -e 2025 --no-total --sort desc --top 1",
+        "show": "C1_NM",
+        "save": {
+         "sidom": "C1"
+        },
+        "map": {
+         "sido": {
+          "from": "sidom",
+          "table": {
+           "11": "11",
+           "26": "21",
+           "27": "22",
+           "28": "23",
+           "29": "24",
+           "30": "25",
+           "31": "26",
+           "36": "29",
+           "41": "31",
+           "43": "33",
+           "44": "34",
+           "46": "36",
+           "47": "37",
+           "48": "38",
+           "50": "39"
+          }
+         }
+        }
+       },
+       {
+        "cmd": "d 101 DT_1B81A21 -c1 {sido} -i T1 -p Y -s 2025 -e 2025"
+       }
+      ]
+     },
+     "unit": "명",
+     "period": "2025",
+     "abs_tol": 0.0005
+    }
+   ]
+  },
+  {
+   "id": "c2-apple-aging",
+   "type": "chain",
+   "set": "chain",
+   "steps": 2,
+   "question": "2025년 사과 생산량이 가장 많은 시도를 찾고, 그 시도의 2025년 고령인구비율(주민등록인구 기준 65세 이상 비율)을 답하라.",
+   "source": "연쇄 문항 — 앞 표의 결과로 다음 표의 조회 대상이 정해진다",
+   "chain": [
+    {
+     "value": "경상북도",
+     "aliases": [
+      "경북"
+     ]
+    }
+   ],
+   "answers": [
+    {
+     "table": "101/DT_1YL20631",
+     "value": 27.5,
+     "truth": {
+      "steps": [
+       {
+        "cmd": "d 101 DT_1ET0292 -c1 level:1 -i T10 -p Y -s 2025 -e 2025 --no-total --sort desc --top 1",
+        "show": "C1_NM",
+        "save": {
+         "sido": "C1"
+        },
+        "map": {
+         "sido2": {
+          "from": "sido",
+          "table": {
+           "11": "11",
+           "21": "21",
+           "22": "22",
+           "23": "23",
+           "25": "25",
+           "26": "26",
+           "29": "29",
+           "31": "31",
+           "32": "32",
+           "33": "33",
+           "34": "34",
+           "35": "35",
+           "37": "37",
+           "38": "38",
+           "39": "39",
+           "24": "1224",
+           "36": "1236"
+          }
+         }
+        }
+       },
+       {
+        "cmd": "d 101 DT_1YL20631 -c1 {sido2} -i T10 -p Y -s 2025 -e 2025"
+       }
+      ]
+     },
+     "unit": "%",
+     "period": "2025",
+     "abs_tol": 0.05
+    }
+   ]
+  },
+  {
+   "id": "c2-cpi-unemp",
+   "type": "chain",
+   "set": "chain",
+   "steps": 2,
+   "question": "2015~2025년 가운데 연간 소비자물가 상승률(전년비)이 가장 높았던 해를 찾고, 그 해의 전국 연간 실업률을 답하라.",
+   "source": "연쇄 문항 — 앞 표의 결과로 다음 표의 조회 대상이 정해진다",
+   "chain": [
+    {
+     "value": "2022"
+    }
+   ],
+   "answers": [
+    {
+     "table": "101/DT_1DA7104S",
+     "value": 2.9,
+     "truth": {
+      "steps": [
+       {
+        "cmd": "d 101 DT_1J22041 -c1 0 -i T -p Y -s 2015 -e 2025 --sort desc --top 1",
+        "show": "PRD_DE",
+        "save": {
+         "yr": "PRD_DE"
+        }
+       },
+       {
+        "cmd": "d 101 DT_1DA7104S -c1 00 -c2 0 -i T80 -p Y -s {yr} -e {yr}"
+       }
+      ]
+     },
+     "unit": "%",
+     "period": "2022",
+     "abs_tol": 0.05
+    }
+   ]
+  },
+  {
+   "id": "c2-fire-city",
+   "type": "chain",
+   "set": "chain",
+   "steps": 2,
+   "question": "2025년 화재 발생 건수가 가장 많은 시도를 찾고, 그 시도 안에서 2025년 화재 발생 건수가 가장 많은 시·군을 답하라. (구가 있는 시는 시 전체로 본다)",
+   "source": "연쇄 문항 — 앞 표의 결과로 다음 표의 조회 대상이 정해진다 · 하위 조회에 시도 합계 행이 섞임",
+   "chain": [
+    {
+     "value": "경기도",
+     "aliases": [
+      "경기"
+     ]
+    }
+   ],
+   "answers": [
+    {
+     "table": "101/DT_1YL8601",
+     "value": "화성시",
+     "truth": {
+      "steps": [
+       {
+        "cmd": "d 101 DT_1YL8601 -c1 level:1 -i T10 -p Y -s 2025 -e 2025 --no-total --sort desc --top 1",
+        "show": "C1_NM",
+        "save": {
+         "sido": "C1"
+        }
+       },
+       {
+        "cmd": "d 101 DT_1YL8601 -c1 {sido}* -i T10 -p Y -s 2025 -e 2025 --sort desc --top 2",
+        "where": {
+         "RANK": "2"
+        },
+        "field": "C1_NM"
+       }
+      ]
+     },
+     "period": "2025",
+     "aliases": [
+      "화성"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c2-nonregular-marriage",
+   "type": "chain",
+   "set": "chain",
+   "steps": 2,
+   "question": "2026년 비정규직 근로자 비율이 가장 높은 시도를 찾고, 그 시도의 2025년 남편 평균 초혼연령을 답하라.",
+   "source": "연쇄 문항 — 앞 표의 결과로 다음 표의 조회 대상이 정해진다",
+   "chain": [
+    {
+     "value": "강원특별자치도",
+     "aliases": [
+      "강원",
+      "강원도"
+     ]
+    }
+   ],
+   "answers": [
+    {
+     "table": "101/DT_1B83A05",
+     "value": 33.65,
+     "truth": {
+      "steps": [
+       {
+        "cmd": "d 101 DT_1YL15002 -c1 level:1 -i T001 -p Y -s 2026 -e 2026 --no-total --sort desc --top 1",
+        "show": "C1_NM",
+        "save": {
+         "sido": "C1"
+        }
+       },
+       {
+        "cmd": "d 101 DT_1B83A05 -c1 {sido} -i T1 -p Y -s 2025 -e 2025"
+       }
+      ]
+     },
+     "unit": "세",
+     "period": "2025",
+     "abs_tol": 0.01
+    }
+   ]
+  },
+  {
+   "id": "c3-tfr-county-aging",
+   "type": "chain",
+   "set": "chain",
+   "steps": 3,
+   "question": "2025년 합계출산율이 가장 높은 시도를 찾고, 그 시도 안에서 2025년 합계출산율이 가장 높은 시·군을 찾은 뒤, 그 시·군의 2025년 고령인구비율(주민등록인구 기준 65세 이상 비율)을 답하라.",
+   "source": "연쇄 문항 — 앞 표의 결과로 다음 표의 조회 대상이 정해진다 · 시군 코드가 표마다 다름(36640 → 1236440)",
+   "chain": [
+    {
+     "value": "전라남도",
+     "aliases": [
+      "전남"
+     ]
+    },
+    {
+     "value": "영광군",
+     "aliases": [
+      "영광"
+     ]
+    }
+   ],
+   "answers": [
+    {
+     "table": "101/DT_1YL20631",
+     "value": 32.4,
+     "truth": {
+      "steps": [
+       {
+        "cmd": "d 101 DT_1B81A21 -c1 level:1 -i T1 -p Y -s 2025 -e 2025 --no-total --sort desc --top 1",
+        "show": "C1_NM",
+        "save": {
+         "sido": "C1"
+        }
+       },
+       {
+        "cmd": "d 101 DT_1B81A23 -c1 {sido}* -i T2 -p Y -s 2025 -e 2025 --sort desc --top 1",
+        "show": "C1_NM",
+        "save": {
+         "sgg": "C1"
+        },
+        "map": {
+         "sgg2": {
+          "from": "sgg",
+          "table": {
+           "36640": "1236440",
+           "36650": "1236450",
+           "36590": "1236390"
+          }
+         }
+        }
+       },
+       {
+        "cmd": "d 101 DT_1YL20631 -c1 {sgg2} -i T10 -p Y -s 2025 -e 2025"
+       }
+      ]
+     },
+     "unit": "%",
+     "period": "2025",
+     "abs_tol": 0.05
+    }
+   ]
+  },
+  {
+   "id": "c3-seoul-birth-pop",
+   "type": "chain",
+   "set": "chain",
+   "steps": 3,
+   "question": "2025년 합계출산율이 가장 낮은 시도를 찾고, 그 시도 안에서 2025년 출생아 수가 가장 많은 구를 찾은 뒤, 그 구의 2025년 주민등록인구(총인구수)를 답하라.",
+   "source": "연쇄 문항 — 앞 표의 결과로 다음 표의 조회 대상이 정해진다 · 구 코드가 표마다 다름(11240 → 11710)",
+   "chain": [
+    {
+     "value": "서울특별시",
+     "aliases": [
+      "서울"
+     ]
+    },
+    {
+     "value": "송파구",
+     "aliases": [
+      "송파"
+     ]
+    }
+   ],
+   "answers": [
+    {
+     "table": "101/DT_1B040A3",
+     "value": 643350,
+     "truth": {
+      "steps": [
+       {
+        "cmd": "d 101 DT_1B81A21 -c1 level:1 -i T1 -p Y -s 2025 -e 2025 --no-total --sort asc --top 1",
+        "show": "C1_NM",
+        "save": {
+         "sido": "C1"
+        }
+       },
+       {
+        "cmd": "d 101 DT_1B81A23 -c1 {sido}* -i T1 -p Y -s 2025 -e 2025 --sort desc --top 2",
+        "where": {
+         "RANK": "2"
+        },
+        "show": "C1_NM",
+        "save": {
+         "sgg": "C1"
+        },
+        "map": {
+         "sgg2": {
+          "from": "sgg",
+          "table": {
+           "11240": "11710",
+           "11230": "11680",
+           "11250": "11740"
+          }
+         }
+        }
+       },
+       {
+        "cmd": "d 101 DT_1B040A3 -c1 {sgg2} -i T20 -p Y -s 2025 -e 2025"
+       }
+      ]
+     },
+     "unit": "명",
+     "period": "2025"
+    }
+   ]
+  },
+  {
+   "id": "c3-grdp-ship-pop",
+   "type": "chain",
+   "set": "chain",
+   "steps": 3,
+   "question": "2024년 1인당 지역내총생산이 가장 높은 시도를 찾고, 그 시도의 구·군 가운데 광업제조업조사 기준 2024년 제조업 출하액이 가장 큰 곳을 찾은 뒤, 그 구·군의 2025년 주민등록인구(총인구수)를 답하라.",
+   "source": "연쇄 문항 — 앞 표의 결과로 다음 표의 조회 대상이 정해진다 · 울산·구 코드가 표마다 다름(26020 → 31140)",
+   "chain": [
+    {
+     "value": "울산광역시",
+     "aliases": [
+      "울산"
+     ]
+    },
+    {
+     "value": "남구",
+     "aliases": [
+      "울산 남구",
+      "울산광역시 남구"
+     ]
+    }
+   ],
+   "answers": [
+    {
+     "table": "101/DT_1B040A3",
+     "value": 304128,
+     "truth": {
+      "steps": [
+       {
+        "cmd": "d 101 DT_1C96 -c1 level:1 -i T1 -p Y -s 2024 -e 2024 --no-total --sort desc --top 1",
+        "show": "C1_NM",
+        "save": {
+         "sido": "C1"
+        }
+       },
+       {
+        "cmd": "d 101 DT_1FS1101 -c1 {sido}* -c2 C -i T04 -p Y -s 2024 -e 2024 --sort desc --top 2",
+        "where": {
+         "RANK": "2"
+        },
+        "show": "C1_NM",
+        "save": {
+         "sgg": "C1"
+        },
+        "map": {
+         "sgg2": {
+          "from": "sgg",
+          "table": {
+           "26020": "31140",
+           "26510": "31710",
+           "26040": "31200"
+          }
+         }
+        }
+       },
+       {
+        "cmd": "d 101 DT_1B040A3 -c1 {sgg2} -i T20 -p Y -s 2025 -e 2025"
+       }
+      ]
+     },
+     "unit": "명",
+     "period": "2025"
+    }
+   ]
+  },
+  {
+   "id": "c3-cpi-unemp-tfr",
+   "type": "chain",
+   "set": "chain",
+   "steps": 3,
+   "question": "2015~2025년 가운데 연간 소비자물가 상승률(전년비)이 가장 높았던 해를 찾고, 그 해에 연간 실업률이 가장 높았던 시도를 찾은 뒤, 그 시도의 그 해 합계출산율을 답하라.",
+   "source": "연쇄 문항 — 앞 표의 결과로 다음 표의 조회 대상이 정해진다",
+   "chain": [
+    {
+     "value": "2022"
+    },
+    {
+     "value": "서울특별시",
+     "aliases": [
+      "서울"
+     ]
+    }
+   ],
+   "answers": [
+    {
+     "table": "101/DT_1B81A21",
+     "value": 0.593,
+     "truth": {
+      "steps": [
+       {
+        "cmd": "d 101 DT_1J22041 -c1 0 -i T -p Y -s 2015 -e 2025 --sort desc --top 1",
+        "show": "PRD_DE",
+        "save": {
+         "yr": "PRD_DE"
+        }
+       },
+       {
+        "cmd": "d 101 DT_1DA7004S -c1 level:1 -i T80 -p Y -s {yr} -e {yr} --no-total --sort desc --top 1",
+        "show": "C1_NM",
+        "save": {
+         "sido": "C1"
+        }
+       },
+       {
+        "cmd": "d 101 DT_1B81A21 -c1 {sido} -i T1 -p Y -s {yr} -e {yr}"
+       }
+      ]
+     },
+     "unit": "명",
+     "period": "2022",
+     "abs_tol": 0.0005
+    }
+   ]
+  },
+  {
+   "id": "c3-aging-county-births",
+   "type": "chain",
+   "set": "chain",
+   "steps": 3,
+   "question": "2025년 고령인구비율(주민등록인구 기준 65세 이상 비율)이 가장 높은 시도를 찾고, 그 시도 안에서 고령인구비율이 가장 높은 시·군을 찾은 뒤, 그 시·군의 2025년 출생아 수를 답하라.",
+   "source": "연쇄 문항 — 앞 표의 결과로 다음 표의 조회 대상이 정해진다 · 전남이 통합시 12 아래 1236, 시군 코드도 표마다 다름",
+   "chain": [
+    {
+     "value": "전라남도",
+     "aliases": [
+      "전남"
+     ]
+    },
+    {
+     "value": "고흥군",
+     "aliases": [
+      "고흥"
+     ]
+    }
+   ],
+   "answers": [
+    {
+     "table": "101/DT_1B81A23",
+     "value": 184,
+     "truth": {
+      "steps": [
+       {
+        "cmd": "d 101 DT_1YL20631 -c1 11+21+22+23+25+26+29+31+32+33+34+35+37+38+39+1224+1236 -i T10 -p Y -s 2025 -e 2025 --sort desc --top 1",
+        "show": "C1_NM",
+        "save": {
+         "sido": "C1"
+        }
+       },
+       {
+        "cmd": "d 101 DT_1YL20631 -c1 {sido}* -i T10 -p Y -s 2025 -e 2025 --sort desc --top 1",
+        "show": "C1_NM",
+        "save": {
+         "sgg": "C1"
+        },
+        "map": {
+         "sgg2": {
+          "from": "sgg",
+          "table": {
+           "1236350": "36550",
+           "1236360": "36560",
+           "1236430": "36630"
+          }
+         }
+        }
+       },
+       {
+        "cmd": "d 101 DT_1B81A23 -c1 {sgg2} -i T1 -p Y -s 2025 -e 2025"
+       }
+      ]
+     },
+     "unit": "명",
+     "period": "2025"
+    }
+   ]
+  },
+  {
+   "id": "c3-fire-rate",
+   "type": "chain",
+   "set": "chain",
+   "steps": 3,
+   "question": "2025년 화재 발생 건수가 가장 많은 시도를 찾고, 그 시도 안에서 화재 발생 건수가 가장 많은 시·군(구가 있는 시는 시 전체)을 찾은 뒤, 그 시·군의 2025년 주민등록인구(총인구수) 1만 명당 화재 발생 건수를 답하라.",
+   "source": "연쇄 문항 — 앞 표의 결과로 다음 표의 조회 대상이 정해진다 · 마지막에 두 표 값으로 계산",
+   "chain": [
+    {
+     "value": "경기도",
+     "aliases": [
+      "경기"
+     ]
+    },
+    {
+     "value": "화성시",
+     "aliases": [
+      "화성"
+     ]
+    }
+   ],
+   "answers": [
+    {
+     "table": "101/DT_1B040A3",
+     "value": 6.505254204929649,
+     "truth": {
+      "steps": [
+       {
+        "cmd": "d 101 DT_1YL8601 -c1 level:1 -i T10 -p Y -s 2025 -e 2025 --no-total --sort desc --top 1",
+        "show": "C1_NM",
+        "save": {
+         "sido": "C1"
+        }
+       },
+       {
+        "cmd": "d 101 DT_1YL8601 -c1 {sido}* -i T10 -p Y -s 2025 -e 2025 --sort desc --top 2",
+        "where": {
+         "RANK": "2"
+        },
+        "show": "C1_NM",
+        "save": {
+         "sgg": "C1"
+        },
+        "map": {
+         "sgg2": {
+          "from": "sgg",
+          "table": {
+           "31240": "41590",
+           "31190": "41460"
+          }
+         }
+        }
+       },
+       {
+        "cmd": "d 101 DT_1B040A3 -c1 {sgg2} -i T20 -p Y -s 2025 -e 2025"
+       },
+       {
+        "calc": "{v2}/{v3}*10000"
+       }
+      ]
+     },
+     "unit": "건(인구 1만 명당)",
+     "period": "2025",
+     "tol": 0.01
+    }
+   ]
+  },
+  {
+   "id": "c4-cpi-outmig-births-fire",
+   "type": "chain",
+   "set": "chain",
+   "steps": 4,
+   "question": "2015~2025년 가운데 연간 소비자물가 상승률(전년비)이 가장 높았던 해를 찾고, 그 해에 순유출 인구(전출 − 전입)가 가장 많았던 시도를 찾고, 그 시도 안에서 그 해 출생아 수가 가장 많았던 구를 찾은 뒤, 그 구의 2025년 화재 발생 건수를 답하라.",
+   "source": "연쇄 문항 — 앞 표의 결과로 다음 표의 조회 대상이 정해진다",
+   "chain": [
+    {
+     "value": "2022"
+    },
+    {
+     "value": "서울특별시",
+     "aliases": [
+      "서울"
+     ]
+    },
+    {
+     "value": "송파구",
+     "aliases": [
+      "송파"
+     ]
+    }
+   ],
+   "answers": [
+    {
+     "table": "101/DT_1YL8601",
+     "value": 449,
+     "truth": {
+      "steps": [
+       {
+        "cmd": "d 101 DT_1J22041 -c1 0 -i T -p Y -s 2015 -e 2025 --sort desc --top 1",
+        "show": "PRD_DE",
+        "save": {
+         "yr": "PRD_DE"
+        }
+       },
+       {
+        "cmd": "d 101 INH_1B26001_A021 -c1 level:1 -c2 0 -i T25 -p Y -s {yr} -e {yr} --no-total --sort asc --top 1",
+        "show": "C1_NM",
+        "save": {
+         "sidom": "C1"
+        },
+        "map": {
+         "sido": {
+          "from": "sidom",
+          "table": {
+           "11": "11",
+           "26": "21",
+           "27": "22",
+           "28": "23",
+           "29": "24",
+           "30": "25",
+           "31": "26",
+           "36": "29",
+           "41": "31",
+           "43": "33",
+           "44": "34",
+           "46": "36",
+           "47": "37",
+           "48": "38",
+           "50": "39"
+          }
+         }
+        }
+       },
+       {
+        "cmd": "d 101 DT_1B81A23 -c1 {sido}* -i T1 -p Y -s {yr} -e {yr} --sort desc --top 2",
+        "where": {
+         "RANK": "2"
+        },
+        "show": "C1_NM",
+        "save": {
+         "sgg": "C1"
+        }
+       },
+       {
+        "cmd": "d 101 DT_1YL8601 -c1 {sgg} -i T10 -p Y -s 2025 -e 2025"
+       }
+      ]
+     },
+     "unit": "건",
+     "period": "2025"
+    }
+   ]
+  },
+  {
+   "id": "c4-tfr-county-aging-ratio",
+   "type": "chain",
+   "set": "chain",
+   "steps": 4,
+   "question": "2025년 합계출산율이 가장 높은 시도를 찾고, 그 시도 안에서 2025년 합계출산율이 가장 높은 시·군을 찾고, 그 시·군의 2025년 고령인구비율(주민등록인구 기준 65세 이상 비율)을 구한 뒤, 그 값이 같은 해 전국 고령인구비율의 몇 배인지 답하라.",
+   "source": "연쇄 문항 — 앞 표의 결과로 다음 표의 조회 대상이 정해진다",
+   "chain": [
+    {
+     "value": "전라남도",
+     "aliases": [
+      "전남"
+     ]
+    },
+    {
+     "value": "영광군",
+     "aliases": [
+      "영광"
+     ]
+    },
+    {
+     "value": 32.4,
+     "abs_tol": 0.05
+    }
+   ],
+   "answers": [
+    {
+     "table": "101/DT_1YL20631",
+     "value": 1.5283018867924527,
+     "truth": {
+      "steps": [
+       {
+        "cmd": "d 101 DT_1B81A21 -c1 level:1 -i T1 -p Y -s 2025 -e 2025 --no-total --sort desc --top 1",
+        "show": "C1_NM",
+        "save": {
+         "sido": "C1"
+        }
+       },
+       {
+        "cmd": "d 101 DT_1B81A23 -c1 {sido}* -i T2 -p Y -s 2025 -e 2025 --sort desc --top 1",
+        "show": "C1_NM",
+        "save": {
+         "sgg": "C1"
+        },
+        "map": {
+         "sgg2": {
+          "from": "sgg",
+          "table": {
+           "36640": "1236440",
+           "36650": "1236450",
+           "36590": "1236390"
+          }
+         }
+        }
+       },
+       {
+        "cmd": "d 101 DT_1YL20631 -c1 {sgg2} -i T10 -p Y -s 2025 -e 2025",
+        "show": "DT"
+       },
+       {
+        "cmd": "d 101 DT_1YL20631 -c1 00 -i T10 -p Y -s 2025 -e 2025"
+       },
+       {
+        "calc": "{v3}/{v4}"
+       }
+      ]
+     },
+     "unit": "배",
+     "period": "2025",
+     "tol": 0.01
+    }
+   ]
+  },
+  {
+   "id": "c4-grdp-ship-household-size",
+   "type": "chain",
+   "set": "chain",
+   "steps": 4,
+   "question": "2024년 1인당 지역내총생산이 가장 높은 시도를 찾고, 그 시도의 구·군 가운데 광업제조업조사 기준 2024년 제조업 출하액이 가장 큰 곳을 찾고, 그 구·군의 2025년 주민등록인구(총인구수)를 구한 뒤, 그 인구를 같은 해 주민등록세대수로 나눈 세대당 인구를 답하라.",
+   "source": "연쇄 문항 — 앞 표의 결과로 다음 표의 조회 대상이 정해진다",
+   "chain": [
+    {
+     "value": "울산광역시",
+     "aliases": [
+      "울산"
+     ]
+    },
+    {
+     "value": "남구",
+     "aliases": [
+      "울산 남구",
+      "울산광역시 남구"
+     ]
+    },
+    {
+     "value": 304128
+    }
+   ],
+   "answers": [
+    {
+     "table": "101/DT_1B040B3",
+     "value": 2.1281830586753436,
+     "truth": {
+      "steps": [
+       {
+        "cmd": "d 101 DT_1C96 -c1 level:1 -i T1 -p Y -s 2024 -e 2024 --no-total --sort desc --top 1",
+        "show": "C1_NM",
+        "save": {
+         "sido": "C1"
+        }
+       },
+       {
+        "cmd": "d 101 DT_1FS1101 -c1 {sido}* -c2 C -i T04 -p Y -s 2024 -e 2024 --sort desc --top 2",
+        "where": {
+         "RANK": "2"
+        },
+        "show": "C1_NM",
+        "save": {
+         "sgg": "C1"
+        },
+        "map": {
+         "sgg2": {
+          "from": "sgg",
+          "table": {
+           "26020": "31140",
+           "26510": "31710",
+           "26040": "31200"
+          }
+         }
+        }
+       },
+       {
+        "cmd": "d 101 DT_1B040A3 -c1 {sgg2} -i T20 -p Y -s 2025 -e 2025",
+        "show": "DT"
+       },
+       {
+        "cmd": "d 101 DT_1B040B3 -c1 {sgg2} -i T1 -p Y -s 2025 -e 2025"
+       },
+       {
+        "calc": "{v3}/{v4}"
+       }
+      ]
+     },
+     "unit": "명(세대당)",
+     "period": "2025",
+     "tol": 0.005
+    }
+   ]
+  }
+ ]
+}

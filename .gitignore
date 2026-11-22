@@ -28,3 +28,6 @@ src/scripts/.env
 # 배포 산출물
 *.tar.gz
 *.zip
+
+# 평가 결과 (AI 실행 기록 — 크고 실행마다 달라진다)
+src/eval/results/
