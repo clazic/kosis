@@ -362,6 +362,12 @@ func transformArgs(in args) (transform, error) {
 	if p, ok := in["pivot"].(*pivotSpec); ok {
 		tr.Pivot = p
 	}
+	// order·order_by 는 kosis_result_query 에만 있다 (kosis_data 의 sort·top 은 조회 쪽에서 먼저 계산)
+	if o := in.str("order"); o != "" {
+		tr.Order = &orderSpec{By: in.str("order_by"), Desc: o == "desc", Top: in.num("top")}
+	} else if in.str("order_by") != "" {
+		return tr, fmt.Errorf("order_by 는 order(desc|asc)와 함께 씁니다")
+	}
 	return tr, nil
 }
 

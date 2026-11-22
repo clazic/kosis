@@ -1,0 +1,2597 @@
+# kosis 규칙 (rules.yaml) — AI 에이전트용
+#
+# kosis 를 쓰는 AI(Claude, GPT 등)가 s(검색) → m(메타) → d(데이터) 로 일할 때 따르는 검증된 지식.
+# 사람용 설명은 LEARNINGS.md, 명령 문법은 references/13-reference.md.
+#
+# ── 읽는 법 ──
+# 1. 모든 조회(s·m·d·ex) 전에 이 파일, LEARNINGS.md(오답노트), 로컬 규칙 ~/.kosis/rules.d/*.yaml(있으면)을 참조한다.
+#    예외 없음 — 익숙한 표·짧은 조회도 마찬가지. 로컬이 더 최신이다.
+#    kosis rules list [찾을 말] 로 둘을 함께 볼 수 있다 (-f json 이면 본문까지).
+# 2. tables 에 원하는 통계표가 있으면 검색·메타를 건너뛰고 바로 써도 된다 (verified 날짜가 오래됐으면 m 으로 재확인).
+#    단 axes 가 표의 분류 축 전부가 아니면 m 으로 먼저 확인한다 (kosis d 도 빠진 --classN 을 조회 전에 알려 준다).
+#
+# ── 쓰는 법 (로컬 규칙) ──
+# s·m·d 를 하며 새로 확인한 사실은 ~/.kosis/rules.d/ 에 규칙 하나당 파일 하나로 추가한다.
+# - 파일 이름 YYYYMMDD-<8hex>.yaml (ASCII 만). 내용은 kind·title·verified·evidence + 아래 절의 항목 필드.
+#   (table 은 id 대신 table: "ORG/TBL"). 쓴 뒤 kosis rules validate 로 형식 점검.
+# - 실제로 실행해 확인한 것만 적는다. 추측은 적지 않는다 (불확실하면 confidence: guess 로 표시).
+# - evidence 에 무엇을 실행해 무엇을 봤는지 한 줄로 적는다. verified 에 날짜.
+# - 틀린 규칙을 발견하면 지우지 말고 status: wrong 과 이유를 적는다.
+# - 여러 번 확인된 로컬 규칙은 저장소의 이 파일로 올린다 (PR → 릴리스 → 모든 사용자).
+#
+# ── 형식 ──
+# concepts: 같은 말로 불리지만 표·정의가 다른 지표. id, title, terms(검색어에 이 말이 들면 경고), sources(name·table·code·value), tell
+# rules:   일반 규칙. id, topic, when(언제), do(무엇을), why, evidence, verified, [confidence]
+# tables:  통계표별 검증된 코드·함정. id(ORG/TBL), name, periods, axes, items, facts, verified
+#          axes 의 flag 는 kosis d 플래그(--class1 …), codes 는 "이름: 코드"
+#          axes 에는 표의 분류 축을 모두 적는다(codes 는 일부만 적어도 됨 — 나머지는 note 에 m 명령으로)
+
+version: 1
+updated: "2026-10-12"
+
+rules:
+
+  # ── 작업 순서 ──
+  - id: workflow.meta-first
+    topic: workflow
+    when: 처음 쓰는 통계표를 조회하기 전
+    do: kosis m <ORG> <TBL> 로 분류축 개수·코드·수록주기를 먼저 확인한다
+    why: 표마다 분류축 개수와 코드 체계가 다르다. 메타 없이 조회하면 [20]/[21] 이 난다
+    evidence: "DT_1B04006 에 -c1 ALL 만 넣어 [20] objL 누락 (LEARNINGS.md)"
+    verified: "2026-06-15"
+
+  - id: workflow.fill-all-axes
+    topic: workflow
+    when: kosis d 인자를 만들 때
+    do: 메타의 분류축 수만큼 --class1 ~ --classN 을 모두 채운다 (필요 없는 축은 합계 코드)
+    why: 축 하나라도 빠지면 [20] objL 누락
+    evidence: "DT_1B04006 은 A(시군구)+YRE(연령) 2축 — -c2 추가로 해결 (LEARNINGS.md)"
+    verified: "2026-06-15"
+
+  - id: workflow.codes-not-names
+    topic: workflow
+    when: 분류·항목을 지정할 때
+    do: "한글 이름이 아니라 메타의 코드(ITM_ID)를 넘긴다. 코드를 짐작해 만들지 말고 kosis m --find/--under/--level 결과에서 그대로 가져온다 (합계·전체 코드도 표마다 다르다)"
+    why: 이름이나 짐작한 코드를 넘기면 [21] 잘못된 요청 변수
+    evidence: "kosis --help 표준 워크플로우 2단계. 2026-10-12 118/DT_118N_SAUPM75 에서 '전체' 코드를 짐작(INDUSTRY11_00, 15118SIZES_07_00)해 [21] — m --find 전체 / --level 1 로 찾은 INDUSTRY_11S0, 15118SIZES_0700 으로 성공"
+    verified: "2026-10-12"
+
+  - id: workflow.check-help-before-absent
+    topic: workflow
+    when: "kosis 에 어떤 기능(거르기·코드 찾기·피벗 등)이 없다고 말하거나 직접 가공(Python 등)하기 전"
+    do: "해당 명령의 --help 를 끝까지 읽는다. 있는 기능: s --org/--stat/--region/--items, m --find/--under/--level, d --pivot/--api-keys/--fields, ex(주석·링크)"
+    why: 기능을 찾지 않고 '없다' 고 말하거나 직접 가공한 사례가 있었다
+    evidence: "2026-10-12 실사용 감사 G11 — 필터/피벗/이름 선택을 조사하지 않고 Python 피벗·CLASSIFICATIONS 가공"
+    verified: "2026-10-12"
+
+  - id: workflow.read-whole-docs
+    topic: workflow
+    when: SKILL.md·rules·references 를 읽다가 출력이 잘렸을 때
+    do: 나머지를 이어서 읽는다 (rules 는 kosis rules list -f json 이나 찾을 말로 나눠 읽기)
+    why: 잘린 뒤쪽에 적용해야 할 규칙이 있을 수 있다
+    evidence: "2026-10-12 실사용 감사 G4 — cat 출력이 잘렸는데 재독하지 않음"
+    verified: "2026-10-12"
+
+  - id: workflow.report-failures-now
+    topic: workflow
+    when: "kosis 오류, 빈 결과, 외부 페이지 열기 실패(타임아웃) 등 무엇이든 실패했을 때"
+    do: 바로 사용자에게 무엇이 실패했고 그래서 무엇을 확인하지 못했는지 알린다
+    why: 실패를 나중에 말하면 결과의 검증 범위를 잘못 이해하게 된다
+    evidence: "2026-10-12 실사용 감사 A2·A3·G3 — 울산시 통계 페이지 타임아웃을 즉시 보고하지 않음"
+    verified: "2026-10-12"
+
+  - id: workflow.record-learning
+    topic: workflow
+    when: "작업 중 규칙에 없던 사실을 확인했거나, 기존 규칙이 틀린 것을 알았거나, 에러·빈 결과·이상한 동작의 원인을 찾았을 때 ('원인을 찾았다'고 말하는 순간 모두 해당)"
+    do: "사용자에게 보고하기 전에 같은 작업 안에서 kosis rules add 로 기록한다(verified·evidence 필수). 틀린 규칙은 지우지 말고 status: wrong 과 이유를 적고 맞는 내용을 새로 add. 보고에 무엇을 어디에 기록했는지 적는다"
+    why: 원인을 말로만 밝히고 기록하지 않으면 다른 AI·다음 작업이 같은 실수를 한다
+    evidence: "2026-10-12 실사용 감사 G7·G8 — 새 사실과 틀린 규칙을 기록하지 않음. 2026-10-12 규칙이 'F=5년'으로 틀려 3년 주기 표를 '데이터 없음'으로 오판 — 원인을 찾은 뒤 meta.period-codes 정정"
+    verified: "2026-10-12"
+
+  - id: workflow.rules-lookup
+    topic: workflow
+    when: 조회 전에 rules.yaml·LEARNINGS.md 를 참조할 때 (모든 조회 전 필수)
+    do: "처음 한 번은 두 파일을 읽고, 이후 조회마다 그 조회에 해당하는 항목만 다시 찾는다 — kosis rules list --id <ORG/TBL 또는 규칙 id>, --kind table, --topic period 처럼 선택자로. 본문 검색(rules list 울산)은 관련 없는 규칙도 많이 나오니 마지막에. 같은 대화에서 파일 전체를 매번 다시 읽지 않는다"
+    why: 매 조회마다 전체를 읽으면 왕복·컨텍스트만 늘고 필요한 항목은 놓치기 쉽다. 사용자 지시(모든 조회 전 참조)는 '해당 항목 확인'으로 지킨다
+    evidence: "2026-10-12 rules list 울산 → 미분양·출생·물가 규칙까지 본문 일치로 나옴. --id 101/DT_1FS1101 → 그 표 항목만"
+    verified: "2026-10-12"
+
+  - id: workflow.rules-source
+    topic: workflow
+    when: 어느 rules 파일이 적용되는지 확인할 때 (교정한 rules 가 실제로 읽히는지)
+    do: "kosis rules list 출력 끝의 '배포:'·'로컬:' 경로를 본다. 배포 규칙은 KOSIS_RULES_FILE → ~/.claude → ~/.agents → ~/.hermes → ~/.config/opencode → ~/.gemini … 의 skills/kosis/references/rules.yaml 중 처음 있는 것, 로컬은 ~/.kosis/rules.d (더 최신)"
+    why: 스킬이 여러 곳에 설치될 수 있다. kosis update 가 모든 위치를 같은 버전으로 맞춘다
+    evidence: "2026-10-12 설치 6곳(.claude·.agents·.hermes·.config/opencode·.gemini·.antigravity) 모두 VERSION v0.5.17, SKILL.md·rules.yaml sha256 동일"
+    verified: "2026-10-12"
+
+  - id: workflow.small-first
+    topic: workflow
+    when: 본 조회 전
+    do: --latest 1~5 로 값·시점 형식을 먼저 확인하고 범위를 넓힌다
+    why: 틀린 코드·주기를 큰 조회 전에 잡는다
+    evidence: "kosis --help 표준 워크플로우 3단계"
+    verified: "2026-10-12"
+
+  # ── 검색 (s) ──
+  - id: search.terms-not-sentences
+    topic: search
+    when: kosis s 검색어를 정할 때
+    do: 문장이 아니라 통계표 이름에 쓰일 짧은 용어로 검색한다. "~별" 단어(구군별·업종별)와 조사(와·과·및)는 뺀다
+    why: KOSIS 검색은 표 이름 매칭이라 문장을 넣으면 결과가 없다([30])
+    evidence: "s \"구군별 업종별 종사자수 와 생산액\" → [30]. \"종사자수 생산액\" 은 결과 있음"
+    verified: "2026-10-12"
+
+  - id: search.kosis-vocabulary
+    topic: search
+    when: 일상어로는 원하는 표가 안 나올 때
+    do: "KOSIS 표 이름의 말로 바꿔 검색한다 — 구군·시군·구별 → 시군구, 업종 → 산업, 결혼 → 혼인, 태어난 아기 → 출생아수, 순유입 → 순이동, (물가) 상승률·증감률 → 등락률, 가계 소득·지출 → 가계수지, GRDP → 지역내총생산, 자가보유율·무주택 → 주택소유가구비율 T0021·무주택가구비율 T0031 (101/DT_1YL202111, 주택소유통계) — 주거실태조사 점유형태 '자가'(116/DT_MLTM_6909)는 자가점유율이라 다른 지표, (초·중·고) 학생수 → 초등학교·중학교·고등학교 개황 (또는 --stat 교육기본통계), 가계부채 → 가계신용(301), 외국인 → 외국인주민(110), (생산지수) 전년동월비 → 증감률, 기대수명 → 생명표, 자살률 → 사망원인·자살률 (「자살 시도」는 설문 표), 흡연율 → 현재흡연율 (「성인」을 넣으면 엉뚱한 표), 쌀 → 미곡 (「쌀」은 가공식품 표로 쏠림), 어가 수 → 해수면 어가·내수면 어가 (합계 표 없음), 농가·어가 총조사 해 값 → --stat 농림어업총조사, (주가) 월말 종가 → 연월말, 원/달러 환율 → IMF 국내 통화 환율(101/DT_2IFS011 — 한국은행 환율 표 DT_036Y… 는 2014 에서 끝), 국세 수입 → 국세청 세수·징수실적, 지방세 시도 합계 → 징수실적 총괄 (--org 110). 기관 이름이 질문에 있으면 --org (예 --org 국민연금)"
+    why: 표 이름은 행정·통계 용어를 쓴다
+    evidence: "\"종사자수 시군구 산업\" 으로 118/DT_118N_SAUPM75 등 시군구×산업 표가 검색됨. 출생아수·혼인·순이동은 s 결과 표 이름으로 확인. 2026-10-12 RSI: 's 소비자물가지수 전년동월비' 2건에 정답 표 빠짐, 정답 101/DT_1J22042 이름은 '…등락률'"
+    verified: "2026-10-12"
+
+  - id: search.survey-name
+    topic: search
+    when: 검색 결과가 0건이거나 엉뚱한 표만 나올 때
+    do: 통계 조사명(예 "광업제조업조사", "사업체노동실태현황")으로 다시 검색한다
+    why: 일상어와 KOSIS 항목명이 다르다
+    evidence: "\"제조업 생산액\" 은 생산'지수'만 나옴 (LEARNINGS.md)"
+    verified: "2026-06-21"
+
+  - id: search.production-amount
+    topic: search
+    when: 시군구 단위 "생산액"이 필요할 때
+    do: 광업제조업조사 표(101/DT_1FS1101)의 출하액(T04)을 쓴다. 이 조사는 광업·제조업만 다룬다
+    why: 시군구 단위 생산액 통계는 광업제조업조사뿐이고, 항목 이름은 "출하액"이다
+    evidence: "m 101 DT_1FS1101 항목: T01 사업체수 … T04 출하액 … T07 유형자산 (생산액 항목 없음)"
+    verified: "2026-10-12"
+    status: wrong
+    wrong_reason: "출하액은 생산액과 다른 지표라 대용으로 쓰면 요청과 다른 답이 된다. '시군구 생산액은 광업제조업조사뿐' 도 검색해 본 범위에서만 맞는 말로 입증되지 않았다 (2026-10-12 실사용 감사)"
+    replaced_by: [answer.requested-measure, search.absence-is-not-proof]
+
+  - id: search.filters
+    topic: search
+    when: 검색 결과에 다른 지역·기관·분야 표가 많이 섞일 때
+    do: "--org <기관 코드|이름 일부> 는 KOSIS 서버에서 거른다(이름은 기관별 목록에서 코드로 바꿈). --stat <조사명 일부>·--region <지역 이름> 은 받은 쪽 안에서만 거르므로 결과가 없거나 적으면 --page 2 … 로 다음 쪽도 본다. stderr '검색 범위'(전체 수·받은 수·거른 뒤 수)를 확인한다. 표마다 항목·단위를 보려면 --items (-n 을 작게)"
+    why: "v0.5.22 까지 --org 도 받은 결과 안에서만 걸러 기관 표가 상위 결과 밖에 있으면 빈 결과였다(false negative). KOSIS 검색 API 는 orgId 를 받는다. --region 은 이름·기관·조사명·분류 경로 글자 매칭이라 전국 시도별 표는 빠진다"
+    evidence: "s 출하액 --stat 광업제조업조사 → DT_1FS1103 등 광업제조업조사 표만. 2026-10-12 공식 API searchNm=생산액&orgId=207 → 울산광역시 표 30행(전체 607), 같은 날 v0.5.22 'kosis s 생산액 --org 울산' 은 빈 결과 → 고친 뒤 기관별 목록에서 울산광역시=207 로 바꿔 서버 필터"
+    verified: "2026-10-12"
+
+  - id: search.absence-is-not-proof
+    topic: search
+    when: 검색 결과에서 원하는 표를 못 찾았을 때
+    do: "'KOSIS 에 없다' 고 말하지 말고 '이 검색어·필터·결과 수(-n) 범위에서 못 찾았다' 고 말한다. 다른 용어·조사명·--org/--stat 로 다시 찾고, 그래도 없으면 시도 단위처럼 다른 수준의 대안을 제시한다"
+    why: 검색은 한 쪽(-n 개)만 받고 --stat/--region 은 그 안에서만 거른다. 결과에 없다고 통계가 없는 것은 아니다
+    evidence: "2026-10-12 101/DT_1FS1104 는 시도 단위 생산액(T07) 표인데 '울산 생산액' 검색 상위 결과로는 구군까지 연결되지 않았다 (실사용 감사 C5·E3·E4)"
+    verified: "2026-10-12"
+
+  - id: search.population-differs
+    topic: search
+    when: 서로 다른 조사(STAT_NM)의 표를 함께 쓰거나 비교할 때
+    do: "kosis ex 로 각 표의 조사대상 범위·제외 산업·규모 기준을 확인하고, 같은 기준이 아니면 한 표처럼 합치거나 직접 비교하지 않는다. 답에 표마다 조사명과 범위를 적는다"
+    why: 조사마다 모집단이 다르다 (예 10명 이상 사업체만, 공공행정 제외)
+    evidence: "ex 101 DT_1FS1101 → 10인 이상 사업체. m 118 DT_118N_SAUPM75 --type CMMT → 자영업자만 사업체·O 공공행정 산업 제외. 2026-10-13 RSI R14: 농가인구 2024 농림어업조사(표본, 101/INH_1EA1011_01) 2,003,520 → 2025 농림어업총조사(전수, 101/DT_1AG25203) 2,506,639 — 조사가 달라 증감으로 잇지 않는다"
+    verified: "2026-10-13"
+
+  - id: search.check-recency
+    topic: search
+    when: 검색 결과에서 표를 고를 때
+    do: STRT_PRD_DE~END_PRD_DE 가 요청 기간을 덮는 표를 고른다. 최신 자료를 원하면 END_PRD_DE 가 최근인 표
+    why: 같은 주제의 옛 표가 남아 있다 (예 2002~2006 년에서 끝난 표)
+    evidence: "시군구×산업 종사자수 검색에 118/DT_118N_SAUP35(2004~2006), SAUP14(2002~2003) 가 최신 표와 함께 나옴"
+    verified: "2026-10-12"
+
+  - id: search.region-coverage-in-name
+    topic: search
+    when: 시군구 단위 표를 고를 때
+    do: "표 이름의 지역 범위를 본다 — (8개시) 는 특별·광역시의 구·군, (9개도) 는 도의 시·군"
+    why: 범위 밖 지역은 그 표에 없다
+    evidence: "118/DT_118N_SAUPM75(8개시)에 울산 구군 있음, 118/DT_118N_SAUPM78(9개도)에는 울산 없음"
+    verified: "2026-10-12"
+
+  - id: search.city-only-tables
+    topic: search
+    when: 표 ID 끝이 _<시도코드>(예 _26 = 울산)인 시도 전용 표를 볼 때
+    do: 지역 축이 시도 한 값뿐일 수 있으니 구·군 구분이 필요하면 m 으로 확인한다
+    why: 시도 전용 표는 구·군 축이 없는 경우가 있다
+    evidence: "101/INH_DT_1K52F01_26 지역 축 값은 '울  산' 하나 (구군 없음)"
+    verified: "2026-10-12"
+
+  # ── 메타 (m) ──
+  - id: meta.hierarchy
+    topic: meta
+    when: 특정 지역·분류의 하위 값(예 울산의 구·군)이 필요할 때
+    do: kosis m <ORG> <TBL> --under <상위 코드> 로 바로 아래 코드를 받는다 (끝에 d 에 넣을 "a+b+c" 가 나옴). 상위 코드를 모르면 --find <이름>, 대분류만이면 --level 1
+    why: 메타에 상위-하위 관계(UP_ITM_ID)가 들어 있다. 이름만으로는 같은 '중구'가 여러 시에 있다
+    evidence: "m 101 DT_1FS1101 --under 26 → 26010 중구·26020 남구·26030 동구·26040 북구·26510 울주군, --class1 \"26010+26020+26030+26040+26510\""
+    verified: "2026-10-12"
+
+  - id: meta.find-codes
+    topic: meta
+    when: 지역·산업·항목 코드를 이름으로 골라야 할 때
+    do: "kosis m <ORG> <TBL> --find \"이름1,이름2\" (공백 무시) 로 찾는다. 항목만 보려면 --axis item, 한 축만 --axis class2 또는 분류 이름 일부. -f json 이면 [{flag, code, name, level, parent_code, path, unit}] — flag 가 d 에 넘길 플래그(--class1 …, --item). 큰 표는 ITM 전체를 출력하지 말고 이 선택자로 고른다"
+    why: "메타 JSON 을 직접 가공하지 않아도 되고, 어느 축(--class 몇 번, 메타 OBJ_ID_SN 기준)인지 함께 나온다. 코드 고르기는 분류·항목(ITM)만 1번 부른다. --find 등은 --type 없이 또는 --type ITM 과만 쓰고, 다른 --type 과 쓰면 오류(종료 코드 1). v0.5.22 까지는 --type ITM 과 함께 쓰면 조용히 무시돼 전체(1,097행)가 나왔다"
+    evidence: "m 101 DT_1FS1101 --find 출하액 → --item T04, --find 울주 → --class1 26510 (울산광역시 > 울주군). 2026-10-12 --axis item → 7개, --axis class2 → 산업축(--class2), m 118 DT_118N_SAUPM75 --level 1 → 규모별 --class3"
+    verified: "2026-10-12"
+
+  - id: meta.notes-and-survey
+    topic: meta
+    when: 표의 조사 범위·주석·용어 정의가 필요할 때 (예 10명 이상 사업체만인지)
+    do: kosis ex <ORG> <TBL> 로 통계설명(조사대상 범위·공표범위·주요 용어 등)·주석·원표/조사설명 링크를 본다. 주석만이면 m --type CMMT
+    why: 항목 이름만으로는 조사 범위를 알 수 없다. 원표(kosis.kr)·조사설명(narastat.kr) 링크는 사람에게 근거로 줄 수 있다
+    evidence: "ex 101 DT_1FS1101 → 승인번호 101009, 조사대상 10인 이상 사업체, 공표범위 시군구. ex 101 DT_1IN1502 → 주석 주1) 총인구(외국인 포함)"
+    verified: "2026-10-12"
+
+  - id: meta.axis-name-not-level
+    topic: meta
+    when: 축 이름(시도별·지역별 등)이나 표 이름으로 지역 단계를 판단하려 할 때
+    do: "이름으로 판단하지 말고 kosis m --under <상위 코드> 로 하위 값이 있는지, --level 로 단계별 값을 확인한다. 결과 path 가 '시도 > 구군' 이면 시군구까지 있다"
+    why: "'시도별' 축에 구·군이 들어 있거나, 시군구 표처럼 보여도 시도까지만 있는 표가 있다"
+    evidence: "101/DT_1FS1101 축 이름 '시도별' 인데 --under 26 → 구군 5개. 101/DT_1FS1104 축 '시도별' 은 --under 26 결과 없음(전국+17개 시도만)"
+    verified: "2026-10-12"
+
+  - id: meta.totals-first
+    topic: meta
+    when: 합계(전국·계·전체) 코드를 찾을 때
+    do: "축의 맨 앞 값을 먼저 확인한다. 이름이 '계·전국·전체·합계'가 아니어도 합계일 수 있다(예 '광업 및 제조업'). 계층(level·parent)이 평평해 합계와 하위가 같은 단계로 나오는 표도 있으니 이름·위치·하위 값 합으로 확인한다"
+    why: KOSIS 는 합계를 보통 축 맨 앞에 둔다 — 단 규칙이 아니라 경향이므로 이름과 하위 관계로 확인
+    evidence: "DT_1FS1101 산업축 첫 값 0='광업 및 제조업'(B 광업, C 제조업의 합). 118/DT_118N_SAUPM75 는 '전체'와 A~S 대분류가 모두 level 1·상위 없음 (m --level 1)"
+    verified: "2026-10-12"
+    confidence: tendency
+
+  - id: meta.region-codes-differ
+    topic: meta
+    when: 지역 코드를 넣을 때
+    do: 표마다 m 으로 지역 코드를 확인한다. 다른 표의 코드를 옮겨 쓰지 않는다
+    why: "같은 '서울'이 표마다 다르다 — 101/DT_1IN1502 11, 101/DT_1J22003 T11, 101/DT_1YL20162E a7, 116/DT_MLTM_2086 13102871014B.0006. 같은 숫자도 표마다 다른 지역이다 — 29 는 101/DT_1YL20651E 광주·101/DT_1K52F01 세종, 36 은 DT_1YL20651E 세종·DT_1K52F01 전남"
+    evidence: "각 표 m 실측 (tables 참고). 2026-10-12 m --level 1 --axis 행정 로 29·36 대조"
+    verified: "2026-10-12"
+
+  - id: meta.names-with-spaces
+    topic: meta
+    when: 값 이름으로 코드를 찾을 때
+    do: 공백을 무시하고 비교한다
+    why: "일부 표는 '울  산', '전  국'처럼 글자 사이에 공백이 있다"
+    evidence: "101/INH_DT_1K52F01_26, 101/DT_1K52F08 데이터 출력"
+    verified: "2026-10-12"
+
+  - id: meta.item-code-per-table
+    topic: meta
+    when: 다른 표에서 본 항목 코드(T07 등)를 쓰려 할 때
+    do: "항목 코드는 표마다 뜻이 다르다. 표마다 m --axis item 으로 코드·이름·단위를 확인하고 이름으로 맞춘다"
+    why: 같은 조사·같은 코드라도 표가 다르면 다른 항목일 수 있다
+    evidence: "2026-10-12 m --axis item: 101/DT_1FS1104 T07=생산액, 101/DT_1FS1101 T07=유형자산 연말잔액(생산액 항목 없음, 출하액 T04). 분류 코드도 같다 — 형제 표 334/DT_1963003_002(초등) C_1=학생수, _003(중)·_004(고) C_1=직원수·학생수=H_1 (RSI R3: 오류 없이 직원수를 받음). v0.5.25+ d 가 stderr '조회한 코드: -c3 C_1=직원수' 로 이름을 보여 준다"
+    verified: "2026-10-12"
+
+  - id: meta.mixed-axis
+    topic: meta
+    when: "축 이름이 특성별·통계분류·응답자특성별·구분처럼 뜻이 드러나지 않을 때"
+    do: "kosis m <ORG> <TBL> --level 1 로 최상위 값을 본다. 최상위가 '전체·성별·연령별·지역별…'처럼 기준 이름이면 묶음 축이다 — 기준 하나를 정해 --under <그 코드> 의 하위 코드만 넣는다 (예 '전체' + 남성·여성). ALL 로 받지 않는다"
+    why: "묶음 축은 한 축 안에 여러 기준이 들어 있다. 기준 이름 코드(성별·연령별)는 값이 없는 머리글이고, ALL 이면 전체·성별·연령대·학력… 행이 섞여 더하면 여러 번 겹친다"
+    evidence: "206/DT_206009_2023_058 --level 1 → A01 전체·A02 성별·A03 연령별·A04 학력별…, --under A02 → A0201 남성·A0202 여성. d --class1 A01+A02+A0201+A0202+A03 → A02·A03 행 없음, 전체·남성·여성만 (2023 통근 87.3/87.5/87.1%). 전체 통계표 258,816개 집계: '특성별' 축 97,236개 표 중 87% 가 이런 묶음 축, '통계분류' 9,396개 중 70% (src/tools/catalog_dict.py)"
+    verified: "2026-10-12"
+
+  - id: meta.axis-meaning-from-codes
+    topic: meta
+    when: 축 이름으로 축의 뜻이나 코드 체계를 짐작하려 할 때 (특히 두 표를 잇거나 비교할 때)
+    do: "축 이름이 아니라 m 의 최상위 값(--level 1)과 코드로 판단한다. 이름이 같아도 코드 체계가 다르고, 이름이 달라도 같은 체계일 수 있다. 두 표의 축을 맞출 때는 양쪽 m 결과의 이름·코드를 대조한다"
+    why: "KOSIS 축 이름은 표를 만든 기관이 붙인 이름일 뿐 표준이 아니다"
+    evidence: "전체 통계표 258,816개 집계(src/tools/catalog_dict.py): 서로 다른 축 이름 21,862개. '성별' 12,362개 표의 최상위 값이 522갈래(계·남자·여자 / 남자·여자 / 전체·여성·남성 …), '시도별' 3,937개 표는 172갈래. 최상위 '계·남자·여자' 축 4,449개는 이름이 성별·대표자성별·종사자성별·가구주의 성별 등으로 갈림. 시도도 '전국·서울특별시…'와 '전국·서울…' 두 체계가 따로 있음"
+    verified: "2026-10-12"
+
+  - id: meta.unit-blank
+    topic: meta
+    when: 값의 단위를 확인할 때
+    do: "UNIT_NM 이 비어 있으면 단위가 없다고 보지 말고 항목 이름(끝 괄호 '(명)'·'(%)' 등)과 주석(m --type CMMT, ex)에서 찾는다. 찾지 못하면 답에 단위를 짐작해 적지 말고 '단위 미표기'라고 밝힌다. 단위 칸이 차 있어도 표 전체 단위 하나가 모든 항목에 똑같이 붙어 오는 표가 있다 — 항목 이름 괄호의 단위가 우선이다. 수치값이 숫자가 아니라 이름(문자)인 항목도 있다"
+    why: "항목의 절반 가까이는 단위 칸이 비어 있고, 같은 항목 이름(예 평균)도 표마다 단위가 다르다. 2026-10-12 101/DT_1B34E20 은 사망자수(명) 행에도 단위 '인구 10만 명당 (명)', 항목 T1(사망원인) 수치값은 '악성신생물' 같은 이름"
+    evidence: "전체 통계표 258,816개 집계(src/tools/catalog_dict.py): 항목 621,602개 중 301,380개(48.5%) UNIT_NM 빈 칸, 모든 항목이 빈 칸인 표 121,144개(46.8%). 표 단위들을 이어 붙인 값도 있다 — 101/DT_2KI2001 단위 칸 '개명백만원' (= 개, 명, 백만원). 101/DT_1IN1503 항목 '총인구(명)'·'총인구_성비' 단위 칸 빈 칸 (m 요약)"
+    verified: "2026-10-12"
+
+  - id: meta.merged-region
+    topic: meta
+    when: 광주·전남을 조회할 때
+    do: "메타에 '전남광주통합특별시'가 광주광역시·전라남도와 함께 있는지 확인하고 의도에 맞는 값을 고른다. 2026년 자료는 광주·전남 시군구 코드도 통합시 아래로 바뀐 표가 있어 옛 코드 값이 중간에 끊긴다 — 최근 시계열은 옛 코드와 새 코드를 이어 붙인다(101/DT_1B040A3 동구 29110→12210, 2026.07). 시도 순위·목록을 만들 때는 12 대신(또는 12 와 함께) 하위 1224·1236 을 넣는다 — 12 자체는 옛 연도 값이 비어 있다. 광주·전남 코드는 짐작하지 말고 m --find 광주,전라남도 로 찾는다 — 통합시 아래 하위 코드로 바뀐 표가 있다. d 는 값 없는 12 에 하위 코드를 stderr 로 알려 준다. 2026.07 인천 개편 신설 구(23125 제물포구·23155 영종구·23275 서해구·23290 검단구)는 KOSIS 메타에 상위가 비어 있다 — kosis v0.5.27+ 는 같은 체계 최상위(23) 아래로 본다"
+    why: "2026년 자료부터 통합 지역 값이 함께 있는 표가 있고, 어떤 표는 옛 광주·전남 코드를 통합시(12) 아래 2단계 코드로 바꿨다. 옛 코드를 넣으면 그 코드만 빠지거나 '시점에 데이터 없음'으로 보인다"
+    evidence: "101/INH_1DA7014S_03 12=전남광주통합특별시, 101/DT_1J22003 T19=전남광주통합특별시. 2026-10-12 101/DT_1YL21161(1인가구비율) 12 아래 1224=광주광역시·1236=전라남도 (m --under 12); 24·36 으로 짐작한 조회는 '시점 2020에 데이터가 없어 건너뜁니다'"
+    verified: "2026-10-12"
+
+  - id: meta.period-codes
+    topic: meta
+    when: 메타 수록주기를 -p 로 옮길 때
+    do: "년→Y, 월→M, 분기→Q, 반기→H, 2년·3년·4년·5년 등 여러 해 주기→모두 F. F 를 '5년'이라고 설명하지 않는다 (v0.5.21 부터 -p \"3년\" 처럼 메타 이름 그대로 넣어도 F 로 바뀐다)"
+    why: "메타는 한글로 주고 data 는 코드를 받는다. KOSIS 의 F 는 '5년'이 아니라 2년 이상 다년 주기 전체다. 여러 해 주기 표에 Y·IR 을 쓰면 [30]. 예전 이 규칙은 '5년→F'만 적어 3년 표를 못 받는 것을 '데이터 없음'으로 잘못 봤다"
+    evidence: "m 101 DT_1YL20162E 주기 '월'. 2026-10-12 실측: 117/DT_117071_004(3년)·202/DT_BS2020_3_157(2년)·380/DT_380002_A001A(4년)·154/DT_154001_006(5년) 모두 -p F 만 성공, -p Y·IR 은 [30]. v0.5.20 까지 -p \"3년\" 은 [30]"
+    verified: "2026-10-12"
+
+  - id: meta.extra-categories
+    topic: meta
+    when: 성별 등 단순해 보이는 축을 전체로 펼칠 때
+    do: 축 값 목록을 확인한다
+    why: 성별 축에 농가·비농가 같은 추가 구분이 들어 있는 표가 있다
+    evidence: "101/DT_1DA7001S 성별 축: 계, 남자, 여자, 농가, 농가남자 …"
+    verified: "2026-10-12"
+
+  # ── 데이터 (d) ──
+  - id: data.list-codes
+    topic: data
+    when: 같은 축에서 여러 값을 조회할 때
+    do: "코드를 + 로 잇는다 (예 --class1 \"26010+26020\"). 개수 제한은 확인되지 않았다(84개까지 실측 성공 — 그 이상은 미확인). 축 전체면 ALL, + 나열이 실패하면 오류 코드를 보고 나눠 조회한다. 4만 셀 초과는 kosis 가 자동 분할"
+    why: 한 번의 조회로 여러 값을 받는다. 예전 문서의 '10개 이상 금지' 는 근거가 없었다
+    evidence: "2026-10-12 118/DT_118N_SAUPM75 지역 코드 32·60·84개(약 1,730자)를 + 로 조회 모두 성공. 이전: 산업 대분류 18개, 101/DT_1YL20162E 서울 25개 구 성공"
+    verified: "2026-10-12"
+
+  - id: data.pivot
+    topic: data
+    when: 지역·시점 등을 열로 놓은 비교표가 필요할 때
+    do: "kosis d … --pivot C1 (분류1 값이 열), --pivot PRD (시점이 열), --pivot ITM (항목이 열 — 열 이름이 '항목명(단위)'). 분류 이름(시도별)도 된다. 결과를 파일로 남기려면 .csv·.xlsx·.json (parquet 은 안 됨)"
+    why: "긴 표를 직접 피벗하지 않아도 된다. 한 칸에 값이 겹치면 경고하고 첫 값만 남긴다. 항목마다 단위가 다르면 단위를 열 이름에 붙여 한 행으로 만든다"
+    evidence: "d 101 DT_1FS1101 --class1 \"26010+26020+26030+26040+26510\" --class2 \"B+C\" --item T04 -p Y -l 1 --pivot C1 → 산업별 행 × 구군 열. d 101 DT_1FS1101 -c1 26010+26020 -c2 C -i T02+T04 -p Y -l 1 --pivot ITM -f json → 2행, 열 '종사자수(명)'·'출하액(백만원)' (2026-10-12). --pivot C1 -o x.parquet → exit 1"
+    verified: "2026-10-12"
+
+  - id: data.parquet-api-keys
+    topic: data
+    when: d 결과를 .parquet 으로 저장할 때
+    do: "열은 API 키(C1…C8_NM, ITM_ID, ITM_NM, UNIT_NM, PRD_SE, PRD_DE, DT, DT_RAW, LST_CHN_DE)로 고정된다 — 읽을 때 그 이름을 쓴다. DT 는 숫자라 X(비공개)·- 등은 null 이 된다 — 값 표식은 반드시 DT_RAW(원문)로 판단한다. --pivot 결과는 parquet 에 담지 못하니(exit 1) .csv·.xlsx·.json 을 쓴다"
+    why: "parquet 스키마가 고정이다. 예전(v0.5.17 까지) d -o *.parquet 은 한국어 라벨 열이라 값이 모두 비어 저장됐고, 숫자가 아닌 DT 는 원문 없이 null 이 됐다"
+    evidence: "v0.5.17 빌드로 만든 r.parquet 4행 C1_NM·ITM_NM·DT 모두 nil, 수정 빌드 -o p1.parquet(옵션 없음)·--api-keys 모두 '중구/종사자수/705'. d 101 DT_1FS1101 -c1 26020 -c2 B -i T04 -p Y -l 1 은 json DT 'X' — 수정 전 parquet DT null·원문 없음, 수정 후 DT null·DT_RAW 'X' (parquet-go 판독, 2026-10-12)"
+    verified: "2026-10-12"
+
+  - id: data.stable-keys
+    topic: data
+    when: 여러 표의 d 결과를 같은 코드로 처리할 때
+    do: "d … -f json --api-keys 로 받는다. 열 이름이 표와 상관없이 C1·C1_NM … C8_NM, ITM_ID·ITM_NM, PRD_SE·PRD_DE, DT, UNIT_NM 이다"
+    why: 기본 출력의 열 이름은 표마다 다른 한국어 축 이름(시도별, 지역별(시/군/구) 등)이다
+    evidence: "d 118 DT_118N_SAUPM75 … --api-keys 와 d 101 DT_1FS1101 … --api-keys 가 같은 키 구조(C1·C1_NM·…·DT·UNIT_NM)"
+    verified: "2026-10-12"
+
+  - id: data.prefix-includes-parent
+    topic: data
+    when: 접두 코드("41*")를 쓸 때
+    do: 상위 값 자신과 모든 하위 단계가 섞여 나온다는 것을 감안한다. 한 단계만 원하면 하위 코드를 + 로 나열한다
+    why: 접두 일치라 경기도(41)·시(41110…)·구가 모두 포함된다
+    evidence: "d 101 DT_1YL20651E --class1 '41*' → 경기도 + 시·구 32행"
+    verified: "2026-10-12"
+
+  - id: data.all-mixes-levels
+    topic: data
+    when: ALL 을 쓸 때
+    do: "모든 단계(대·중·소분류)가 다 나온다는 것을 감안한다. 대분류만 원하면 최상위 코드를 + 로 나열한다. 최상위가 기준 이름(성별·연령별…)인 묶음 축이면 ALL 을 쓰지 않는다 (meta.mixed-axis)"
+    why: ALL 은 축의 모든 값
+    evidence: "101/INH_DT_1K52F01_26 산업 ALL → 1,620개 업종, 1,851행"
+    verified: "2026-10-12"
+
+  - id: data.auto-split
+    topic: data
+    when: 큰 조회
+    do: 4만 셀을 넘으면 kosis 가 시점·분류로 자동 분할한다. 너무 느리면 분류·항목을 좁힌다
+    why: KOSIS 한 번 조회 한도 4만 셀 ([31])
+    evidence: "DT_1B04006 단일 연도 ~134만 셀 → 분류 2차 분할로 89,353행 (LEARNINGS.md)"
+    verified: "2026-06-15"
+
+  # ── 시점 ──
+  - id: period.quarter-format
+    topic: period
+    when: 분기(Q) 기간을 지정할 때
+    do: "분기 YYYYQQ (2025년 1분기 = 202501), 반기 YYYYHH (상반기 202401·하반기 202402). 반기 코드는 S(공식)·H 둘 다 되고 결과 PRD_SE 는 S. kosis 는 5자리(20251)를 넣어도 6자리로 바꿔 보낸다(자동 분할 포함)"
+    why: "KOSIS 는 6자리만 받는다 — 5자리(20251)는 [30] 데이터 없음. v0.5.22 까지 문서(SKILL·03·d 도움말)가 20241 로 잘못 적었고, 자동 분할도 5자리로 보내 큰 분기·반기 조회가 [30] 이 될 수 있었다"
+    evidence: "d 101 DT_1DA7104S -p Q -s 202501 -e 202502 성공 / d 101 INH_1J22003 -p Q -s 20251 → [30]. 2026-10-12 API 직접: 301/DT_200Y108 Q 202401 성공·20241 [30], 101/DT_1ES3A02S prdSe=S·H 모두 성공(결과 S), 202401 성공·20241 [30]"
+    verified: "2026-10-12"
+
+  - id: period.month-year-format
+    topic: period
+    when: 월·연 기간을 지정할 때
+    do: "월 YYYYMM (202601), 연 YYYY"
+    why: 출력 시점 표기와 같다
+    evidence: "101/DT_1YL20162E 월 202601, 연 표들 2024"
+    verified: "2026-10-12"
+
+  - id: period.latest-unit
+    topic: period
+    when: --latest N 을 쓸 때
+    do: N 은 표 주기 단위의 개수다 (월간 표에서 최근 1년 = --latest 12)
+    why: 연 단위로 세지 않는다
+    evidence: "101/DT_1YL20162E --latest 6 → 6개월"
+    verified: "2026-10-10"
+
+  - id: period.range-clips
+    topic: period
+    when: 끝 시점을 넉넉히 잡을 때
+    do: 수록 범위를 넘는 끝 시점을 줘도 있는 데까지 나온다
+    why: 최신 연도를 몰라도 범위 조회가 된다
+    evidence: "101/INH_1B83A35 -s 2020 -e 2026 → 2020~2025"
+    verified: "2026-10-10"
+
+  - id: period.code-labels
+    topic: period
+    when: 수록주기를 읽고 넘길 때
+    do: "메타는 주기를 한글(년·월·분기)로 보여주고, d 에는 -p Y·M·Q 로 넘기며, d 결과의 PRD_SE 는 A(연)·M·Q 로 나온다 — 같은 것이다"
+    why: 표기가 세 가지라 다른 주기로 오해하기 쉽다
+    evidence: "m 101 DT_1FS1104 PERIODS PRD_SE '년' / d 101 DT_1FS1101 -p Y … 결과 PRD_SE 'A'"
+    verified: "2026-10-12"
+
+  - id: period.latest-per-table
+    topic: period
+    when: 최신 자료를 말할 때
+    do: "최신 시점은 표마다 다르다. '표 A 는 2024, 표 B 는 2024 까지' 처럼 표별로 말하고, 여러 표에 공통인 연도는 실제로 확인한 표들에 대해서만 말한다"
+    why: 한두 표의 최신 연도를 관련 통계 전체의 최신처럼 말하면 과장이다
+    evidence: "2026-10-12 실사용 감사 D7·G2 — 두 표의 공통 최신 2024 를 '모든 관련 통계 최신' 처럼 표현"
+    verified: "2026-10-12"
+
+  - id: period.item-latest-differs
+    topic: period
+    when: 여러 항목을 한 번에 최신 시점(-l 1 등)으로 조회할 때
+    do: "표의 수록 기간(m --type PRD)은 표 전체 기준이다. 항목마다 마지막 시점이 다를 수 있으니 요청한 항목이 결과에 모두 있는지 확인한다 (kosis d 는 빠진 항목을 stderr 에 경고). 빠진 항목은 -s <표 시작> -e <표 끝> 으로 그 항목만 조회해 실제 마지막 시점을 찾고, 답에 항목별 시점을 따로 적는다. -l 1 은 표의 최근 시점이라 그 항목이 끝난 표에선 [30]"
+    why: "최신 연도 조회에서 한 항목만 조용히 빠져, 그 항목이 없는 것으로 오해하거나 다른 지표로 대신 답하기 쉽다"
+    evidence: "2026-10-12 207/DT_2071F01(울산 연보, 수록 1994~2024): -l 1 로 종사자수+생산액 → 종사자수 2024 6행만, 생산액 없음. 생산액만 -s 2008 -e 2024 → 2008~2013 만 있음. 생산액만 -l 1 → [30]"
+    verified: "2026-10-12"
+
+  - id: period.empty-may-be-unpublished
+    topic: period
+    when: 특정 값이 [30] 데이터 없음일 때
+    do: 바로 이전 시점으로 다시 조회해 본다. 최신 시점만 아직 공표 전일 수 있다
+    why: 값 자체가 없는 것과 최신 시점이 비어 있는 것은 다르다
+    evidence: "142/DT_BR_B008 class3 16142T209(전체기업): 2023 → [30], 2022 → 3,159명"
+    verified: "2026-10-12"
+
+  # ── 오류 코드 ──
+  - id: output.stdout-data-only
+    topic: workflow
+    when: -f json/csv 결과를 프로그램(Python·jq)으로 읽을 때
+    do: "stdout 만 읽는다. 결과 수·안내·경고·오류는 stderr 로 나온다 (2>/dev/null 로 버려도 된다). 결과가 없으면 json 은 []. 인자·형식 오류나 조회 실패는 종료 코드 1 이니 종료 코드를 먼저 본다 (s·m·d·ex·ls·rules list)"
+    why: "v0.5.16 부터 안내문을 stdout 에서 뺐다. 이전 버전은 '검색 결과: N개' 가 JSON 뒤에 붙어 파싱이 깨졌다"
+    evidence: "kosis s 울산 -n 2 -f json 2>/dev/null | python3 -c 'import json,sys; json.load(sys.stdin)' 성공. 2026-10-12 v0.5.22 까지 s -n -1 은 panic(exit 2), s -f nonsense·m 101·d 조회 실패·깨진 rules 의 rules list 는 exit 0 (rules list 는 오류를 stdout 에) → 모두 stderr·exit 1 로 정정"
+    verified: "2026-10-12"
+
+  - id: output.shapes
+    topic: workflow
+    when: -f json 결과를 프로그램으로 읽을 때
+    do: "명령마다 모양이 다르다 — s·d·ind·ls: 행 배열 / m(요약): 객체 1개를 담은 배열(CLASSIFICATIONS·ITEMS·PERIODS) / m --find·--under·--level: 코드 행 배열(flag·code·name·level·path) / m --type: API 필드 그대로의 배열 / ex: 객체(links·notes·explain). 결과가 없으면 배열은 []"
+    why: 명령별로 구조가 달라 같은 방식으로 읽으면 깨진다
+    evidence: "v0.5.17 에서 s·m·m --under·m --type CMMT·ex·d·ind·ls 의 -f json 을 json.load 로 모두 파싱 (2026-10-12)"
+    verified: "2026-10-12"
+
+  - id: answer.table-first
+    topic: answer
+    when: 사용자에게 조회 결과를 답할 때
+    do: "결과 표를 먼저 보여준다(-f md 또는 --pivot 비교표). 설명·주의는 표 뒤에. 행을 열로 펼치는 등 원표를 재배치했으면 그렇게 했다고 적고, 원자료(코드·원 단위 값)는 파일이나 별도 표로 남긴다"
+    why: 사용자는 표를 먼저 본다. 재배치 사실을 밝히지 않으면 원표로 오해한다
+    evidence: "2026-10-12 실사용 감사 G10·E13 — 표를 먼저 보여주지 않아 사용자가 재요청"
+    verified: "2026-10-12"
+
+  - id: answer.requested-measure
+    topic: answer
+    when: 요청한 지표(예 생산액)가 고른 표에 없을 때
+    do: "다른 지표(예 출하액)로 바꿔 답하지 않는다. '이 표에는 요청한 지표가 없다' 고 먼저 말하고, 대안을 따로 제시한다 — (1) 이름이 다른 비슷한 지표는 다른 지표임을 밝혀서, (2) 같은 지표가 있는 다른 수준(예 시도 단위)의 표. 사용자가 고르게 한다"
+    why: 비슷한 이름의 다른 지표를 대용으로 쓰면 요청과 다른 답이 된다
+    evidence: "m 101 DT_1FS1101 --find 생산액 → 없음, 출하액은 T04. 101/DT_1FS1104 에는 생산액(T07)과 출하액 계(T02)가 함께 있고 값이 다르다 — 울산 2024 278,929,223 vs 278,421,843 백만원 (2026-10-12)"
+    verified: "2026-10-12"
+
+  - id: answer.scope-notes
+    topic: answer
+    when: 표의 값을 답할 때
+    do: "표마다 조사명, 조사 범위(예 10명 이상 사업체), 제외 대상(예 특정 산업 제외), 시점, 단위를 함께 적는다. 근거는 kosis ex 와 m --type CMMT. '전체'·'합계'는 그 조사 범위 안의 합계라고 쓴다"
+    why: "'전체' 를 지역 전 산업·전 사업체로 오해하기 쉽다"
+    evidence: "ex 101 DT_1FS1101·DT_1FS1104 → 광업·제조업 10인 이상 사업체. ex 118 DT_118N_SAUPM75 → 자영업자(+무급가족종사자)로만 된 사업체·공무원 재직기관·O 공공행정 산업 제외, 2020년 기준 자료부터 일정한 물리적 장소가 없는 사업체 제외 — 이 표의 '전체'는 도시 전체 모든 고용이 아니다 (2026-10-12)"
+    verified: "2026-10-12"
+
+  - id: answer.suppressed-missing
+    topic: answer
+    when: 결과에 X(비공개)가 있거나 어떤 조합의 행이 아예 없을 때
+    do: "X 는 X 로 두고 추정·역산하지 않는다. parquet 으로 저장했으면 DT(숫자)가 아니라 DT_RAW(원문)로 X 를 확인한다. 행이 없는 조합은 0 이나 X 로 바꾸지 말고 '-'(행 없음)로 표시하고 그 뜻을 적는다. 공개 값만으로 합계를 다시 만들 수 없다고 밝힌다"
+    why: 비공개를 채우거나 없는 행을 0 으로 쓰면 틀린 통계가 된다
+    evidence: "d 101 DT_1FS1101 울산 구군 × 광업(B) 출하액 — 남구·울주군 X, 중구·동구·북구는 행 없음 (2026-10-12 --pivot C1 결과 빈 칸)"
+    verified: "2026-10-12"
+
+  - id: answer.no-double-count
+    topic: answer
+    when: 합계와 하위 분류(대분류·중분류)가 함께 든 결과를 더하거나 비율을 낼 때
+    do: "같은 단계의 값끼리만 더한다. m 의 level·path 로 단계를 확인하고, 합계 행은 합산에서 뺀다"
+    why: 합계와 하위 값을 함께 더하면 두 번 센다
+    evidence: "101/DT_1FS1101 산업축에 0(광업 및 제조업)·B·C 와 중분류가 함께 있다 (m --level)"
+    verified: "2026-10-12"
+
+  - id: answer.level-choice
+    topic: answer
+    when: "'업종별'·'지역별'처럼 분류 수준이 정해지지 않은 요청에 답할 때"
+    do: "고른 수준(예 산업 대분류)을 답에 밝히고, 다른 수준(중분류 등)도 가능하다고 알린다. 표마다 다른 수준을 골랐으면 그 이유를 적는다"
+    why: 수준을 말없이 고르면 사용자가 원한 범위와 다를 수 있다
+    evidence: "2026-10-12 실사용 감사 E5 — 종사자는 대분류, 광제조는 중분류를 설명 없이 선택"
+    verified: "2026-10-12"
+
+  - id: answer.units
+    topic: answer
+    when: 큰 금액·값을 보여줄 때
+    do: "원 단위 값(예 백만원)을 그대로 두고, 읽기 쉽게 바꿀 때는(예 조원) 바꿨다는 사실과 단위를 적는다"
+    why: 단위 변환을 밝히지 않으면 값이 틀려 보이거나 틀리게 읽힌다
+    evidence: "101/DT_1FS1101 출하액 단위 백만원 — 울산 남구 제조업 93,569,395 (2024)"
+    verified: "2026-10-12"
+
+  - id: answer.count-population
+    topic: answer
+    when: "'몇 개·몇 명' 같은 개수 질문에 표본조사(실태조사) 표만 보일 때"
+    do: "실태조사 표의 값은 표본의 가중 추정이나 응답 분포라 개수가 아닐 수 있다 — 기본통계(전수·등록 기반) 표를 먼저 찾고, 없으면 ex 의 [조사대상 범위]·모집단 수를 근거로 쓰되 그렇게 밝힌다. 모집단이 다른 표(전수 vs 10인 이상, 기업 vs 사업체)가 함께 있으면 둘 다 적고 어느 쪽인지 밝힌다"
+    why: 같은 이름의 개수가 조사마다 모집단이 달라 값이 크게 다르다
+    evidence: "2026-10-12 RSI R7: 벤처기업 수는 142/DT_V25_A001 ex 의 목표모집단 38,216개사(표는 3,000개사 표본 설문). 소상공인 142/DT_BR_A008 기업수 7,906,861(2023) vs 소상공인실태조사 142/DT_3ME0110_1 6,134,324(2024, 11개 업종). 제조업 사업체수 101/DT_1K52F01(전수) vs 101/DT_1FS1104(10인 이상). 종사자수 101/DT_1K52F01 vs 118/DT_118N_MOND66(사업체노동력조사)"
+    verified: "2026-10-12"
+
+  - id: answer.derived-measure
+    topic: answer
+    when: 실질임금 상승률처럼 KOSIS 에 바로 주는 표가 없는 파생 지표를 물을 때
+    do: "구성 표(명목값 표 + 물가 표)를 각각 조회해 계산하고, 계산식과 두 표 ID 를 답에 적는다. 공식 발표값과 소수점이 다를 수 있다고 밝힌다. 없다고 단정하지 않는다"
+    why: 파생 지표는 표가 없거나 찾기 어렵고, 계산 근거가 없으면 검증할 수 없다
+    evidence: "2026-10-12 RSI R9: 실질임금 = 118/DT_118N_MON051 임금총액 전년비 +3.09% ÷ 101/DT_1J22041 CPI 2.1% → 약 +0.97%. 같은 조사의 형제 표라도 산업 코드 접두사가 다르다 (MON054 260225INDUSTRY_11… vs MON051 190326INDUSTRY_10…)"
+    verified: "2026-10-12"
+
+  - id: answer.cumulative-series
+    topic: answer
+    when: 월·분기 값으로 '그 달의 증감'이나 연간 합을 낼 때
+    do: "m --type CMMT 로 값이 누계인지(연초부터의 누계) 먼저 본다. 누계면 그 달 값 = 이번 달 − 지난달, 연간 = 12월 값. 누계가 아니면 연간 = 12개월 합. 어느 쪽으로 계산했는지 답에 적는다"
+    why: 누계 표에 --change 를 그대로 쓰면 그 달이 아니라 누계끼리 비교한 값이 나와 부호까지 달라질 수 있다
+    evidence: "2026-10-12 RSI R10: 116/DT_MLTM_1948 인허가 2026.08 누계끼리 yoy −4.47% vs 그 달 +23.7%. 116/DT_MLTM_5386 착공은 월계(누계 아님) — 연간 = 12개월 합"
+    verified: "2026-10-12"
+
+  - id: answer.rate-definition
+    topic: answer
+    when: 율(率)·비율 지표를 직접 계산하거나 다른 표 값과 비교할 때
+    do: "ex 로 그 지표의 분모·집계 기준을 먼저 본다 (예: 조혼인율 분모 = 연앙인구, 혼인 = 남편 주소지). 직접 계산은 같은 표면 d --ratio, 다른 두 표면 kosis ratio --num '<d 인자>' --den '<d 인자>' (이름·시점으로 맞춤, --scale 100|1|1000) 로 하고, 분모가 다르면 값이 맞아도 같은 지표라고 단정하지 않는다"
+    why: 분모 정의가 다르면 반올림으로 우연히 맞을 수 있다
+    evidence: "2026-10-13 RSI R12: 서울 2024 혼인 42,471 ÷ 주민등록인구 9,331,828 × 1000 = 4.551, 표 조혼인율 4.6 (분모 연앙인구)"
+    verified: "2026-10-13"
+
+  - id: answer.ranking
+    topic: answer
+    when: 순위·상위 N 을 답할 때
+    do: "d --sort desc --top N 으로 정렬하고(눈으로 비교하지 않는다), 전국·시도 합계 행은 빼야 한다 — m <ORG> <TBL> --level N --axis <축> 이 끝에 주는 '-c1 \"코드+…\"' 를 그대로 d 에 넣는다(python 으로 거르지 않는다). 한 단계 전체는 d -c1 level:N 으로 바로 준다(v0.5.27+, 전국은 --no-total). stderr 의 'level:1 → 코드 N개: …' 이름을 보고 동부·읍부·면부·수도권 같은 비(非)시도 코드는 !코드 로 뺀다('level:1+!03+!04+!05'), 값 없는 통합 코드(12)는 하위(1224+1236)를 더한다. 순위 열로 몇 위인지 읽는다. 합계 코드가 같은 단계에 섞인 축(전체 산업 0 과 대분류 A~S 가 모두 1단계)은 d --no-total 로 뺀다. ALL 은 단계가 섞이니(대분류+중분류) 순위에 쓰지 않는다. 표가 반올림한 값이라 같은 값이 여럿이면 동률이라고 밝히고 억지로 자르지 않는다. 바로 아래 순위와 차이가 작으면 함께 적는다"
+    why: "눈으로 정렬하다 틀리기 쉽고(3·4위 26명 차이), 소수 한 자리 반올림 값은 동률이 흔하다"
+    evidence: "2026-10-12 RSI R4: 110/TX_11025_A000_A 2024 충남 169,245 vs 인천 169,219. 101/DT_1JC1516 평균 가구원수 2025 2.1명 8개 시도 동률. v0.5.25 d --sort/--top"
+    verified: "2026-10-12"
+
+  - id: answer.deliver-promised-files
+    topic: answer
+    when: 결과를 파일로 정리하겠다고 말했을 때
+    do: "실제로 파일을 만들고(d -o 결과.xlsx/.csv 또는 정리한 표) 경로를 알린다. 만들지 못했으면 그렇다고 말한다"
+    why: 말한 산출물이 없으면 사용자가 다시 요청해야 한다
+    evidence: "2026-10-12 실사용 감사 G9 — 파일로 정리한다고 했지만 만들지 않음"
+    verified: "2026-10-12"
+
+  - id: error.20
+    topic: error
+    when: "[20] 필수 변수 누락"
+    do: m 으로 분류축 개수를 확인하고 --class1~N 을 모두 채운다
+    evidence: LEARNINGS.md 오류코드 대응
+    verified: "2026-06-15"
+  - id: error.21
+    topic: error
+    when: "[21] 잘못된 요청 변수"
+    do: m 으로 분류·항목 코드를 다시 확인한다 (한글 이름을 넘기지 않았는지)
+    evidence: LEARNINGS.md 오류코드 대응
+    verified: "2026-06-15"
+  - id: error.30
+    topic: error
+    when: "[30] 데이터 없음"
+    do: 시점 형식(period.*)과 최신 시점 공표 여부(period.empty-may-be-unpublished)를 확인한다. 검색이 [30] 이면 검색어를 줄인다(search.terms-not-sentences)
+    evidence: LEARNINGS.md 오류코드 대응 + 2026-10-12 실측
+    verified: "2026-10-12"
+  - id: error.31
+    topic: error
+    when: "[31] 4만 셀 초과"
+    do: 자동 분할로도 안 되면 분류·항목 범위를 좁힌다
+    evidence: LEARNINGS.md 오류코드 대응
+    verified: "2026-06-15"
+  - id: error.429
+    topic: error
+    when: HTTP 429 분당 호출 제한
+    do: kosis 가 자동으로 재시도한다. 잦으면 kosis config add-key 로 키를 늘린다
+    evidence: LEARNINGS.md 오류코드 대응
+    verified: "2026-06-15"
+
+tables:
+
+  - id: "116/DT_MLTM_2086"
+    name: 미분양주택현황
+    periods: [Y]
+    axes:
+      - flag: --class1
+        name: 대분류
+        codes: {시도별미분양현황: "13102871014A.0002"}
+      - flag: --class2
+        name: 구분(지역)
+        codes:
+          전국: "13102871014B.0005"
+          서울: "13102871014B.0006"
+          부산: "13102871014B.0007"
+          대구: "13102871014B.0008"
+          인천: "13102871014B.0009"
+          광주: "13102871014B.0010"
+          대전: "13102871014B.0011"
+          울산: "13102871014B.0012"
+          경기: "13102871014B.0013"
+          세종: "13102871014B.0014"
+          강원: "13102871014B.0015"
+          충북: "13102871014B.0016"
+          충남: "13102871014B.0017"
+          전북: "13102871014B.0018"
+          전남: "13102871014B.0019"
+          경북: "13102871014B.0020"
+          경남: "13102871014B.0021"
+          제주: "13102871014B.0022"
+    items: {"미분양(12월기준)": "13103871014T1"}
+    facts:
+      - 연간만 있다. 월 단위 요청은 불가
+      - 지역 코드 순서가 표준과 다르다 (울산 다음 경기, 그다음 세종)
+    verified: "2026-07-20"
+
+  - id: "101/DT_1J22003"
+    name: 소비자물가지수(2020=100)
+    periods: [M, Q, Y]
+    axes:
+      - flag: --class1
+        name: 시도별
+        codes:
+          전국: T10
+          서울: T11
+          부산: T12
+          대구: T13
+          인천: T14
+          광주: T15
+          대전: T16
+          울산: T17
+          세종: T18
+          전남광주통합특별시: T19
+          경기: T21
+          강원: T31
+          충북: T41
+          충남: T51
+          전북: T61
+          전남: T71
+          경북: T81
+          경남: T90
+          제주: T96
+    items: {"소비자물가지수(총지수)": T}
+    facts:
+      - 시도별 버전 101/INH_1J22003 도 같은 지역 코드 체계 (T12 부산, T14 인천 실측)
+      - "지수(2020=100) 수준값이다. 상승률(전년동월비)은 101/DT_1J22042 T03 (2026-10-12)"
+    verified: "2026-07-20"
+
+  - id: "301/DT_200Y001"
+    name: 국민계정 주요지표 (명목 GDP)
+    periods: [Y]
+    axes:
+      - flag: --class1
+        name: 계정항목별
+        codes: {"국내총생산(명목 원화표시)": "13102134474ACC_ITEM.10101"}
+    items: {"주요지표(연간지표)": "13103134474999"}
+    facts:
+      - 지역 구분이 없다
+      - "2026-10-10 기준 2023년까지 수록 (2024 요청 시 2023 까지만 나옴)"
+    verified: "2026-10-10"
+
+  - id: "101/DT_1IN1502"
+    name: 인구총조사 총인구
+    periods: [Y]
+    axes:
+      - flag: --class1
+        name: 행정구역별
+        codes: {전국: "00"}
+    items: {총인구: T100}
+    facts:
+      - "2021~2025 전국 총인구 조회 확인 (51,738,071 → 51,817,499)"
+    verified: "2026-10-10"
+
+  - id: "101/DT_1DA7002S"
+    name: 경제활동인구조사 연령계층별
+    periods: [M, Q, Y]
+    axes:
+      - flag: --class1
+        name: 연령계층별
+        codes: {15세 이상 전체: "00", "15 - 29세": "75"}
+    items: {인구: T10, 경제활동인구: T20, 취업자: T30, 실업자: T40, 비경제활동인구: T50, 경제활동참가율: T60, 실업률: T80, 고용률: T90}
+    facts:
+      - 축은 지역이 아니라 연령계층이다 (지역별 실업률은 101/DT_1DA7104S)
+      - "성별 축이 없다 — 성별 고용률·실업률은 101/DT_1DA7001S"
+      - "청년(15~29세) 코드 75, 이름 '15 - 29세' (m --find 15~29). 월별 청년 고용률은 이 표 (이름에 '청년고용률'이 든 표는 분기·연만)"
+    verified: "2026-10-12"
+
+  - id: "101/DT_1DA7104S"
+    name: 행정구역(시도)/성별 실업률
+    periods: [M, Q, Y]
+    axes:
+      - flag: --class1
+        name: 시도별
+        codes: {계: "00", 서울특별시: "11", 전남광주통합특별시: "12", 광주광역시: "24", 전라남도: "36", 부산광역시: "21", 대구광역시: "22"}
+      - flag: --class2
+        name: 성별
+        codes: {계: "0", 남자: "2", 여자: "3"}
+    items: {실업률: T80}
+    facts:
+      - "분기 시점은 YYYY0Q (202501 = 2025년 1분기)"
+    verified: "2026-10-12"
+
+  - id: "101/INH_1DA7014S_03"
+    name: 고용률(시도)
+    periods: [M, Q, Y]
+    axes:
+      - flag: --class1
+        name: 시도별
+        codes: {계: "00", 서울특별시: "11", 전남광주통합특별시: "12", 광주광역시: "24", 전라남도: "36"}
+      - flag: --class2
+        name: 성별
+        codes: {계: "0", 남자: "2", 여자: "3"}
+    items: {고용률: T90}
+    verified: "2026-10-10"
+
+  - id: "101/DT_1YL20651E"
+    name: 주민등록인구(시도/시/군/구)
+    periods: [M, Y]
+    axes:
+      - flag: --class1
+        name: 행정구역별
+        codes: {경기도: "41"}
+    items: {계: T20}
+    facts:
+      - "경기도 하위는 41xxx 코드. '41*' 은 경기도+시+구가 섞여 32행, 시·군 31개만 원하면 하위 코드를 + 로 나열"
+    verified: "2026-10-12"
+
+  - id: "101/INH_1B81A01"
+    name: 출생아수(시도/시/군/구)
+    periods: [Y, M]
+    axes:
+      - flag: --class1
+        name: 시군구별
+        codes: {전국: "00", 서울특별시: "11", 울산광역시: "26"}
+    items: {계: T1, 남자: T2, 여자: T3}
+    facts:
+      - 울산 하위 구·군은 26xxx (메타 UP_ITM_ID 로 확인)
+      - "울산 출생아수 2021~2025: 6,127 / 5,399 / 5,082 / 5,282 / 5,574"
+    verified: "2026-10-10"
+
+  - id: "101/DT_1B81A23"
+    name: 시군구/출생아수, 합계출산율
+    periods: [Y]
+    axes:
+      - flag: --class1
+        name: 시군구별
+        codes: {전국: "00", 울산광역시: "26"}
+    items: {출생아수: T1, 합계출산율: T2}
+    facts:
+      - "-c1 ALL 은 전국·시도·시군구가 섞인다. 시군구만: m 101 DT_1B81A23 --level 2 --axis 시군구 → 끝에 나온 -c1 \"…\" 를 d 에 그대로 넣고 --sort asc|desc --top N (1단계 18개 = 전국+시도, 2단계 285개)"
+      - "울산 구·군 26010·26020·26030·26040·26510. 단위 칸은 표 전체 단위('명 가임여자 1명당 명')라 출생아수(T1)는 명"
+      - "시와 그 구가 같은 2단계 형제다 (수원시 31010, 장안구 31011 모두 상위 경기도) — 순위를 매길 때 시 또는 구 한쪽만. 코드 길이로는 못 가른다"
+      - "'(변동전)' 이 붙은 폐지 지역 코드 21개 — 최근 시점엔 값이 없다"
+    verified: "2026-10-12"
+
+  - id: "101/DT_1B81A21"
+    name: 시도/합계출산율, 모의 연령별 출산율
+    periods: [Y]
+    axes:
+      - flag: --class1
+        name: 시도별
+        codes: {전국: "00", 서울특별시: "11", 세종특별자치시: "29"}
+    items: {합계출산율: T1}
+    facts:
+      - "17개 시도는 11+21+22+23+24+25+26+29+31+32+33+34+35+36+37+38+39 로 한 번에 조회 (또는 -c1 level:1 --no-total)"
+      - "2025 전국 0.799, 상위 전남 1.094·세종 1.061·충북 0.96, 최저 서울 0.632. 단위 칸은 두 단위를 이은 값이라 무시 (합계출산율 = 가임여자 1명당 명). 모의 평균 출산연령은 101/DT_1B81A20 T10 (2025 전국 33.85세)"
+    verified: "2026-10-13"
+
+  - id: "101/DT_1YL20162E"
+    name: 아파트매매가격지수(시도/시/군/구)
+    periods: [M]
+    axes:
+      - flag: --class1
+        name: 행정구역별
+        codes: {전국: a0, 서울특별시: a7}
+      - flag: --class2
+        name: 주택유형별
+        codes: {아파트: "01"}
+    items: {아파트매매가격지수: sales}
+    facts:
+      - 월간만 있다. 서울 하위 25개 구는 a70101xx·a70201xx 등 (UP_ITM_ID=a7)
+      - "수록이 2026.01 에서 멈췄다 (2026-10-12 m). 최신 전국 아파트 매매가격지수는 408/DT_30404_C012 (한국부동산원)"
+      - 전세는 101/DT_1YL20172E (같은 구조, 항목 sales = 아파트전세가격지수)
+    verified: "2026-10-12"
+
+  - id: "118/DT_118N_SAUPM75"
+    name: 시군구별(8개시), 산업별, 규모별, 사업체수 및 종사자수 (고용노동부)
+    periods: [Y]
+    axes:
+      - flag: --class1
+        name: 지역별(시/군/구)
+        codes:
+          울산광역시: "15118ZONE2012_26"
+          울산 중구: "15118ZONE2012_262601"
+          울산 남구: "15118ZONE2012_262602"
+          울산 동구: "15118ZONE2012_262603"
+          울산 북구: "15118ZONE2012_262604"
+          울산 울주군: "15118ZONE2012_262631"
+      - flag: --class2
+        name: 산업분류별
+        codes: {전체: INDUSTRY_11S0}
+      - flag: --class3
+        name: 규모별
+        codes: {전규모: "15118SIZES_0700"}
+    items: {사업체수: "16118ED_1", 총종사자수_계: "16118ED_9A", 총종사자수_남자: "16118ED_9B", 총종사자수_여자: "16118ED_9C"}
+    facts:
+      - "2024년 한 해만 수록"
+      - 산업 대분류 18개는 전체(INDUSTRY_11S0)와 같은 최상위 단계 (UP_ITM_ID 빈 값). ALL 은 중분류까지 44개
+      - "울산 구·군 × 대분류 총종사자수 2024: 합계 443,646명 (중구 40,432, 남구 137,274, 동구 66,106, 북구 99,692, 울주군 100,142)"
+    verified: "2026-10-12"
+
+  - id: "101/DT_1FS1101"
+    name: 시도(시군구)/산업분류별 주요지표 (광업제조업조사, 10명 이상)
+    periods: [Y]
+    axes:
+      - flag: --class1
+        name: 시도별
+        codes: {울산광역시: "26", 울산 중구: "26010", 울산 남구: "26020", 울산 동구: "26030", 울산 북구: "26040", 울산 울주군: "26510"}
+      - flag: --class2
+        name: 산업별
+        codes: {광업 및 제조업: "0", 광업: B, 제조업: C}
+    items: {사업체수: T01, 종사자수: T02, 급여액: T03, 출하액: T04, 주요생산비: T05, 부가가치: T06, 유형자산 연말잔액: T07}
+    facts:
+      - "생산액 항목은 없다. 출하액(T04, 백만원)은 생산액과 다른 지표다 (2026-10-12 정정 — 이전 '시군구 생산액은 출하액을 쓴다' 는 틀림)"
+      - 광업·제조업만 다룬다 (서비스업 없음). 광업은 비공개(X)가 많다
+      - "울주군 코드가 26510 이다 (같은 조사의 101/DT_1FS1001_S, 142 표들은 26310) — 표마다 확인"
+      - "2020~2024 수록"
+    verified: "2026-10-12"
+
+  - id: "101/DT_1FS1104"
+    name: 시도/산업분류별 주요지표 (광업제조업조사, 생산액 포함)
+    periods: [Y]
+    axes:
+      - flag: --class1
+        name: 시도별
+        codes: {울산광역시: "26"}
+        note: "전국+17개 시도 18개 (전체 코드는 m --level 1). 구·군 없음"
+      - flag: --class2
+        name: 산업별
+        codes: {광업 및 제조업: "0", 광업: B, 제조업: C}
+        note: "level 1 이 0·B·C, level 2 에 중분류 29개 (m --level 2)"
+    items: {사업체수: T01, 출하액 계: T02, 생산액: T07, 부가가치: T08}
+    facts:
+      - "생산액(T07)과 출하액 계(T02)가 따로 있고 값이 다르다 — 울산 광업 및 제조업 2024 생산액 278,929,223 / 출하액 계 278,421,843 (백만원)"
+      - "지역은 시도까지만 — 구·군 단위 생산액은 이 표로 답할 수 없다 (m --under 26 결과 없음)"
+      - "항목은 16개(T01~T15, T20, 단위 백만원·개) — 전체는 m --level 1"
+      - "2020~2024 수록"
+    evidence: "m 101 DT_1FS1104 --level 1/--level 2/--under 26, d 101 DT_1FS1104 --class1 26 --class2 0+B+C --item T02+T07 -p Y -l 1 --api-keys -f json (2026-10-12)"
+    verified: "2026-10-12"
+
+  - id: "142/DT_BR_B008"
+    name: 시군구별·산업대분류별·기업규모별 종사자수 (중소벤처기업부)
+    periods: [Y]
+    axes:
+      - flag: --class1
+        name: 시군구별
+        codes: {울산 중구: "15142N.26010", 울산 남구: "15142N.26020", 울산 동구: "15142N.26030", 울산 북구: "15142N.26040", 울산 울주군: "15142N.26310"}
+      - flag: --class2
+        name: 산업별(10차)대분류별
+        codes: {전산업: "15142700", 제조업: "151427C"}
+      - flag: --class3
+        name: 기업규모별
+        codes: {전체기업: "16142T209", 소상공인: "16142T2524", 소기업: T004, 중기업: T001}
+    items: {종사자수: T001}
+    facts:
+      - "전체기업(16142T209)은 2023 이 [30], 2022 는 있음 — 최신 연도 공표가 늦다"
+      - "2019~2023 수록"
+    verified: "2026-10-12"
+
+  - id: "101/DT_1J22042"
+    name: 소비자물가 등락률 (전국, 월)
+    periods: [M]
+    axes:
+      - flag: --class1
+        name: 지수종류
+        codes: {총지수: "0", 생활물가지수: "1", 신선식품지수: "2", 농산물및석유류제외지수: "3", 식료품및에너지제외지수: "4"}
+    items: {전월비: T02, 전년동월비: T03, 전년누계비: T04}
+    facts:
+      - "물가 상승률 질문(전년동월비)은 이 표 T03. 표 이름이 '등락률'이라 '상승률'로는 검색에 안 걸린다"
+      - "1965.02 ~ 수록"
+      - "월간만 있다. 연간 상승률은 101/DT_1J22041 (-c1 0 -i T -p Y — 항목 코드가 T03 아닌 T). v0.5.26+ 없는 주기(-p Y)를 주면 exit 1 (전에는 월별 행이 오류 없이 나왔다)"
+    verified: "2026-10-12"
+
+  - id: "101/DT_1DA7001S"
+    name: 성별 경제활동인구 총괄
+    periods: [M, Q, Y]
+    axes:
+      - flag: --class1
+        name: 성별
+        codes: {계: "0", 남자: "2", 여자: "3"}
+    items: {15세이상인구: T10, 경제활동인구: T20, 취업자: T30, 실업자: T40, 비경제활동인구: T50, 경제활동참가율: T60, 실업률: T80, 고용률: T90}
+    facts:
+      - "성별 축에 농가·비농가(4~9)도 있다 — ALL 로 받으면 섞인다"
+    verified: "2026-10-12"
+
+  - id: "101/DT_1K52F01"
+    name: 시도·산업·사업체구분별 사업체수, 종사자수('20~) — 전국사업체조사
+    periods: [Y]
+    axes:
+      - flag: --class1
+        name: 행정구역별
+        codes: {전국: "00", 광주: "24", 세종: "29", 전남: "36"}
+      - flag: --class2
+        name: 산업별
+        codes: {전체 산업: "0"}
+      - flag: --class3
+        name: 사업체구분별
+        codes: {계: "0", 단독사업체: "1"}
+    items: {사업체수: T1, 종사자수: T2}
+    facts:
+      - "전국 합계는 이 표의 전국(00) 행이다. 검색에 많이 나오는 INH_DT_1K52F01_NN 은 시도별로 쪼갠 사본"
+      - "지역 이름에 공백이 있다 ('광 주', '전 남') — m --find 는 공백을 무시한다"
+      - "사업체당 종사자수 같은 비율은 -c1 ALL -c2 0 -c3 0 -i T1+T2 --pivot ITM 으로 한 표에 받아 계산 (2024 서울 4.91, 울산 4.87, 세종 4.76, 전국 4.03)"
+      - "인구 1천명당 사업체 수는 kosis ratio --num '101 DT_1K52F01 -c1 <시도> -c2 0 -c3 0 -i T1 -p Y -l 1' --den '101 DT_1B040A3 … -i T20 -p Y -s 2024 -e 2024' --scale 1000 — 2024 제주 149.42·전북 145.17·전남 141.55 (시도 이름·코드가 표마다 달라도 ratio 가 이름으로 맞춘다)"
+    verified: "2026-10-13"
+
+  - id: "301/DT_200Y102"
+    name: 주요지표(분기지표) — 한국은행 국민계정
+    periods: [Q]
+    axes:
+      - flag: --class1
+        name: 계정항목별
+        codes: {"국내총생산(GDP)(실질 계절조정 전기비)": "13102136269ACC_ITEM.10111", "국내총생산(GDP)(실질 원계열 전년동기비)": "13102136269ACC_ITEM.10211", "명목 원계열 전년동기비": "13102136269ACC_ITEM.60211"}
+    items: {주요지표(분기지표): "13103136269999"}
+    facts:
+      - "분기 GDP 성장률(실질·계절조정·전기대비) = -c1 13102136269ACC_ITEM.10111 -i 13103136269999 -p Q"
+      - "1960 1/4 ~ 수록"
+    verified: "2026-10-12"
+
+  - id: "101/DT_1C96"
+    name: 시도별 1인당 지역내총생산, 지역총소득, 가계총처분가능소득
+    periods: [Y]
+    axes:
+      - flag: --class1
+        name: 시도별
+        codes: {전국: "00", 울산광역시: "26"}
+    items: {1인당 지역내총생산: T1, 1인당 지역총소득: T2, 1인당 지역순소득: T5, 1인당 가계총처분가능소득: T3, 1인당 가계순처분가능소득: T6}
+    facts:
+      - "단위 천원. 1985 ~ 2024 (2026-10 기준). 순위를 매길 때 전국(00) 행은 뺀다"
+    verified: "2026-10-12"
+
+  - id: "101/DT_1L9U101"
+    name: 가구당 월평균 가계수지 (전국, 1인이상) — 가계동향조사
+    periods: [Q, Y]
+    axes:
+      - flag: --class1
+        name: 가계수지항목별
+        codes: {소득: A, 경상소득: B2, 근로소득: B4, 사업소득: B5, 가계지출: D, 소비지출: F, 처분가능소득: Y1}
+    items: {전체가구: T110, 근로자가구: T120, 근로자외가구: T150}
+    facts:
+      - "단위 원. 2019 1/4 ~ 수록. 이름 앞의 전각 공백(　)이 단계(소득 > 경상소득 > 근로소득)를 뜻한다"
+      - "가구 범위(1인이상/2인이상)·도시/전국·명목/실질 표가 따로 있다 — 질문이 범위를 정하지 않으면 답에 어느 표인지 밝힌다"
+      - "2인이상 가계수지 표(101/DT_1L9H002 등)는 2019 4/4 에서 끝났다 — 최근 분기는 이 표"
+      - "비율 행(Y3 흑자율, Y4 평균소비성향)도 단위 칸이 '원' 이다 — 실제는 %. 202602 처분가능소득 4,234,584원, 평균소비성향 69.2%"
+    verified: "2026-10-12"
+
+  - id: "101/DT_1B34E20"
+    name: 연령대별 사망원인 순위 (사망원인통계)
+    periods: [Y]
+    axes:
+      - flag: --class1
+        name: 성별
+        codes: {계: "0", 남자: "1", 여자: "2"}
+      - flag: --class2
+        name: 연령대별
+        codes: {전체: "99", 65세 이상: "65"}
+      - flag: --class3
+        name: 사망원인 순위
+        codes: {1위: "01", 2위: "02", 3위: "03"}
+    items: {사망원인: T1, 사망자수: T2, 사망률(십만명당): T3}
+    facts:
+      - "사망원인 1~3위: -c1 0 -c2 99 -c3 01+02+03 -i ALL -p Y. T1 수치값은 사망원인 이름(문자)"
+      - "단위 칸은 모든 항목에 '인구 10만 명당 (명)' — 사망자수(T2)는 명. 2023: 1위 악성신생물 85,271명 166.7, 2위 심장 질환 64.8, 3위 폐렴 57.5"
+      - "101/DT_1B34E01(104항목)에는 순위가 없고 대·소분류가 섞여 있다 — 순위 질문은 이 표"
+    verified: "2026-10-12"
+
+  - id: "116/DT_MLTM_2080"
+    name: 규모별 미분양현황 (국토교통부, 월)
+    periods: [M]
+    axes:
+      - flag: --class1
+        name: 시도
+        codes: {전국: "13102792722A.0001"}
+      - flag: --class2
+        name: 부문
+        codes: {총합: "13102792722B.0001"}
+      - flag: --class3
+        name: 규모
+        codes: {총합: "13102792722C.0001"}
+    items: {미분양(호): "13103792722T1"}
+    facts:
+      - "월별 전국 미분양은 이 표. 2007.01 ~ 수록. 2026.08 = 69,134호, 2025.12 = 66,510호 (116/DT_MLTM_2086 2025 연간값과 같음)"
+    verified: "2026-10-12"
+
+  - id: "101/DT_1YL202004E"
+    name: 미분양주택현황 (시도/시군구, e-지방지표)
+    periods: [M]
+    axes:
+      - flag: --class1
+        name: 구분
+        codes: {전국: "13102871087A.0001", 서울: "13102871087A.0002"}
+      - flag: --class2
+        name: 시군구
+        codes: {계: "13102871087B.0001"}
+    items: {미분양현황: "13103871087T1"}
+    facts:
+      - "전국(A.0001) 코드는 메타에 있지만 값이 없다 — 전국 × 무엇이든 [30]. 시도 × 계(B.0001)는 있다 (서울 2026.08 = 898호). 전국 합계는 116/DT_MLTM_2080"
+      - "항목 코드는 T1 이 아니라 13103871087T1 (T1 은 [21])"
+    verified: "2026-10-12"
+
+  - id: "101/DT_1B040A3"
+    name: 시군구별 성별 주민등록인구 (행정안전부)
+    periods: [M, Y]
+    axes:
+      - flag: --class1
+        name: 행정구역(시군구)별
+        codes: {울산광역시: "31", 울산 중구: "31110", 울산 남구: "31140", 울산 동구: "31170", 울산 북구: "31200", 울산 울주군: "31710"}
+    items: {총인구수: T20, 남자인구수: T21, 여자인구수: T22}
+    facts:
+      - "행정안전부 코드 체계라 울산 = 31 (다른 표의 26 아님). 폐지 지역(48130 울산시 등)도 메타에 있다"
+      - "2025 울산 5개 구·군 합계 1,091,948명 (RSI R2)"
+      - "월간이 연간보다 최신 (M 2026.09, Y 2025). 경기 = 41 (수원시 41110 과 그 구들이 같은 2단계), 제주시 50110, 서귀포시 50130"
+      - "광주 구 코드가 2026.07 부터 통합시(12) 아래로 바뀌었다: 동구 29110(~2026.06) → 12210(2026.07~), 북구 29170 → 12300, 광산구 29200 → 12330, 서구 12240, 남구 12270, 광산구 12330. 두 코드 이름이 모두 '동구' 라 표 출력만으로는 구분 안 됨 — 시계열은 두 코드를 이어 붙이고, 조회한 코드 줄로 확인"
+      - "편입·개편 전후 코드를 함께 조회해 잇는다: 군위군 47720(경북, ~2022) + 27720(대구, 2023~) — 2018 23,919 · 2020 23,256 · 2022 23,340 · 2023 22,988 · 2025 22,452 (이름 같은 코드를 함께 주면 d 가 시점순으로 낸다) — d 가 끊긴 코드와 이름이 같은 코드를 알려 준다. 연기군 44730(~2011) → 세종 36110(2012~, 36 은 같은 값이라 합산 금지) 는 이름이 달라 직접 잇는다: 2010 81,871 · 2011 82,890 · 2012 113,117 · 2013 122,153"
+    verified: "2026-10-13"
+
+  - id: "408/DT_30404_C012"
+    name: 유형별 매매가격지수 (2026.6=100.0) — 한국부동산원 전국주택가격동향
+    periods: [M]
+    axes:
+      - flag: --class1
+        name: 주택유형별
+        codes: {아파트: "01"}
+      - flag: --class2
+        name: 지역별
+        codes: {전국: a0}
+    items: {매매가격지수: sales}
+    facts:
+      - "전세가격지수는 같은 체계의 408/DT_30404_C013 (-c1 01 -c2 a0 -i sales, 2026.08 100.94, 전월비 +0.44%). 101/DT_1YL20172E 는 2026.01 에서 멈춤"
+      - "기준시점이 바뀔 때마다 새 표가 생긴다: DT_30404_A012(2025.3=100, ~2026.01), B012(2026.1=100, ~2026.06), C012(2026.6=100, ~2026.08). 기준이 달라 이어 붙이지 않는다 — 최신은 m --type TBL 의 기준시점과 -p 범위로 고른다"
+      - "전월 대비 변동률 항목은 없다 — 두 달 지수로 계산하고 답에 계산했다고 밝힌다"
+    verified: "2026-10-12"
+
+  - id: "101/DT_1YL20631"
+    name: 고령인구비율(시도/시/군/구) — e-지방지표
+    periods: [M, Y]
+    axes:
+      - flag: --class1
+        name: 행정구역별
+        codes: {전국: "00", 전남광주통합특별시: "12", 광주광역시: "1224", 전라남도: "1236", 경기 광주시: "31250"}
+    items: {고령인구비율: T10, 65세이상인구: T001, 전체인구: T002}
+    facts:
+      - "T10 = T001 ÷ T002 × 100 (%). 2025: 전국 21.2, 전남 28.5, 경북 27.5, 강원 26.8"
+      - "시도 순위는 12 아래 1224·1236 을 넣어야 광주·전남이 빠지지 않는다"
+    verified: "2026-10-12"
+
+  - id: "134/DT_134001_001"
+    name: 수출입총괄 (관세청)
+    periods: [M, Y]
+    axes:
+      - flag: --class1
+        name: 가상분류
+        codes: {데이터: DATA}
+    items: {수출건수: T001, 수출금액: T002, 수입건수: T003, 수입금액: T004, 무역수지: T005}
+    facts:
+      - "금액 단위 천불. 2000.01 ~ 수록. 최근 12개월: -c1 DATA -i T002 -p M -l 12"
+    verified: "2026-10-12"
+
+  - id: "101/DT_1B8000G"
+    name: 행정구역(시도)별 인구동향 (출생·사망·혼인·이혼)
+    periods: [M, Q, Y]
+    axes:
+      - flag: --class1
+        name: 행정구역별
+        codes: {전국: "00", 서울특별시: "11", 전남광주통합특별시: "12"}
+      - flag: --class2
+        name: 종류별
+        codes: {혼인건수: "20", 조혼인율: "21", 조출생률: "11", 합계출산율: "12"}
+    facts:
+      - "조혼인율(21)의 분모는 연앙인구, 혼인은 남편 주소지 기준 (ex) — 주민등록인구로 나눈 값과 다를 수 있다. 2024 서울 혼인 42,471, 조혼인율 4.6"
+      - "축이 2개다 (행정구역 × 종류). 2024 혼인건수: 경기 62,629, 서울 42,471, 인천 13,223. 12(통합시)는 2024 값이 비어 있다"
+      - "종류 코드: 15 사망자수, 16 조사망률, 30 이혼건수, 31 조이혼율 (항목 T1 하나). 2025(잠정) 전국 사망 362,968·7.1, 이혼 88,130·1.7, 혼인 240,326. 단위 칸 '명 건' 은 표 전체 단위 — 종류 이름 괄호(건·천명당)를 따른다. 월간은 2026.07 까지"
+    verified: "2026-10-13"
+
+  - id: "116/DT_MLTM_5498"
+    name: 자동차등록대수현황 시도별 (국토교통부, 월)
+    periods: [M]
+    axes:
+      - flag: --class1
+        name: 시도명
+        codes: {서울: "13102873443A.0001"}
+      - flag: --class2
+        name: 시군구
+        codes: {계: "13102873443B.0001"}
+      - flag: --class3
+        name: 레벨01 (차종)
+        codes: {총계: "13102873443C.0005", 승용: "13102873443C.0001"}
+    items: {계: "13103873443T4"}
+    facts:
+      - "월간만 — 연도 값은 12월 시점으로 답하고 그렇게 밝힌다. 2024.12: 경기 6,645,518, 서울 3,176,933, 경남 1,982,320"
+    verified: "2026-10-12"
+
+  - id: "334/DT_1963003_002"
+    name: 초등학교 개황 (교육기본통계, 한국교육개발원)
+    periods: [Y]
+    axes:
+      - flag: --class1
+        name: 시도별
+        codes: {총계: "00"}
+      - flag: --class2
+        name: 설립주체별
+        codes: {계: A001}
+      - flag: --class3
+        name: 학교현황별
+        codes: {학생수: C_1, 직원수: E_1, 교원수: B_1}
+    facts:
+      - "학생수 코드가 표마다 다르다: 초등(_002) C_1, 중(_003)·고(_004) H_1 (거기선 C_1 = 직원수). 2025: 초 2,345,488, 중 1,370,356, 고 1,299,466"
+      - "교원 1인당 학생수(학교급별)는 학생수 ÷ 교원수(B_1) 로 계산 — 2025 중학교 1,370,356 ÷ 116,046 = 11.8. 101/DT_1YL21171 '교원 1인당 학생수' 는 유치원~대학 전 학교급 합계라 학교급 질문에 쓰지 않는다"
+    verified: "2026-10-12"
+
+  - id: "101/DT_1DA9001S"
+    name: 성별 경제활동인구 총괄 (계절조정)
+    periods: [M]
+    axes:
+      - flag: --class1
+        name: 성별
+        codes: {계: "00"}
+    items: {실업률: T80, 고용률: T90}
+    facts:
+      - "계절조정 실업률은 이 표 (원계열은 101/DT_1DA7001S). 2026.08 실업률 2.7%"
+      - "'실업률 계절조정' 검색에서 9번째로 나온다 — 이 id 로 바로 조회"
+    verified: "2026-10-12"
+
+  - id: "101/DT_1JC1516"
+    name: 시군구별 세대구성별 가구 — 평균 가구원 수 (인구총조사)
+    periods: [Y]
+    axes:
+      - flag: --class1
+        name: 행정구역별(시군구)
+        codes: {전국: "00"}
+      - flag: --class2
+        name: 세대구성별
+        codes: {계: "00"}
+    items: {평균 가구원 수: T30}
+    facts:
+      - "2015 ~ 2025, 소수 한 자리 — 시도 순위에 동률이 많다 (2025 2.1명 8곳)"
+      - "세대구성 1인 가구 = -c2 50 (일반가구 계 00). 2025 전국 1인 가구 8,244,308 / 일반가구 22,495,096 = 36.65% (--ratio 50/00)"
+    verified: "2026-10-12"
+
+  - id: "110/TX_11025_A000_A"
+    name: 시도별 외국인주민 현황 (행정안전부)
+    periods: [Y]
+    axes:
+      - flag: --class1
+        name: 시도
+        codes: {합계: "1110100A00", 서울: "1110100A11"}
+      - flag: --class2
+        name: 구분
+        codes: {합계: "15110AA000"}
+      - flag: --class3
+        name: 세부
+        codes: {합계: A001A}
+    items: {외국인주민: "16110AAA0"}
+    facts:
+      - "2024 전국 2,583,626명, 경기 845,074, 서울 450,888, 충남 169,245, 인천 169,219"
+    verified: "2026-10-12"
+
+  - id: "301/DT_200Y101"
+    name: 주요지표(연간지표) — 한국은행 국민계정
+    periods: [Y]
+    axes:
+      - flag: --class1
+        name: 계정항목별
+        codes: {"1인당 국민총소득(명목 달러표시)": "13102136288ACC_ITEM.1010601", "1인당 국민총소득(원화)": "13102136288ACC_ITEM.10106", "국내총생산(명목 달러표시)": "13102136288ACC_ITEM.1010101"}
+    items: {주요지표(연간지표): "13103136288999"}
+    facts:
+      - "1953 ~ 수록. 2025 1인당 GNI 36,963.4달러. 최근 연도는 잠정치일 수 있다(주석: 연간 확정은 종료 후 18개월 이내) — 행마다 표시는 없다"
+      - "101/DT_2KAA902 는 2015년 기준 불변가격, 101/DT_2AS017 은 World Bank 출처 — 다른 지표"
+    verified: "2026-10-12"
+
+  - id: "301/DT_151Y001"
+    name: 가계신용(업권별, 분기) — 한국은행
+    periods: [Q, Y]
+    axes:
+      - flag: --class1
+        name: 계정항목별
+        codes: {가계신용: "13102134771ACC_ITEM.1000000", 가계대출: "13102134771ACC_ITEM.1100000", 판매신용: "13102134771ACC_ITEM.1200000"}
+    items: {가계신용: "13103134771999"}
+    facts:
+      - "'가계부채' 질문은 보통 이 표의 가계신용. 단위 십억원. 2026 2/4 가계신용 2,019,785십억원(약 2,019.8조원), 최근 분기는 잠정"
+    verified: "2026-10-12"
+
+  - id: "101/DT_1YL15009"
+    name: 제조업생산 증감률(시도) — e-지방지표
+    periods: [M]
+    axes:
+      - flag: --class1
+        name: 행정구역별
+        codes: {전국: "00"}
+    items: {증감률(전년동월비): T001}
+    facts:
+      - "제조업 생산지수 전년동월비는 이 표 (지수표 101/DT_1F02001 에는 전년동월비 항목이 없다). 2026.08 전국 -2.4%"
+    verified: "2026-10-12"
+
+  - id: "101/INH_1B26001_A021"
+    name: 순이동인구(시도/시/군/구)
+    periods: [M, Q, Y]
+    axes:
+      - flag: --class1
+        name: 행정구역(시군구)별
+        codes: {전국: "00"}
+      - flag: --class2
+        name: 성별
+        codes: {계: "0"}
+    items: {순이동: T25}
+    facts:
+      - "2025 순유입 경기 +32,970·인천 +32,264, 순유출 서울 -26,769·광주 -13,678. 17개 시도 합 0. 12(통합시)는 2025 값 없음 — 광주·전남은 별도 코드"
+    verified: "2026-10-12"
+
+  - id: "101/DT_1YL20832"
+    name: 사업체수(시도/시/군/구) — e-지방지표 (전국사업체조사)
+    periods: [Y]
+    axes:
+      - flag: --class1
+        name: 행정구역별
+        codes: {부산광역시: "21"}
+    items: {사업체수: T10}
+    facts:
+      - "시군구 사업체수는 이 표 (INH_DT_1K52F01_NN 시도 사본은 지역 축이 시도 하나뿐). 부산 구·군: m 101 DT_1YL20832 --under 21. 2024 부산진구 44,074, 해운대구 40,876, 사상구 34,753 (202/DT_202N_BSY4062 와 같음)"
+    verified: "2026-10-12"
+
+  - id: "101/DT_1J22041"
+    name: 소비자물가 등락률 (연도별)
+    periods: [Y]
+    axes:
+      - flag: --class1
+        name: 지수종류
+        codes: {총지수: "0"}
+    items: {전년비: T}
+    facts:
+      - "연간 소비자물가 상승률. 2023 3.6, 2024 2.3, 2025 2.1 (%). 1966 ~ 수록"
+    verified: "2026-10-12"
+
+  - id: "301/DT_301Y013"
+    name: 국제수지 (한국은행, 월)
+    periods: [M, Q, Y]
+    axes:
+      - flag: --class1
+        name: 계정항목별
+        codes: {경상수지: "13102134519ACC_CD.000000"}
+    items: {국제수지: "13103134519999"}
+    facts:
+      - "단위 백만달러, 원계열. 1980.01 ~ 수록. 계절조정은 301/DT_301Y017 (조회 미확인). 2026.08 경상수지 46,113"
+    verified: "2026-10-12"
+
+  - id: "101/DT_1AG25102"
+    name: 전·겸업별 농가 (2025 농림어업총조사)
+    periods: [F]
+    axes:
+      - flag: --class1
+        name: 행정구역별
+        codes: {전국: "00"}
+      - flag: --class2
+        name: 특성별
+        codes: {계: "000"}
+    items: {농가: T00}
+    facts:
+      - "2025 전국 농가 1,241,730가구 (-p F). 추이표 101/DT_1NG0001 은 T20 개인농가만 값이 있고 T10·T40 은 비어 있다. 2020(1,035,193)→2025 증가가 커 정의 변경 여부를 ex 로 확인하고 밝힌다"
+    verified: "2026-10-12"
+
+  - id: "101/DT_2KI2001"
+    name: 산업별 총괄 (2020 경제총조사)
+    periods: [F]
+    axes:
+      - flag: --class1
+        name: 산업별
+        codes: {전산업: "0"}
+    items: {사업체수: T10}
+    facts:
+      - "2020 기준 전국 사업체수 6,032,022 (-p F). 2015 는 DT_1KI* 표. 5년 주기, 공표는 조사기준 년의 익익년 — 2025 기준은 아직 없을 수 있다"
+      - "단위 칸이 '개명백만원'(표 단위 이어 붙임) — 사업체수는 개"
+    verified: "2026-10-12"
+
+  - id: "101/DT_3KB9001"
+    name: 시도/산업별 총괄 (서비스업조사)
+    periods: [Y]
+    axes:
+      - flag: --class1
+        name: 시도별
+        codes: {전국: "00"}
+      - flag: --class2
+        name: 산업별
+        codes: {합계: "0", 도매 및 소매업: G}
+    items: {매출액: T03}
+    facts:
+      - "대분류는 11개(E·G·I·J·L·M·N·P·Q·R·S) — 운수·금융은 없다. -c2 ALL 은 중분류가 섞이니 대분류 코드를 나열하거나 m --level 1. 단위 백만원. 2024 도매 및 소매업 1,719,516,835"
+      - "검색('서비스업조사 주요지표')에 잘 안 나온다 — 이 id 로 바로"
+    verified: "2026-10-12"
+
+  - id: "142/DT_BR_A008"
+    name: 시군구별·산업대분류별·기업규모별 기업수 (중소기업기본통계)
+    periods: [Y]
+    axes:
+      - flag: --class1
+        name: 지역
+        codes: {전국: "15142N.00"}
+      - flag: --class2
+        name: 산업
+        codes: {전산업: "15142700"}
+      - flag: --class3
+        name: 기업규모
+        codes: {소상공인: "16142T2524", 전체기업: "16142T209", 중소기업: T002, 소기업: T004, 중기업: T001, 중소기업 외: T003}
+    items: {기업수: T001}
+    facts:
+      - "중소기업 2023 8,298,915 (= 소기업 8,163,704 + 중기업 135,211). 2023 은 전체기업·중소기업 외 행이 없다(2022 까지). 기업규모 T001(중기업)과 항목 T001(기업수)은 다른 축"
+      - "소상공인 기업수 2023 7,906,861 (2022 7,656,718). 형제 표: B008 종사자수, C008 매출액. 표 이름에 '소상공인'이 없어 검색에 안 걸린다"
+    verified: "2026-10-12"
+
+  - id: "118/DT_118N_MOND66"
+    name: 산업별 종사자수 (사업체노동력조사)
+    periods: [M, Q, H, Y]
+    axes:
+      - flag: --class1
+        name: 지역별
+        codes: {전국: ZONE2017A000000}
+      - flag: --class2
+        name: 산업분류
+        codes: {}
+    items: {종사자_전체: emp001}
+    facts:
+      - "1인 이상 사업체 표본조사(5만개). 2025 제조업 3,758,196명. 전국사업체조사(101/DT_1K52F01 T2, 전수)와 값·순위가 다르다 — 어느 조사인지 밝힌다"
+    verified: "2026-10-12"
+
+  - id: "142/DT_142N_F204"
+    name: 창업기업동향 (지역별)
+    periods: [M, Q, H, Y]
+    axes:
+      - flag: --class1
+        name: 지역별
+        codes: {}
+    items: {전체: "16142T1"}
+    facts:
+      - "2025 전국 창업기업 1,135,561 (101/DT_1YL20551E_1 과 같음). 2016~2025. 2026 은 형제 표 142/DT_142N_G204 (연도별로 표가 나뉜다 — 끝 시점이 지난 표면 다음 글자 표를 찾는다)"
+    verified: "2026-10-12"
+
+  - id: "101/DT_1B41"
+    name: 간이생명표 (5세별)
+    periods: [Y]
+    axes:
+      - flag: --class1
+        name: 연령별
+        codes: {0세: "01"}
+    items: {기대여명(전체): T6, 기대여명(남자): T16, 기대여명(여자): T26}
+    facts:
+      - "기대수명 = 0세(코드 01, 이름 '0') 기대여명. 2024 전체 83.7·남 80.8·여 86.6. 101/INH_1B8000F_02 (-c1 61·62·63) 도 같은 값, 거기 2025 행은 '-'"
+    verified: "2026-10-12"
+
+  - id: "101/DT_1YL21121E"
+    name: 인구십만명당 자살률 (시도/시/군/구, e-지방지표)
+    periods: [Y]
+    axes:
+      - flag: --class1
+        name: 성별
+        codes: {계: "0"}
+      - flag: --class2
+        name: 행정구역별
+        codes: {전국: "00"}
+    items: {자살률: T4}
+    facts:
+      - "축 순서가 성별(-c1) → 지역(-c2). 2025 전국 27.8, 충남 35.7, 제주 34.8, 강원 31.8"
+    verified: "2026-10-12"
+
+  - id: "112/DT_15407_NN001"
+    name: 어린이집 설치현황 (전국)
+    periods: [Y]
+    axes:
+      - flag: --class1
+        name: 구분
+        codes: {합계: "01"}
+    items: {어린이집 설치현황: A}
+    facts:
+      - "2025 26,064개소 (2024 27,387). 시도별은 NN003"
+    verified: "2026-10-12"
+
+  - id: "117/DT_117N_B00003"
+    name: 노인복지시설 현황
+    periods: [Y]
+    axes:
+      - flag: --class1
+        name: 시설종류
+        codes: {총계: A}
+    items: {시설수: "217001"}
+    facts:
+      - "2025 총계 97,232개소 = B~H 그룹 합 (노인보호전문기관·일자리지원기관·학대피해 쉼터 포함, 주거·의료·여가·재가 4종만은 96,949). 하위 코드와 ALL 을 함께 더하면 중복"
+    verified: "2026-10-12"
+
+  - id: "177/DT_11702_N001"
+    name: 현재흡연율 추이 (국민건강영양조사, 질병관리청)
+    periods: [Y]
+    axes:
+      - flag: --class1
+        name: 성별
+        codes: {전체: "1", 남자: "2", 여자: "3"}
+      - flag: --class2
+        name: 연령
+        codes: {19세이상: "101", 19세이상(표준화): "103"}
+    items: {분율: T20}
+    facts:
+      - "2024 19세 이상 남 28.0·여 3.8·전체 15.9 (%), 표준화 남 28.5·여 4.2. 시군구는 지역사회건강조사 DT_H_SM*"
+    verified: "2026-10-12"
+
+  - id: "322/DT_32202_A015"
+    name: 지역별·급여종류별 국민연금 수급자수 (국민연금공단)
+    periods: [Y]
+    axes:
+      - flag: --class1
+        name: 지역별
+        codes: {합계: 11101HJG00}
+      - flag: --class2
+        name: 급여종류별
+        codes: {계: 15322AA800, 노령연금: 15322AA8AB}
+    items: {수급자수: 16322AAA2}
+    facts:
+      - "2025 계 7,935,170명 (일시금 포함, 연금만 7,699,829). 동순위 수급자를 급여종류마다 센다"
+    verified: "2026-10-12"
+
+  - id: "117/DT_11761_N005"
+    name: 시도별·장애유형별·성별 등록장애인수
+    periods: [Y]
+    axes:
+      - flag: --class1
+        name: 시도별
+        codes: {전국: "00"}
+      - flag: --class2
+        name: 장애유형별
+        codes: {합계: CHUT0}
+      - flag: --class3
+        name: 성별
+        codes: {계: TT}
+    facts:
+      - "2025 전국 2,627,761명, 경기 591,698, 서울 384,934, 경남 186,926"
+    verified: "2026-10-12"
+
+  - id: "350/TX_35001_A001"
+    name: 건강보험 적용인구 현황 (국민건강보험공단)
+    periods: [Y]
+    axes:
+      - flag: --class1
+        name: 적용인구현황별
+        codes: {의료보장: A, 건강보험: B, 의료급여: G}
+    items: {적용인구: T01}
+    facts:
+      - "2024 건강보험 51,439,246명, 의료보장 52,999,168 = 건강보험 + 의료급여(1,559,922). 2024 까지 수록"
+    verified: "2026-10-12"
+
+  - id: "344/DT_344N_1D8B_BB"
+    name: 부가가치 노동생산성지수 (한국생산성본부, 2015=100)
+    periods: [Q, Y]
+    axes:
+      - flag: --class1
+        name: 산업별
+        codes: {비농전산업: AL, 제조업: C, 광공업: BCD, 서비스업: TS}
+    items: {부가가치 노동생산성지수: T001}
+    facts:
+      - "2025 비농전산업 110.789, 제조업 122.282. 노동생산성지수는 표가 둘 — 산업생산 기준 344/DT_344N_1D8A_AA (전산업 코드 TOTAL, 2025 비농전산업 112.161·제조업 117.528). 답에 어느 쪽인지 밝힌다"
+    verified: "2026-10-12"
+
+  - id: "101/DT_1HDALF05"
+    name: 소득분배지표 (가계금융복지조사)
+    periods: [Y]
+    axes:
+      - flag: --class2
+        name: 분배지표별
+        codes: {지니계수: "10", 상대적 빈곤율(중위소득 50%): "90", 상대적 빈곤율(60%): "93"}
+    items: {시장소득: T001, 처분가능소득: T002}
+    facts:
+      - "상대적 빈곤율 기본은 중위소득 50%(90). 2024 시장소득 50% 20.9·60% 25.8, 처분가능소득 50% 15.3·60% 21.3"
+      - "분류 축이 -c2 하나뿐 (축 번호 2부터, 1번 축 없음). v0.5.26+ -c2 만 주면 kosis 가 -c1 ALL 을 채운다 (전에는 -c1 필수·분류 열이 사라졌다)"
+      - "2024 처분가능소득 지니계수 0.325, 상대적 빈곤율 15.3%. 2011~2024"
+    verified: "2026-10-12"
+
+  - id: "301/DT_404Y014"
+    name: 생산자물가지수 (기본분류, 한국은행, 2020=100)
+    periods: [M]
+    axes:
+      - flag: --class1
+        name: 계정코드별
+        codes: {총지수: "13102134604ACC_CD.*AA"}
+    items: {생산자물가지수: "13103134604999"}
+    facts:
+      - "총지수 코드에 별표(*)가 글자로 들어 있다 — 와일드카드가 아니다. 등락률 항목이 없어 --change yoy -l 13 로 계산. 2026.08 전년동월비 +7.93%"
+    verified: "2026-10-12"
+
+  - id: "118/DT_118N_MON051"
+    name: 산업·규모별 임금 및 근로시간 (사업체노동력조사, 2020~2025)
+    periods: [M, Q, H, Y]
+    axes:
+      - flag: --class1
+        name: 산업분류
+        codes: {전체: "190326INDUSTRY_10S0"}
+      - flag: --class2
+        name: 규모별
+        codes: {5인 이상: size02}
+    items: {상용총근로시간: 13103110311MD_8, 소정실근로시간: 13103110311MD_9, 초과근로시간: 13103110311MD_10}
+    facts:
+      - "2025 상용 5인 이상 월 총근로시간 162.3시간 (소정실 152.8 + 초과 9.5). 규모 이름이 ' -5인이상' 처럼 앞에 공백·하이픈 — 범위가 아니라 5인 이상. 118/DT_118N_MON059 는 2022 에서 끝"
+      - "2026 은 형제 표 118/DT_118N_MON054 — 산업 코드 접두사가 다르다(190326INDUSTRY_10… vs 260225INDUSTRY_11…). 표마다 m 으로 코드 확인. 2025 상용 임금총액 4,471,783원(전년비 +3.09%)"
+    verified: "2026-10-13"
+
+  - id: "132/DT_V_MOTA_016"
+    name: 시도별 교통사고 (경찰청)
+    periods: [Y]
+    axes:
+      - flag: --class1
+        name: 시도별
+        codes: {}
+      - flag: --class2
+        name: 월별
+        codes: {전체: "13102112880M00"}
+    items: {사망자수: "13103112880NO_DEATH"}
+    facts:
+      - "전국 합계 행이 없다 — 17개 시도를 더한다. 2025 사망자 2,549명 (132/DT_V_MOTA_011 주 1,470 + 야 1,079 와 같음). 검색 결과의 END_PRD_DE 는 2024 로 나오지만 2025 값이 있다"
+      - "월 코드는 긴 코드 그대로 (M00 만 쓰면 [21] — v0.5.26+ 진단이 '혹시 13102112880M00 ?')"
+    verified: "2026-10-12"
+
+  - id: "116/DT_MLTM_962"
+    name: 시·도별 도로현황 (국토교통부)
+    periods: [Y]
+    axes:
+      - flag: --class1
+        name: 구분 (시도)
+        codes: {}
+      - flag: --class2
+        name: 레벨01 (도로 종류)
+        codes: {전체: "13102127956B.0001"}
+    items: {총계(연장 m): "13103127956T1"}
+    facts:
+      - "-c2 전체를 안 주면 시도마다 도로 종류별 여러 행. 2025 전국 총연장 116,774,775 m, 경기 16,285,354, 경북 13,524,250, 경남 13,312,744. 단위 칸 'm, %' 는 표 전체"
+    verified: "2026-10-12"
+
+  - id: "106/DT_106N_99_2800021"
+    name: 국가 온실가스 종류별 배출량 추이 (기후에너지환경부)
+    periods: [Y]
+    facts:
+      - "2023 총배출량 707.2 백만t CO2eq, 순배출량 667.77. 1990~2023. 's 온실가스' 일반 검색엔 안 나오고 --org 환경부(→106) 로 나옴"
+    verified: "2026-10-12"
+
+  - id: "106/DT_106N_29_2020005"
+    name: 생활폐기물 발생 및 처리 현황 (기후에너지환경부)
+    periods: [Y]
+    axes:
+      - flag: --class1
+        name: 구분
+        codes: {전국 합계: "13102134417A.50002"}
+      - flag: --class2
+        name: 항목별
+        codes: {발생량: "13102134417T.10001"}
+    items: {값: "13103134417I119"}
+    facts:
+      - "2024 생활폐기물 발생량 17,045,141.1 톤/년 (1일 평균 항목 없음). 2020~2024"
+    verified: "2026-10-12"
+
+  - id: "106/DT_106N_06_0100042"
+    name: 상수도 보급현황 총괄 (기후에너지환경부)
+    periods: [Y]
+    facts:
+      - "2024 지방·광역상수도 보급률 98.0%, 마을상수도 포함 급수보급률 99.5% — 어느 보급률인지 밝힌다. 단위 칸 빈 칸(%). 2008~2024"
+    verified: "2026-10-12"
+
+  - id: "116/DT_MLTM_1948"
+    name: 주택건설 인허가실적 (국토교통부, 월)
+    periods: [M]
+    axes:
+      - flag: --class1
+        name: 시도명
+        codes: {전국: "13102871090A.0001"}
+      - flag: --class2
+        name: 대분류
+        codes: {합계(동수기준): "13102871090B.0001", 합계(가구수기준): "13102871090B.0002"}
+      - flag: --class3
+        name: 중분류
+        codes: {합계(동수기준): "13102871090C.0001", 합계(가구수기준): "13102871090C.0002"}
+      - flag: --class4
+        name: 소분류
+        codes: {합계(동수기준): "13102871090D.0001", 합계(가구수기준): "13102871090D.0002"}
+    facts:
+      - "월 값은 연초부터의 누계(주석: 당해년도 해당 월까지의 누계). 그 달 값 = 이번 달 누계 − 지난달 누계. --change yoy 는 누계끼리 비교(2026.08 −4.47%). v0.5.26+ --change 가 누계 주석을 경고"
+      - "합계가 둘: 동수기준(.0001)·가구수기준(.0002) — 둘 다 단위 칸은 '호'. '호수' 질문은 가구수기준. 2026.08 그 달 값: 가구수기준 22,058 (전년동월 17,833, +23.7%), 동수기준 21,607 (17,203, +25.6%). (2026-10-13 정정: 전에는 합계 코드를 .0001 만 적고 숫자는 가구수기준을 적어 서로 맞지 않았다)"
+    verified: "2026-10-12"
+
+  - id: "116/DT_MLTM_5386"
+    name: 주택 착공실적 (월계, 국토교통부)
+    periods: [M]
+    axes:
+      - flag: --class1
+        name: 구분
+        codes: {총계: "13102766971A.0001"}
+      - flag: --class2
+        name: 부문명
+        codes: {총계: "13102766971B.0001"}
+      - flag: --class3
+        name: 시도별
+        codes: {전국: "13102766971C.0001"}
+    items: {착공: "13103766971T1"}
+    facts:
+      - "2026.08 전국 18,013호, 전년동월 16,483 (+9.28%, --change yoy). 코드 접두사가 인허가 표(13102871090…)와 다르다"
+      - "월간만 — 연간은 12개월을 더한다(2025 272,162호). 2026 은 8월까지"
+    verified: "2026-10-12"
+
+  - id: "408/DT_PLCAHTUSE"
+    name: 지가변동률 (시군구별/용도지역별, 한국부동산원)
+    periods: [M, Q]
+    facts:
+      - "월(2005.01~)·분기(1987~2004)만, 연간 행 없음 — 연간은 월 변동률을 복리 누적해 계산하고 밝힌다. 시도 목록에 옛 직할시 코드(21~25, 49)가 섞여 있다. 2026.07 부터 광주·전남은 통합시(12) 아래"
+    verified: "2026-10-12"
+
+  - id: "101/DT_1YL15001"
+    name: 학급당 학생수 (초등학교, e-지방지표)
+    periods: [Y]
+    axes:
+      - flag: --class1
+        name: 행정구역별
+        codes: {전국: "00"}
+    items: {학급당 학생수: T003}
+    facts:
+      - "2026 전국 18.59명 (2025 19.31 = 334/DT_1963003_002 학생수 ÷ 학급수). 334 표보다 한 해 더 최신"
+    verified: "2026-10-12"
+
+  - id: "113/DT_113_STBL_1028308"
+    name: 공공도서관 현황 (문화체육관광부)
+    periods: [Y]
+    axes:
+      - flag: --class1
+        name: 지역 (실제로는 지표 목록)
+        codes: {도서관 수: "131021253111.001"}
+    items: {값: "13103125311T1"}
+    facts:
+      - "분류 축 이름이 '지역'이지만 실제로는 지표 28개 목록이다. 2024 공공도서관 1,296개관 (지자체 1,034 + 교육청 234 + 사립 28). 단위 칸 빈 칸, 결산 예산 단위가 2021 부터 백만원→천원"
+    verified: "2026-10-12"
+
+  - id: "314/DT_SEX_DEP_AGG_MONTH"
+    name: 성별 출국자 (한국관광공사)
+    periods: [M, Y]
+    axes:
+      - flag: --class1
+        name: 성별
+        codes: {계: "13102314008A.1"}
+    items: {내국인출국: "13103314008T01"}
+    facts:
+      - "2025 내국인 출국자 29,550,177명 (승무원 1,809,012 포함). -p Y 의 2026 값은 1~8월 누계(부분 연도) — v0.5.26+ d 가 부분 연도 경고"
+    verified: "2026-10-12"
+
+  - id: "110/DT_110001_A034"
+    name: 박물관 및 미술관 수 (한국도시통계)
+    periods: [Y]
+    axes:
+      - flag: --class1
+        name: 지역
+        codes: {전국: A001}
+      - flag: --class2
+        name: 구분
+        codes: {박물관 계: H001}
+    facts:
+      - "2023 한 해만 수록 — 전국 박물관 891 (국공립 437, 사립 354). 미술관은 H005~H008. 101/DT_1YL20931 은 문화기반시설 전체(2024 3,337) — 박물관 수가 아니다"
+    verified: "2026-10-12"
+
+  - id: "101/DT_1PE201"
+    name: 학교급별 학생 1인당 월평균 사교육비 (초중고사교육비조사)
+    periods: [Y]
+    axes:
+      - flag: --class1
+        name: 과목 및 유형
+        codes: {대상분포(%): "00", 사교육비: "10"}
+    items: {평균: T01}
+    facts:
+      - "2025 초중고 평균 45.75만원 (2024 47.41). 학교급별 초 43.25·중 46.09·고 49.90. 단위 만원"
+    verified: "2026-10-13"
+
+  - id: "101/DT_2KAAA14"
+    name: 외래 관광객 및 해외 관광객 (국제통계연감)
+    periods: [Y]
+    axes:
+      - flag: --class1
+        name: 국가별
+        codes: {대한민국: "1005"}
+    items: {외래 관광객: T1, 해외 관광객: T2}
+    facts:
+      - "방한 외래관광객 2024 16,400 (천명). 1999~2024, 2022 행 없음. 이름이 '한국'이 아니라 '대한민국' (--find 대한민국). 한국관광공사 314 입국 표는 월간만"
+    verified: "2026-10-13"
+
+  - id: "101/DT_1DA7004S"
+    name: 시도별 경제활동인구 총괄
+    periods: [M, Q, Y]
+    axes:
+      - flag: --class1
+        name: 시도별
+        codes: {}
+    items: {실업률: T80, 고용률: T90}
+    facts:
+      - "실업률·고용률이 한 표에. 2025 실업률 서울 3.4(고용률 61.5), 대구·광주 3.3 동률, 인천 3.2"
+    verified: "2026-10-13"
+
+  - id: "101/DT_1ET0221"
+    name: 미곡생산량 (백미 92.9%, 농작물생산조사)
+    periods: [Y]
+    axes:
+      - flag: --class1
+        name: 시도별
+        codes: {계: "00"}
+    items: {합계 생산량: T06}
+    facts:
+      - "2025 전국 3,539,432.6551 톤. 101/DT_1ET0021 T12 미곡:생산량도 같은 값. 쌀은 「미곡」으로 검색"
+    verified: "2026-10-13"
+
+  - id: "101/DT_1EB001"
+    name: 전국(도별) 논밭별 경지면적 (농업면적조사)
+    periods: [Y]
+    axes:
+      - flag: --class1
+        name: 시도별
+        codes: {전국: "00"}
+      - flag: --class2
+        name: 전답별
+        codes: {계: "0", 논: "1", 밭: "2"}
+    items: {경지면적: T1}
+    facts:
+      - "2025 전국 1,499,910.5338 ha (논 755,951.9146, 밭 743,958.6192). 시군별은 DT_1EB002"
+    verified: "2026-10-13"
+
+  - id: "101/DT_1EO200"
+    name: 축종별 시도별 농장수 및 마리수 (가축동향조사, 분기)
+    periods: [Q]
+    axes:
+      - flag: --class1
+        name: 시도별
+        codes: {전국: "00"}
+    items: {한육우 마리수: T12, 한육우 농장수: T11, 한우 마리수: T02, 육우 마리수: T04, 젖소 마리수: T06}
+    facts:
+      - "2026 2분기 전국 한육우 3,289,484마리 = 한우 3,153,897 + 육우 135,587 (젖소 364,769 는 따로). 단위 칸 '농장 마리' 는 표 전체 단위 — 마리수 항목은 마리"
+    verified: "2026-10-13"
+
+  - id: "101/DT_1A02008"
+    name: 시도별(시군별) 가구원수별 귀농가구 (귀농어·귀촌인통계)
+    periods: [Y]
+    axes:
+      - flag: --class1
+        name: 시도별(시군별)
+        codes: {전국: "00"}
+      - flag: --class2
+        name: 가구원수별
+        codes: {계: "00"}
+    items: {가구수: T01}
+    facts:
+      - "2025 전국 8,735가구 (상위 전남 1,633, 경북 1,534, 충남 1,134). 서울·광주·대전은 행이 없다(읍면 전입 기준). DT_1A02002 등 '귀농가구원'은 사람 수라 다른 지표"
+    verified: "2026-10-13"
+
+  - id: "101/DT_1EA1501"
+    name: 농가소득 (농가경제조사, 2인 이상 농가)
+    periods: [Y]
+    axes:
+      - flag: --class1
+        name: 구분
+        codes: {평균: "000"}
+    items: {농가소득: T100}
+    facts:
+      - "2025 54,667.48451 천원. 1인 이상 농가 보조지표는 101/DT_1SA1501 (2025 46,892.95 천원) — 검색 결과 이름만으로는 구분 안 됨, ex 로 모집단 확인"
+    verified: "2026-10-13"
+
+  - id: "101/DT_1AG25203"
+    name: 국적·성별 농가 인구 (2025 농림어업총조사)
+    periods: [F]
+    axes:
+      - flag: --class1
+        name: 행정구역별
+        codes: {전국: "00"}
+      - flag: --class2
+        name: 특성별
+        codes: {계: "000"}
+    items: {농가 인구: T00}
+    facts:
+      - "2025 전국 2,506,639명, 시도 상위 경북 362,065·경기 348,956·전남 286,735. 행정구역 축에 동부·읍부·면부(03~05)가 섞여 있어 시도 순위는 m --level 1 의 -c1 을 쓴다. 2024 표본조사(INH_1EA1011_01, 2,003,520)와 잇지 않는다. 연령 구간은 같은 조사 DT_1AG25201 -c2 Y70+Y75+Y80+Y85+Y90 (65세 이상 51.28%, d --ratio Y70+…+Y90/000)"
+    verified: "2026-10-13"
+
+  - id: "101/DT_1FS000"
+    name: 해수면 어가 및 어가인구 추이 (농림어업총조사)
+    periods: [F]
+    axes:
+      - flag: --class1
+        name: 행정구역별
+        codes: {전국: "00"}
+    items: {어가: T00}
+    facts:
+      - "2025 해수면 47,443가구 + 내수면(101/DT_1FI000 T00) 2,928 = 어가 50,371 — 합계 표 없음, 두 표를 더하고 밝힌다. 어가인구는 T01 (해수면 94,643 + 내수면 6,512 = 101,155명). 101/INH_1ZB7001 은 해수면만·2024 에서 끝(40,890, 표본조사)"
+    verified: "2026-10-13"
+
+  - id: "133/TX_13301_A075"
+    name: 연도별·세목별 세수 현황 (국세청)
+    periods: [Y]
+    items: {징수액: 16133AAB1}
+    facts:
+      - "합계가 셋 — 국세청 총징수액 15133SMB000 (2025 399,178,888 백만원, 지방소비세 이체액 15133SMB000A 28,183,104 등 포함), 국세청 세수 15133SMB00 (365,051,887), 133/DT_13301_000 국세 15133SGB01 (3,739,193 억원). 질문의 '국세 수입' 이 어느 것인지 밝히고 정의가 다르다고 적는다"
+    verified: "2026-10-13"
+
+  - id: "101/DT_1YL20921"
+    name: 재정자립도 (시도/시/군/구, e-지방지표)
+    periods: [Y]
+    items: {재정자립도 세입과목개편후: T20}
+    facts:
+      - "2026 시도 하위 전북 23.32·경북 23.54·강원 24.95 (%). 2026 은 전남광주 통합 코드 12 에 값이 없고 하위 1224 광주·1236 전남에 있다 — 시도 순위 -c1 은 11+21+22+23+25+26+29+31+32+33+34+35+37+38+39+1224+1236. T10 은 개편 전 기준"
+    verified: "2026-10-13"
+
+  - id: "301/DT_161Y006"
+    name: M2 상품별 구성내역 (평잔, 원계열, 한국은행)
+    periods: [M]
+    axes:
+      - flag: --class1
+        name: 계정항목별
+        codes: {M2 평잔 원계열: "13102852603ACC_ITEM.BBHA00"}
+    items: {M2: "13103852603999"}
+    facts:
+      - "2026.07 4,223,409.97 십억원 (약 4,223조). 같은 축의 BBHA16 '[참고] 구 M2' (4,794,970) 를 쓰지 않는다. DT_161Y005·DT_161Y009 는 계절조정 계열"
+    verified: "2026-10-13"
+
+  - id: "184/DT_102006_001"
+    name: 국가채무 (D1) 및 GDP 대비 비율
+    periods: [Y]
+    axes:
+      - flag: --class1
+        name: 채무내역별
+        codes: {국가채무: A01, GDP 대비: A02}
+    items: {국가채무 D1: T001}
+    facts:
+      - "2025 1,305.2 조원, GDP 대비 48.8%"
+    verified: "2026-10-13"
+
+  - id: "101/DT_2IFS011"
+    name: 국내 통화 환율 (IMF 국제통계)
+    periods: [M]
+    axes:
+      - flag: --class1
+        name: 국가
+        codes: {대한민국: "1005"}
+      - flag: --class2
+        name: 산출방식
+        codes: {기간평균: B2}
+    items: {USD당 국내 통화: T004}
+    facts:
+      - "2026.08 원/달러 월평균 1,406.3 (단위 칸 비어 있음 — 원/달러). 한국은행 환율 표 301/DT_036Y001~006 은 2014 에서 끝"
+    verified: "2026-10-13"
+
+  - id: "301/DT_121Y006"
+    name: 예금은행 가중평균금리 (대출, 신규취급액 기준)
+    periods: [M]
+    axes:
+      - flag: --class1
+        name: 계정항목별
+        codes: {가계대출: "13102134553ACC_ITEM.BECBLA03"}
+    items: {대출금리 신규취급액: "13103134553999"}
+    facts:
+      - "2026.08 가계대출 연 4.76% (최종월 잠정치 — 주석). 분류ID 13101… 와 코드 접두사 13102… 가 다르니 코드는 m 출력에서 복사"
+    verified: "2026-10-13"
+
+  - id: "110/TX_11007_A074"
+    name: 지방자치단체별 징수실적 총괄 (지방세통계, 행정안전부)
+    periods: [Y]
+    items: {징수액: 16110AAW3}
+    facts:
+      - "축 자치단체별: 합계 15110AA300, 서울 15110AA3Ac, 지방 15110AA3Ak00 아래 부산 AkAA ~ 제주 AkAO (세종 AkAF0). 서울만 '지방' 밖이라 m --level 로 시도 17개가 한 번에 안 나온다 — -c1 에 서울 + 지방 하위 16개. 2024 징수액(천원) 경기 28,284,846,997·서울 27,366,857,111·경남 6,704,205,001·부산 6,681,018,424, 합계 114,085,366,173"
+    verified: "2026-10-13"
+
+  - id: "343/DT_343_2010_S0027"
+    name: 코스피 지수 (한국거래소)
+    periods: [M]
+    axes:
+      - flag: --class1
+        name: 주가구분별
+        codes: {연월말: "13102792814A.02", 평균: "13102792814A.05"}
+    facts:
+      - "2026.08 연월말 6,820.02, 평균 6,633.05. 단위 칸 비어 있음(지수). 2026.06 연월말 8,476.48 → 07 6,595.45 는 원본 값 그대로"
+    verified: "2026-10-13"
+
+  - id: "101/DT_1BB0001"
+    name: 다문화 혼인 (성별·유형별)
+    periods: [Y]
+    axes:
+      - flag: --class1
+        name: 성별
+        codes: {남자: "1", 여자: "2"}
+      - flag: --class2
+        name: 유형별
+        codes: {계: "0"}
+    facts:
+      - "2024 다문화 혼인 21,450건 (남자·여자 행이 같은 값 — 한 쌍씩 센다). 성별 계(0) 조합은 [30] 이니 남자 행을 쓴다. 2008~2024 만 — 전체 혼인(101/DT_1B8000G 20) 은 2025 까지라 비율은 같은 해(2024 222,412건 → 9.6%)로 맞춘다"
+    verified: "2026-10-13"
+
+  - id: "101/DT_1B83A05"
+    name: 평균 초혼연령 (시도)
+    periods: [Y]
+    axes:
+      - flag: --class1
+        name: 시도별
+        codes: {전국: "00"}
+    items: {남편: T1, 아내: T2}
+    facts:
+      - "2025 전국 남편 33.85세, 아내 31.62세"
+    verified: "2026-10-13"
+
+  - id: "101/DT_1B28025"
+    name: 국제이동 (내외국인·성·연령별)
+    periods: [Y]
+    axes:
+      - flag: --class1
+        name: 내외국인별
+        codes: {계: "0", 내국인: "1", 외국인: "2"}
+      - flag: --class2
+        name: 성별
+        codes: {계: "0"}
+      - flag: --class3
+        name: 연령별
+        codes: {계: "000"}
+    items: {국제순이동: T10, 입국자: T20, 출국자: T30}
+    facts:
+      - "2025 순이동 계 74,382 (내국인 24,446, 외국인 49,936), T10 = T20 − T30. 90일 넘는 이동만. 단위 칸 비어 있음(명)"
+    verified: "2026-10-13"
+
+  - id: "111/DT_1B040A5A"
+    name: 국적(지역)·체류자격별 체류외국인 현황 (법무부)
+    periods: [Y]
+    axes:
+      - flag: --class2
+        name: 성별
+        codes: {계: "13102870964B.0"}
+      - flag: --class3
+        name: 체류자격별
+        codes: {합계: AAB000}
+    items: {체류외국인: T01}
+    facts:
+      - "국적 순위는 -c1 level:2 (대륙 계 제외 국적 220개) --sort desc --top N. 2025 말: 한국계중국인 643,403, 중국 337,267, 베트남 337,183 (84명 차) — 한국계중국인(AAC003)이 중국과 다른 행이라 '중국' 순위는 합산 여부를 밝힌다"
+    verified: "2026-10-13"
+
+  - id: "101/DT_1DE7106S"
+    name: 비정규직 근로자 규모 및 비중 (경제활동인구조사 근로형태별 부가조사)
+    periods: [M]
+    axes:
+      - flag: --class1
+        name: 구분
+        codes: {계: "0"}
+    items: {비정규직 비중: T21}
+    facts:
+      - "8월 부가조사만 (연 1회) — 2025.08 38.2%. 2026.08 값은 보통 10월 말 공표. 같은 조사의 월평균임금은 101/DT_1DE7108S (2025.08 정규 389.6만원·비정규 208.8만원)"
+    verified: "2026-10-13"
+
+  - id: "118/DT_118N_LCE0007"
+    name: 고용형태별 임금·근로시간 (고용형태별근로실태조사)
+    periods: [Y]
+    axes:
+      - flag: --class1
+        name: 고용형태
+        codes: {정규근로자: "13102732820TYPES.02", 비정규근로자: "13102732820TYPES.03"}
+      - flag: --class2
+        name: 규모
+        codes: {전체: "13102732820SIZES.0"}
+    items: {시간당임금총액: 16118DD_11, 월임금총액: 16118DD_10}
+    facts:
+      - "2025(6월 기준) 시간당 정규 28,599원·비정규 18,635원. 주석: 정규·비정규 임금 비교는 시간당 임금으로. 경활 부가조사(101/DT_1DE7108S) 월평균임금과 다른 조사라 섞어 비교하지 않는다"
+    verified: "2026-10-13"
+
+  - id: "118/DT_11806_N014"
+    name: 산업재해 사망재해 현황 (산업재해현황)
+    periods: [Y]
+    axes:
+      - flag: --class1
+        name: 구분
+        codes: {총계: 15118AI700}
+      - flag: --class2
+        name: 구분2
+        codes: {계: 11101SSB20}
+    items: {사망자: 16118AAD6}
+    facts:
+      - "2024 사망재해 2,098명 (사고 + 업무상질병; 업무상질병 사망은 DT_11806_N052 1,271). '사고사망자' 는 다른 집계 118/DT_118006_002 T001 (2024 742, 발생보고 기준) — 어느 기준인지 밝힌다"
+    verified: "2026-10-13"
+
+  - id: "101/DT_CC2024A001"
+    name: 전체 육아휴직자 (시작일 기준, 육아휴직통계)
+    periods: [Y]
+    axes:
+      - flag: --class1
+        name: 성별
+        codes: {계: ALL}
+    items: {육아휴직자: H1}
+    facts:
+      - "2024 206,226명 (부 60,117, 모 146,109). 공무원·군인 제외. 'DT_CC2024B002' 는 그해 출생아 부모 중 육아휴직자(96,810) — 모집단이 다르다"
+    verified: "2026-10-13"
+
+  - id: "101/DT_1DA7147S"
+    name: 연령·활동상태별 비경제활동인구 (쉬었음, 경제활동인구조사)
+    periods: [M]
+    axes:
+      - flag: --class1
+        name: 연령계층별
+        codes: {계: "00", 15~29세: "75"}
+      - flag: --class2
+        name: 활동상태별
+        codes: {쉬었음: "905"}
+    items: {인구: T50}
+    facts:
+      - "2026.08 15~29세 쉬었음 395.2천명 (원계열; 계절조정은 101/DT_1DA9011S)"
+    verified: "2026-10-13"
+
+  - id: "101/DT_1DA7E06S_NEW"
+    name: 산업별 취업자 (표준산업분류 11차, 경제활동인구조사)
+    periods: [M]
+    items: {취업자: T30}
+    facts:
+      - "대분류 A~U = -c1 01+05+10+35+37+41+45+49+55+58+64+68+70+74+84+85+86+90+94+97+99 (00·04·30·42~44 합계성 코드가 같은 축에 섞여 level:1 은 안 됨). 2013.01~. 10차 표 101/DT_1DA7E06S 는 2024 에서 끝 — 검색에 먼저 나온다. 증감 순위: -l 13 --change yoy --sort desc --top 3 → 2026.08 보건·복지 +185.5, 예술·스포츠 +73.2, 사업시설관리 +44.7 (천명)"
+    verified: "2026-10-13"
+
+  - id: "101/DT_1HDAAA04"
+    name: 가구원수별 자산·부채·소득 현황 (가계금융복지조사)
+    periods: [Y]
+    axes:
+      - flag: --class1
+        name: 부채보유 여부별
+        codes: {전체: A0100}
+      - flag: --class2
+        name: 가구원수별
+        codes: {전체: B0600}
+      - flag: --class3
+        name: 자산 부채 소득 분류별
+        codes: {자산: C05, 부채: C06, 순자산액: C08}
+    items: {전가구 평균: T01}
+    facts:
+      - "2025 가구당 평균 자산 56,677.5 · 부채 9,533.8 · 순자산 47,143.7 (만원). 가구주 연령대별은 101/DT_1HDAAA06 (-c2 B1601~B1605, 2025 부채 29세 이하 4,703 ~ 40대 14,325)"
+    verified: "2026-10-13"
+
+  - id: "116/DT_MLTM_6909"
+    name: (일반가구) 행정구역별 점유형태 (주거실태조사)
+    periods: [Y]
+    axes:
+      - flag: --class1
+        name: 시도구분
+        codes: {전국: "13102135576A.0001"}
+    items: {계: "13103135576T1", 자가: "13103135576T2", 임차: "13103135576T3", 무상: "13103135576T4"}
+    facts:
+      - "2024 전국 자가 58.4% — 자가'점유'율(자기 집에 사는 가구). 자가'보유'율(집을 가진 가구)과 다르다: 주택소유통계 101/DT_1YL202111 T0021 주택소유가구비율 2024 56.9%. 질문이 '보유'면 정의를 밝힌다"
+    verified: "2026-10-13"
+
+  - id: "101/DT_1YL21161"
+    name: 1인가구비율 (시도/시/군/구, e-지방지표)
+    periods: [Y]
+    items: {1인가구비율: T10}
+    facts:
+      - "2025 상위 서울 40.5·대전 40.3·강원 40.1 (%). -c1 level:1 --no-total 로 시도 (12 는 값 없음, 하위 1224 광주 37.7·1236 전남 38.3)"
+    verified: "2026-10-13"
+
+  - id: "116/DT_MLTM_2100"
+    name: (新) 주택보급률 (국토교통부)
+    periods: [Y]
+    items: {보급률 다가구 구분거처 반영: "13103871096T6"}
+    facts:
+      - "T1 가구수·T2 주택수·T3 보급률은 최근 연도 값이 모두 0 (d 가 ⚠ 로 알림) — 값은 T6. -c1 축에 전국(.0001)·수도권(.0002)·지방(.0003)과 시도(.0004~.0020)가 같은 단계라 시도 순위는 .0004~.0020 만. 2024 하위 서울 93.9·대전 98.5·인천 99.0 (101/DT_1YL13401E 와 같은 값)"
+    verified: "2026-10-13"
+
+  - id: "101/DT_1HDAAA10"
+    name: 소득5분위별 자산·부채·소득 현황 (가계금융복지조사)
+    periods: [Y]
+    items: {전가구 평균: T01}
+    facts:
+      - "2025 순자산 평균(만원): 전체 47,143.7, 1분위 14,243.9, 2분위 24,528.7, 3분위 34,456.5, 4분위 51,066.3, 5분위 111,365.0. 자산은 3월 31일, 소득은 전년 기준"
+    verified: "2026-10-13"
+
+  - id: "101/DT_1PE2002"
+    name: 점유형태별 가구 (인구총조사 20% 표본)
+    periods: [F]
+    facts:
+      - "월세를 보증금 있는·없는·사글세로 나눠 주는 표 (2020: 일반가구 20,926,710, 보증금 있는 월세 20.96%, 없는 월세 1.92%, 사글세 0.56%). 월세 범위를 밝힌다. 주거실태조사 116/DT_MLTM_6909 는 자가·임차·무상만"
+    verified: "2026-10-13"
+
+  - id: "101/DT_1YL202111"
+    name: 일반가구의 주택소유율 (주택소유통계, e-지방지표)
+    periods: [Y]
+    items: {총가구: T001, 주택소유가구: T002, 주택소유가구비율: T0021, 무주택가구: T003, 무주택가구비율: T0031}
+    facts:
+      - "2024 전국 소유 56.9% (12,684,099) · 무주택 43.1% (9,610,320), 일반가구 22,294,419. 행정자료(주택소유통계) — 주거실태조사 자가점유율(58.4%)과 다른 지표"
+    verified: "2026-10-13"
+
+  - id: "310/DT_31002N_A004"
+    name: 용도별 판매전력량 추이 (한국전력공사)
+    periods: [Y]
+    axes:
+      - flag: --class1
+        name: 용도별
+        codes: {합계: "01"}
+      - flag: --class2
+        name: 월별
+        codes: {합계: M0}
+    items: {판매량: SALE}
+    facts:
+      - "2025 (MWh) 합계 549,417,259 — 제조업 250,750,226·서비스업 및 기타 164,066,494·가정용 85,831,652 (-c1 ALL --no-total --sort desc)"
+    verified: "2026-10-13"
+
+  - id: "388/TX_38803_A016A"
+    name: 에너지원별 발전량 (전력통계)
+    periods: [Y]
+    axes:
+      - flag: --class1
+        name: 에너지원별
+        codes: {합계: A001, 신재생 및 기타: A005}
+    items: {발전량: 16388AAY8}
+    facts:
+      - "2025 총발전량 595,649 GWh. A005 '신재생 및 기타'(71,455)는 기타 포함 — 신재생만은 388/TX_38803_A015A -c1 A00304 (2025 62,214 GWh → 10.4%). 신·재생(재생+신에너지) 공식 집계는 337/TX_33701_A005 -c1 15337AA900 -c2 1110100A00 (2024 68,115,782 MWh → 11.4%) — 정의·연도를 밝힌다. 337 표의 0001 '지역별 발전비중'은 지역 분배(전국=100)라 신재생 비중이 아니다. 재생에너지만(신에너지 제외): 337 -c1 15337AA9000001 (2024 58,460,649 MWh) ÷ 이 표 2024 합계 595,600.7 GWh ≈ 9.8% — 두 기관 표라 근사, 2025 는 재생·신에너지 구분 표 없음"
+    verified: "2026-10-13"
+
+  - id: "127/DT_KBA0001"
+    name: 연구개발비 및 GDP 대비 연구개발비 비율 (연구개발활동조사)
+    periods: [Y]
+    axes:
+      - flag: --class1
+        name: 구분
+        codes: {연구개발비 A: "1611213103300310T1", 국내총생산 B: "1611213103300310T6", GDP 대비 A/B: "1611213103300310T7"}
+    items: {값: T001}
+    facts:
+      - "2024 GDP 대비 5.13% (2023 4.94). 행마다 단위가 다르다 — 연구개발비 백만원, GDP 십억원. 연구원 수는 127/DT_KBA0009_1 총계 (2024 615,063명; 분류에 남자 없음, 총계·여자뿐)"
+    verified: "2026-10-13"
+
+  - id: "138/TX_13801_A004"
+    name: 출원건수 (지식재산권통계)
+    periods: [Y]
+    axes:
+      - flag: --class1
+        name: 권리별
+        codes: {특허: 15138AG1AA, 특허·실용신안: 15138AG1AC}
+    items: {출원건수: 16138AAA1}
+    facts:
+      - "2025 특허 260,797건 (내·외국인 합). 시도별 표 101/DT_1YL202109E 는 '내국인 출원에 한함'(제1출원인 주소지)이라 전국 계 209,305 로 작다 — 전체 출원은 이 표. 내외국인별은 138/TX_13801_A010"
+    verified: "2026-10-13"
+
+  - id: "101/DT_1YL202101E"
+    name: 인터넷 이용률 (e-지방지표)
+    periods: [Y]
+    axes:
+      - flag: --class2
+        name: 이용여부
+        codes: {이용: "13102112704B.002"}
+    facts:
+      - "2025 만 3세 이상 95% (2024 94.45). 같은 값: 127/DT_MH001_MI002 (주석에 '만 3세 이상')"
+    verified: "2026-10-13"
+
+  - id: "339/DT_339001_KY001"
+    name: 에너지 수급 (에너지수급통계, 에너지경제연구원)
+    periods: [Y]
+    axes:
+      - flag: --class1
+        name: 구분
+        codes: {최종소비: "007"}
+    items: {지표: T001}
+    facts:
+      - "2024 최종에너지 소비 212,167 천toe. e-지방지표 101/DT_1YL20391 전국 235,711 은 지역에너지통계연보(개성·기타지역 포함)라 정의가 다르다 — 출처를 밝힌다"
+    verified: "2026-10-13"
+
+  - id: "101/DT_1ZGA37"
+    name: 남북한 국민총소득 (북한통계)
+    periods: [Y]
+    axes:
+      - flag: --class1
+        name: 남북한별
+        codes: {남한: "200", 북한: "210"}
+    items: {명목 GNI 십억원: T1, 1인당 GNI 만원: T2}
+    facts:
+      - "2024 1인당 GNI 북한 171.9만원, 남한 5,012만원. 주석: 남한 가격·부가가치율을 적용한 추정이라 직접 비교는 바람직하지 않다 — 비교하면 그렇게 밝힌다. 남북 교역은 101/DT_1ZGAA6 -c1 170 T3 (2022 136천달러, 2023·2024 '-')"
+    verified: "2026-10-13"
+
+  - id: "101/DT_IZGI01_201"
+    name: 북한 총인구 (UN 추계, 북한통계)
+    periods: [Y]
+    items: {총인구 천명: H1553}
+    facts:
+      - "추계 표라 -l 1 은 2100 같은 미래 연도 — -s/-e 로 올해를 고른다 (2025 26,571.036 천명). 통계청 추계 101/DT_IZGA01_001 T1 은 2025 25,942,681 — 출처를 밝힌다. 북한통계 목록: kosis ls --view MT_BUKHAN (--parent 101_001 주제별)"
+    verified: "2026-10-13"
+
+  - id: "101/DT_2WEO005"
+    name: 1인당 국내총생산 (IMF WEO, 국제통계)
+    periods: [Y]
+    facts:
+      - "전망 연도(2031)까지 있어 -l 1 은 전망치 — -s 2025 -e 2025. 항목 3개(국가통화·PPP·미달러)라 --sort 는 항목마다 순위(순위 열). 국가 축에 세계·대륙 집계 행이 섞여 순위에서 빼야 한다. 2025 한국 미달러 36,226.97"
+    verified: "2026-10-13"
+
+  - id: "360/DT_1R11006_FRM101"
+    name: 국가별 수출입 (한국무역협회)
+    periods: [Y, M]
+    facts:
+      - "2025 수출 상위: 중국 130,781,482 · 미국 122,850,915 · 베트남 62,775,057 (천달러). -c1 ALL -i ALL --no-total --sort desc --top 3 → 수출·수입 항목마다 따로 순위"
+    verified: "2026-10-13"
+
+  - id: "101/DT_2OEEM3004"
+    name: 연령별 성별 고용 및 실업 (OECD, 국제통계)
+    periods: [Y]
+    axes:
+      - flag: --class1
+        name: 국가
+        codes: {OECD: "7000", 대한민국: "1005"}
+    facts:
+      - "실업률 레시피: -c1 7000+1005 -c2 T103 -c3 T202 -c4 T303 -c5 T401 -c6 ALL -i ALL. 2024 OECD 4.882·한국 2.799. OECD 값은 2024 까지. 형제 표 DT_2OEEM3010·3001 은 [50] 서버 오류가 났다. OECD 합계출산율은 101/DT_2OEV219 (2021 한국 0.88 최저), UN 추정 101/DT_2KAA207 은 2023 까지"
+    verified: "2026-10-13"
+
+  - id: "101/DT_2KAA403"
+    name: 쌀 생산량 (국제통계연감)
+    periods: [Y]
+    axes:
+      - flag: --class1
+        name: 국가별
+        codes: {북한: "1115"}
+    items: {생산량: T01}
+    facts:
+      - "북한 2024 2,250,000 (단위 M/T=톤, 조곡). FAO 101/DT_2FA23010 은 2023 1,775,788 — 출처마다 다르니 밝힌다. 북한통계 101/DT_1ZGA55 는 식량작물 합계(2025 4,892천톤)뿐"
+    verified: "2026-10-13"
+
+  - id: "101/INH_1B8000F_01"
+    name: 인구동향 주요 지표 (전국, 1970~)
+    periods: [Y]
+    facts:
+      - "1970 년부터의 전국 합계출산율은 -c1 30 T1 (최저 2023 0.721, 2024 0.748, 2025 0.799). 시도 표 101/DT_1B81A21 은 1993 부터"
+    verified: "2026-10-13"
+
+  - id: "101/DT_2WEO001"
+    name: 국내총생산 증감률 등 (IMF WEO, 국제통계)
+    periods: [Y]
+    axes:
+      - flag: --class1
+        name: 국가
+        codes: {대한민국: "1005"}
+    items: {실질 GDP 증감률: T2}
+    facts:
+      - "전망 연도(2031)까지 — -l 1 은 전망치(d 가 ⚠). 2026년 4월판 기준 2025 한국 1.007% (2026 1.862 는 전망). 실적·추정 구분 열 없음"
+    verified: "2026-10-13"
+
+  - id: "101/DT_1YL20981"
+    name: 인구 천명당 의료기관 종사 의사수 (e-지방지표)
+    periods: [Y]
+    items: {천명당 의사수: T10}
+    facts:
+      - "2025 상위 서울 5.1·광주(1224) 4.0·대구 3.9. 2025 는 12 에 값이 없어 -c1 level:1 만 쓰면 광주가 순위에서 빠진다 — 1224+1236 을 넣는다 (d 가 '순위에 없는 코드' ⚠)"
+    verified: "2026-10-13"
+
+  - id: "110/TX_11007_A784"
+    name: 시도별 1인당 지방세 납부액 (지방세통계)
+    periods: [Y]
+    items: {1인당: 16110ABH2}
+    facts:
+      - "2024 상위 서울 2,932,636·제주 2,778,643·충남 2,424,999 (원). '부담액' 질문에 이 표('납부액')를 쓰면 이름이 다르다고 밝힌다. 110/DT_110001_A012 는 2023 까지"
+    verified: "2026-10-13"
+
+  - id: "101/DT_1PE105"
+    name: 시도별 학생 1인당 월평균 사교육비 (초중고사교육비조사)
+    periods: [Y]
+    items: {평균: T00}
+    facts:
+      - "2025 상위 서울 66.34·경기 49.90·세종 45.83 (만원), 4위 부산 45.57"
+    verified: "2026-10-13"
+
+  - id: "101/DT_1YL1101"
+    name: 구인배수 (e-지방지표, 연)
+    periods: [Y]
+    facts:
+      - "구인배수 = 신규구인인원 ÷ 신규구직건수 (일자리 1개당 구직자 아님). 2024 전국 0.50 (2023 0.61). 월별 구인배수 표는 검색으로 못 찾음"
+    verified: "2026-10-13"
+
+  - id: "101/DT_1EP1321"
+    name: 산업별 사업체수·매출액 (기업활동조사)
+    periods: [Y]
+    items: {사업체수: T02, 매출액: T10}
+    facts:
+      - "대상은 상용근로자 50인 이상 회사법인 — '사업체당 매출액' 전체 사업체 기준이 아니다(밝힌다). 2024 사업체당 상위 전기·가스 313,809·제조 89,459·금융보험 67,426 (백만원). 같은 축 비율은 --ratio T10/T02 (× 100 이라 100 으로 나눔)"
+    verified: "2026-10-13"
+
+concepts:
+
+  # 같은 말로 불리지만 표·정의·기준이 다른 지표. kosis s 는 검색어에 terms 가 들면, kosis m·d 는 sources 의 표를 조회하면
+  # '혼동 주의' 줄로 보여 준다. sources: name(무엇인지) · table · code(조회 인자 일부) · value(확인한 값)
+
+  - id: home-ownership
+    title: "자가보유율 · 자가점유율"
+    terms: ["자가보유율", "자가점유율", "주택소유율", "자가율", "자가 비율"]
+    sources:
+      - name: "자가보유율 = 주택소유가구비율 (주택소유통계, 행정자료)"
+        table: "101/DT_1YL202111"
+        code: "-i T0021"
+        value: "2024 전국 56.9%"
+      - name: "자가점유율 = 점유형태 '자가' (주거실태조사, 표본)"
+        table: "116/DT_MLTM_6909"
+        code: "-i 13103135576T2"
+        value: "2024 전국 58.4%"
+    tell: "보유(집을 가진 가구)와 점유(자기 집에 사는 가구)는 다른 지표다. 질문이 어느 쪽인지 보고, 답에 조사명과 정의를 밝힌다"
+    evidence: "2026-11-23 kosis d 로 값 확인 (56.9 / 58.4). RSI R18 에서 점유율을 보유율로 답함"
+    verified: "2026-11-23"
+
+  - id: production-shipment
+    title: "생산액 · 출하액"
+    terms: ["생산액", "출하액"]
+    sources:
+      - name: "생산액 (광업제조업조사, 시도)"
+        table: "101/DT_1FS1104"
+        code: "-i T07"
+        value: "울산 2024 278,929,223 백만원"
+      - name: "출하액 계 (같은 표)"
+        table: "101/DT_1FS1104"
+        code: "-i T02"
+        value: "울산 2024 278,421,843 백만원"
+    tell: "생산액과 출하액은 다른 지표다. 요청한 지표가 그 표에 없으면 다른 지표로 대신 답하지 말고 없다고 밝힌다. 시군구 표 101/DT_1FS1101 에는 출하액(T04)만 있다"
+    evidence: "2026-11-23 kosis d 로 값 확인 (울산 광업 및 제조업 2024)"
+    verified: "2026-11-23"
+
+  - id: cpi-index-rate
+    title: "소비자물가 지수 · 상승률(등락률)"
+    terms: ["물가상승률", "물가 상승률", "소비자물가", "인플레이션", "등락률"]
+    sources:
+      - name: "지수 수준 (2020=100)"
+        table: "101/DT_1J22003"
+        code: "-c1 T10 -i T"
+        value: "2026.08 전국 120.05"
+      - name: "월 상승률 = 전년동월비"
+        table: "101/DT_1J22042"
+        code: "-c1 0 -i T03"
+        value: "2026.08 3.1%"
+      - name: "연 상승률 = 전년비"
+        table: "101/DT_1J22041"
+        code: "-c1 0 -i T"
+        value: "2025 2.1%"
+    tell: "지수(2020=100) 수준값과 상승률(%)은 다른 표다. 상승률은 이름이 '등락률'인 표에 있고, 월(전년동월비)과 연(전년비)도 표가 다르다"
+    evidence: "2026-11-23 kosis d 로 값 확인 (120.05 / 3.1 / 2.1)"
+    verified: "2026-11-23"
+
+  - id: smallbiz-count
+    title: "소상공인 수 — 기본통계(전수) · 실태조사(표본)"
+    terms: ["소상공인"]
+    sources:
+      - name: "소상공인 기업 수 (중소기업기본통계)"
+        table: "142/DT_BR_A008"
+        code: "-c1 15142N.00 -c2 15142700 -c3 16142T2524 -i T001"
+        value: "2023 7,906,861개"
+      - name: "소상공인실태조사 기업체 수 (표본, 11개 업종)"
+        table: "142/DT_3ME0100"
+        code: "-c1 00 -c2 0 -i T01"
+        value: "2023 5,960,788개"
+    tell: "'몇 개인가' 는 전수 기반인 중소기업기본통계가 답이다. 소상공인실태조사는 11개 업종 표본조사라 수가 작다. 어느 조사인지 밝힌다"
+    evidence: "2026-11-23 kosis d 로 값 확인 (7,906,861 / 5,960,788). 평가에서 sonnet · haiku 모두 실태조사 값으로 답함"
+    verified: "2026-11-23"
+
+  - id: housing-permits
+    title: "주택 인허가 — 가구수 기준 · 동수 기준, 월 누계 · 연간"
+    terms: ["인허가"]
+    sources:
+      - name: "가구수 기준 (월 누계)"
+        table: "116/DT_MLTM_1948"
+        code: "-c2 13102871090B.0002"
+        value: "2026.08 누계 168,478호 · 그 달 22,058호"
+      - name: "동수 기준 (월 누계, 116/DT_MLTM_1946 총계도 같은 값)"
+        table: "116/DT_MLTM_1948"
+        code: "-c2 13102871090B.0001"
+        value: "2026.08 누계 163,935호 · 그 달 21,607호"
+      - name: "연간표 실적"
+        table: "116/DT_MLTM_666"
+        code: "-c1 13102871094A.0002"
+        value: "2025 388,362호 (월 누계표 12월 값은 395,019호)"
+    tell: "호수를 물으면 가구수 기준이다. 월 값은 연초부터의 누계라 '그 달' 값은 이번 달 누계 − 지난달 누계다. 연간표와 12월 누계가 다르니 어느 표인지 밝힌다"
+    evidence: "2026-11-23 kosis d 로 값 확인 (누계 168,478 / 163,935, 연간 388,362 / 395,019)"
+    verified: "2026-11-23"
+
+  - id: power-industrial
+    title: "산업용 전력 — 적용요금별 '산업용' · 용도별 '제조업'"
+    terms: ["산업용", "판매전력량", "전력판매", "전력 판매"]
+    sources:
+      - name: "산업용 (적용요금별)"
+        table: "310/TX_31002_A019"
+        code: "-c1 15310AB3A5 -c2 M0"
+        value: "2025 280,221,380 MWh (합계의 51.00%)"
+      - name: "제조업 (용도별 — 산업용 아님)"
+        table: "310/DT_31002N_A004"
+        code: "-c1 01_06 -c2 M0"
+        value: "2025 250,750,226 MWh (합계의 45.6%)"
+    tell: "'산업용' 은 요금 종류(적용요금별) 분류다. 용도별 표에는 산업용이 없으니 제조업(+광업·농림어업)을 더해 산업용이라고 하지 않는다"
+    evidence: "2026-11-23 kosis d 로 값 확인 (280,221,380 = 51.00% / 250,750,226). 평가에서 모든 모델이 제조업을 산업용으로 바꿔 답함"
+    verified: "2026-11-23"
+
+  - id: aging-ratio-basis
+    title: "고령인구비율 — 주민등록 기준 · 인구총조사 기준"
+    terms: ["고령인구비율", "고령인구 비율", "고령화율", "65세 이상 비율", "65세이상 비율"]
+    sources:
+      - name: "주민등록인구 기준 (e-지방지표)"
+        table: "101/DT_1YL20631"
+        code: "-i T10"
+        value: "2025 전남 28.5% · 전국 21.2%"
+      - name: "인구총조사 기준"
+        table: "101/DT_1YL20632"
+        code: "-i T001"
+        value: "2025 전남 27.3%"
+    tell: "기준 인구가 다르면 값이 다르다. 질문이 기준을 정하지 않으면 주민등록 기준 표를 쓰고 기준을 밝힌다. 연앙인구 표로 직접 나눈 값은 또 다르니 비율 표가 있으면 그 표를 쓴다"
+    evidence: "2026-11-23 kosis d 로 값 확인 (전남 28.5 / 27.3). 평가에서 연앙인구로 직접 계산해 32.27%(표는 32.4%)"
+    verified: "2026-11-23"
+
+  - id: employees-survey
+    title: "종사자 수 — 전국사업체조사(전수) · 사업체노동력조사(표본)"
+    terms: ["종사자"]
+    sources:
+      - name: "전국사업체조사 (전수, 연 1회)"
+        table: "101/DT_1K52F01"
+        code: "-i T2"
+        value: "2024 제조업 4,159,656명"
+      - name: "사업체노동력조사 (표본, 월)"
+        table: "118/DT_118N_MOND66"
+        code: "-i emp001"
+        value: "2025 제조업 3,758,196명"
+    tell: "두 조사는 대상과 값이 다르다. 어느 조사인지 밝히고 섞어 잇지 않는다"
+    evidence: "2026-11-23 kosis d 로 값 확인 (4,159,656 / 3,758,196)"
+    verified: "2026-11-23"
+
+  - id: wage-survey
+    title: "임금 — 사업체노동력조사 · 고용형태별근로실태조사"
+    terms: ["임금총액", "임금 상승", "임금상승", "월임금", "평균임금", "평균 임금"]
+    sources:
+      - name: "사업체노동력조사 상용임금총액 (상용 5인 이상)"
+        table: "118/DT_118N_MON051"
+        code: "-c2 size02 -i 13103110311MD_13"
+        value: "2025 4,471,783원 (전년비 +3.04%)"
+      - name: "고용형태별근로실태조사 월임금총액 (6월 기준)"
+        table: "118/DT_118N_PAYN43"
+        code: "-i 16118DD_10"
+        value: "2025 4,482천원 (전년비 +2.54%)"
+    tell: "두 조사는 기준 시점과 값이 다르다 (노동력조사는 연평균, 실태조사는 6월 기준). 질문이 조사를 말하면 그 조사 표를 쓰고, 아니면 어느 조사인지 밝힌다"
+    evidence: "2026-11-23 kosis d 로 값 확인 (4,471,783원 +3.04% / 4,482천원 +2.54%). 평가에서 실태조사 표로 답함"
+    verified: "2026-11-23"
+
+  - id: outbound
+    title: "출국자 — 관광통계 · 국제인구이동"
+    terms: ["출국자", "출국", "해외여행"]
+    sources:
+      - name: "내국인 출국자 (한국관광공사, 승무원 포함)"
+        table: "314/DT_SEX_DEP_AGG_MONTH"
+        code: "-i 13103314008T01"
+        value: "2025 29,550,177명"
+      - name: "국제인구이동 내국인 출국자 (체류 90일 초과)"
+        table: "101/DT_1B28024"
+        code: "-c2 1 -i T30"
+        value: "2025 232,724명"
+    tell: "해외로 나간 사람 수는 관광통계다. 국제인구이동통계의 출국자는 90일 넘게 머문 이동자만 세어 100배쯤 작다"
+    evidence: "2026-11-23 kosis d 로 값 확인 (29,550,177 / 232,724)"
+    verified: "2026-11-23"
+
+  - id: population-basis
+    title: "인구 — 주민등록인구 · 인구총조사 · 지자체 표"
+    terms: ["주민등록인구", "총인구"]
+    sources:
+      - name: "주민등록인구 (행정안전부)"
+        table: "101/DT_1B040A3"
+        code: "-i T20"
+        value: "2025 전국 51,117,378명 · 울산 남구 304,128명"
+      - name: "인구총조사 총인구"
+        table: "101/DT_1IN1502"
+        code: "-i T100"
+        value: "2025 전국 51,817,499명"
+      - name: "지자체 표 (예: 울산광역시 구·군별 주민등록인구)"
+        table: "207/DT_20703_001"
+        code: "-i 001"
+        value: "2025 울산 남구 309,008명"
+    tell: "기준이 다르면 수가 다르다. 주민등록인구는 행정안전부 표를 쓰고, 지자체가 만든 표(외국인 포함 등 집계가 다를 수 있음)와 섞지 않는다"
+    evidence: "2026-11-23 kosis d 로 값 확인 (51,117,378 / 51,817,499, 울산 남구 304,128 / 309,008)"
+    verified: "2026-11-23"
+
+  - id: fishery-total
+    title: "어업 생산량 — 계 · 국내계"
+    terms: ["어업생산", "어업 생산", "어업 총생산"]
+    sources:
+      - name: "계"
+        table: "101/DT_1EW0001"
+        code: "-c1 0 -c2 00 -c3 0 -i T01"
+        value: "2025 3,934,971톤"
+      - name: "국내계"
+        table: "101/DT_1EW0001"
+        code: "-c1 0 -c2 10 -c3 0 -i T01"
+        value: "2025 3,552,311톤"
+    tell: "모든 어업 합계는 행정구역 '계'(00)다. '국내계'(10)는 원양어업 등을 뺀 값이다"
+    evidence: "2026-11-23 kosis d 로 값 확인 (3,934,971 / 3,552,311)"
+    verified: "2026-11-23"
+
+  - id: unemployment-sa
+    title: "실업률 — 원계열 · 계절조정"
+    terms: ["실업률"]
+    sources:
+      - name: "원계열"
+        table: "101/DT_1DA7001S"
+        code: "-c1 0 -i T80"
+        value: "2026.08 2.0%"
+      - name: "계절조정"
+        table: "101/DT_1DA9001S"
+        code: "-c1 00 -i T80"
+        value: "2026.08 2.7%"
+    tell: "원계열과 계절조정 값이 다르다. 질문이 계절조정을 말하지 않으면 원계열을 쓰고, 어느 쪽인지 밝힌다. 시도별은 101/DT_1DA7004S"
+    evidence: "2026-11-23 kosis d 로 값 확인 (2.0 / 2.7)"
+    verified: "2026-11-23"
+
+  - id: bill-default-rate
+    title: "어음부도율 — 금액 기준 · 장수 기준"
+    terms: ["어음부도율"]
+    sources:
+      - name: "금액 기준, 전자결제분 제외 (101/DT_1YL7101E 전국과 같은 값)"
+        table: "301/DT_801Y002"
+        code: "-c1 13102134545ACC_ITEM.1090000"
+        value: "2026.08 0.13%"
+      - name: "장수 기준"
+        table: "301/DT_801Y002"
+        code: "-c1 13102134545ACC_ITEM.1080000"
+        value: "2026.08 0.05%"
+      - name: "금액 기준, P-CBO 기술적부도 제외"
+        table: "301/DT_801Y002"
+        code: "-c1 13102134545ACC_ITEM.1090100"
+        value: "2026.08 0.08%"
+    tell: "한 표에 정의가 여럿이다. 보통 말하는 어음부도율은 금액 기준(전자결제분 제외)이다. 어느 정의인지 밝힌다"
+    evidence: "2026-11-23 kosis d 로 값 확인 (0.13 / 0.05 / 0.08)"
+    verified: "2026-11-23"
+
+  - id: farm-income
+    title: "농가소득 — 2인 이상 농가 · 1인 이상 농가"
+    terms: ["농가소득"]
+    sources:
+      - name: "2인 이상 농가 (농가경제조사)"
+        table: "101/DT_1EA1501"
+        code: "-c1 000 -i T100"
+        value: "2025 54,667.48 천원"
+      - name: "1인 이상 농가 (보조지표)"
+        table: "101/DT_1SA1501"
+        code: "-c1 000 -i T100"
+        value: "2025 46,892.95 천원"
+    tell: "공식 농가소득은 2인 이상 농가 기준이다. 1인 이상은 보조지표다. 표 이름만으로는 구분되지 않으니 kosis ex 로 모집단을 확인하고 밝힌다"
+    evidence: "2026-11-23 kosis d 로 값 확인 (54,667 / 46,893)"
+    verified: "2026-11-23"
+
+  - id: post-parcel
+    title: "우체국 소포 — 우체국택배(방문소포) · 국내 소포 전체"
+    terms: ["우체국택배", "소포", "택배"]
+    sources:
+      - name: "우체국택배 = 방문소포 접수물수"
+        table: "127/TX_12002_A011"
+        code: "-c1 15120AA6A0"
+        value: "2025 223,052"
+      - name: "국내 소포 전체 물수"
+        table: "127/TX_12002_A003"
+        code: "-c1 15120AA200 -i 16120AAA2"
+        value: "2025 289,301 천통"
+    tell: "우체국택배는 방문소포 표다. 국내 소포 전체(창구 접수 포함)는 다른 표이고 더 크다"
+    evidence: "2026-11-23 kosis d 로 값 확인 (223,052 / 289,301)"
+    verified: "2026-11-23"
+
+  - id: labor-productivity
+    title: "노동생산성지수 — 부가가치 기준 · 산업생산 기준"
+    terms: ["노동생산성"]
+    sources:
+      - name: "부가가치 노동생산성지수 (2015=100)"
+        table: "344/DT_344N_1D8B_BB"
+        code: "-c1 C -i T001"
+        value: "2025 제조업 122.282"
+      - name: "노동생산성지수 (산업생산 기준)"
+        table: "344/DT_344N_1D8A_AA"
+        code: "-c1 C -i T001"
+        value: "2025 제조업 117.528"
+    tell: "지수가 둘이다. 어느 기준인지 밝힌다"
+    evidence: "2026-11-23 kosis d 로 값 확인 (122.282 / 117.528)"
+    verified: "2026-11-23"
+gaps:
+  - id: college-entrance-rate
+    title: 고교 졸업자 대학 진학률 (전국)
+    missing: "전국 고등학교 졸업자 대학 진학률 표를 검색으로 찾지 못함 — 없다는 뜻은 아니다"
+    evidence: "2026-10-13 RSI R11: 검색어 14종(진학률·대학진학률·고등학교 졸업자 진학·진학자 등, --org 101/112/334)과 ls 주제·기관 뷰. 334/DT_1963003_004 고교 개황에는 졸업자수(E_1)만, 334/DT_33403N_006 '설립별 진학상황'은 고등교육기관 졸업자 기준, 'XX시 대학진학률' 표는 지자체 단위"
+    verified: "2026-10-13"
+
+  - id: employment-insurance-insured
+    title: 고용보험 피보험자 수 (전국, 월)
+    missing: "전국 월별 고용보험 피보험자(재고) 표를 KOSIS 검색으로 찾지 못함 — 고용행정통계(118)에는 구직급여 표만, 피보험자 표는 지자체(시군구·시도통계 2024 1시점)와 434 2015 뿐"
+    evidence: "2026-10-13 RSI R17: 's 고용보험 피보험자'·'피보험자 현황'·'고용보험 가입자'·'상시가입자', 's 피보험자 --org 118'(0건)·'--stat 고용행정통계'(864개 중 0). 가까운 표 101/DT_1YL20561 은 신규취득자(유입, 2026.08 56,504) — 피보험자 수 대용 아님"
+    verified: "2026-10-13"
+
+  - id: pir-recent
+    title: 수도권·전국 PIR (연소득 대비 주택가격 배수, 최근)
+    missing: "최근 연도 PIR 표를 KOSIS 검색으로 찾지 못함 — 321 주택금융및보금자리론실태조사 옛 표(2007 까지, PIR 구간 분포)뿐, 주거실태조사(116) 표 목록에도 없음"
+    evidence: "2026-10-13 RSI R18: 검색어·--org 116/408/321·--stat 주거실태조사·ind s·ls 약 35개 명령. 321/TX_32103_A008 은 구간 분포"
+    verified: "2026-10-13"
+
+  - id: ev-registrations-by-region
+    title: 시도별 전기차(연료별) 자동차 등록 대수
+    missing: "연료별 자동차 등록 대수 표를 KOSIS 검색·ls 로 찾지 못함 — 116/DT_MLTM_5498·DT_MLTM_1244 는 차종(승용·승합·화물·특수)만, 426 표는 연료별 검사·주행거리"
+    evidence: "2026-10-13 RSI R19: 's 전기차'·'연료별 자동차 등록'·'친환경자동차 등록'·'전기자동차 등록', ls --parent M2_18(자동차등록현황보고 6개 표)"
+    verified: "2026-10-13"

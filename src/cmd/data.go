@@ -101,7 +101,14 @@ var dataCmd = &cobra.Command{
   --latest N               최근 N개 시점
   --periods                원하는 시점만 골라서
   미지정                   최근 1개 시점
-  (세 종류를 혼합 사용 불가)`,
+  (세 종류를 혼합 사용 불가)
+
+규칙 (stderr 'ℹ 규칙(…)' 줄):
+  이 표에 대해 실제로 확인해 둔 사실(배포 rules.yaml·로컬 rules.d 의 tables facts)을 결과와 함께 보여 줍니다
+  — 누계 표, 합계 코드가 둘인 표, 그 주기가 있는 다른 표 등. 조회가 실패했을 때도 나옵니다.
+  로컬 규칙이 먼저, 최대 8줄 (더 있으면 kosis rules list --id <ORG>/<TBL> -f json). 답에 반영하세요.
+  'ℹ 규칙 혼동 주의(…)' 는 이 표의 지표와 같은 말로 불리는 다른 지표가 있다는 뜻입니다 (▶ 가 이 표).
+  질문이 다른 쪽을 묻는 것이면 그 표로 다시 조회하고, 맞으면 답에 정의·조사명을 밝히세요.`,
 
 	Example: `  # 서울 미분양 최근 6개월
   kosis d 116 DT_MLTM_2086 -c1 "11" -i T10 -p M -l 6
@@ -317,6 +324,7 @@ var dataCmd = &cobra.Command{
 					}
 					fmt.Fprintf(os.Stderr, "오류: 이 표에는 -p %s 주기가 없습니다. 있는 주기: %s\n", api.NormalizePrdSe(periodFlag), strings.Join(list, ", "))
 					fmt.Fprintln(os.Stderr, "  다른 주기 값이 필요하면 그 주기가 있는 표를 찾으세요 (예: 연간 등락률은 연도별 표가 따로 있다)")
+					printTableRules(orgID, tblID) // 규칙에 그 주기가 있는 표가 적혀 있을 수 있다
 					os.Exit(1)
 				}
 			}
@@ -386,6 +394,7 @@ var dataCmd = &cobra.Command{
 			if strings.Contains(err.Error(), "[50]") {
 				fmt.Fprintln(os.Stderr, "ℹ [50] 은 KOSIS 서버 오류입니다 — 잠시 뒤 다시 해 보고, 같은 조합만 계속 실패하면 ALL 대신 코드를 좁히거나 같은 주제의 다른 표(kosis s)를 쓰세요")
 			}
+			printTableRules(orgID, tblID) // 이 표의 검증된 규칙이 원인을 알려 줄 수 있다 (예: 연간만 있는 표에 월 요청)
 			fmt.Fprintln(os.Stderr, "ℹ 원인을 확인했으면 다음에 같은 실수를 하지 않도록 기록하세요: kosis rules add (kosis rules add --help)")
 			os.Exit(1)
 		}
@@ -463,6 +472,9 @@ var dataCmd = &cobra.Command{
 			if notesSay(cmmt, "잠정") {
 				fmt.Fprintf(os.Stderr, "ℹ 표 주석에 '잠정'이 있습니다 — 최근 값은 잠정치일 수 있으니 답에 밝히세요 (kosis m %s %s --type CMMT)\n", orgID, tblID)
 			}
+		}
+		if userIDFlag == "" {
+			printTableRules(orgID, tblID)
 		}
 		if f := futurePeriod(results, time.Now()); f != "" {
 			fmt.Fprintf(os.Stderr, "⚠ 결과에 아직 오지 않은 시점(%s)이 있습니다 — 추계·전망치일 수 있습니다(학년도 표는 아님 — 표 이름·주석 확인). 실적이 필요하면 -s/-e 로 지난 시점까지 고르세요 (올해 값도 전망일 수 있음)\n", f)
@@ -1481,6 +1493,16 @@ func sortGrouper(rows []api.DataRow) func(api.DataRow) string {
 // computeRatios 같은 축의 두 코드 num/den 의 비율(%) — 다른 축 코드·항목·시점이 같은 행끼리. 결과는 분자 행의 키에.
 // 두 코드가 어느 축(C1~C8·항목)에 있는지 결과에서 찾는다.
 func computeRatios(rows []api.DataRow, num, den string) (map[string]string, error) {
+	out, notes, err := computeRatiosNotes(rows, num, den)
+	for _, n := range notes {
+		fmt.Fprintf(os.Stderr, "ℹ --ratio%s\n", n)
+	}
+	return out, err
+}
+
+// computeRatiosNotes computeRatios 의 계산과 안내 줄(": 축 …", " 분자 … 합계: …" — 앞에 'ℹ --ratio' 또는 'ratio' 를 붙여 쓴다).
+func computeRatiosNotes(rows []api.DataRow, num, den string) (map[string]string, []string, error) {
+	var notes []string
 	keys := []string{"C1", "C2", "C3", "C4", "C5", "C6", "C7", "C8", "ITM_ID"}
 	all := strings.EqualFold(num, "ALL") // 분자 ALL: 그 축의 모든 행을 분모 대비 % 로 (시도별 전국 대비 등)
 	nums := map[string]bool{}            // 분자 여러 코드(Y70+Y75): 코드마다 % 를 채우고 합계 비율은 stderr 로
@@ -1502,9 +1524,9 @@ func computeRatios(rows []api.DataRow, num, den string) (map[string]string, erro
 		}
 	}
 	if axis == "" {
-		return nil, fmt.Errorf("결과에서 %s 와 %s 가 같은 축에 함께 있지 않습니다 — 두 코드를 모두 조회에 넣으세요", num, den)
+		return nil, nil, fmt.Errorf("결과에서 %s 와 %s 가 같은 축에 함께 있지 않습니다 — 두 코드를 모두 조회에 넣으세요", num, den)
 	}
-	fmt.Fprintf(os.Stderr, "ℹ --ratio: %s 축에서 %s ÷ %s × 100 (비율(%%) 열) — 1인당·사업체당 같은 배수면 100 으로 나누거나 kosis ratio --scale 1\n", axis, num, den)
+	notes = append(notes, fmt.Sprintf(": %s 축에서 %s ÷ %s × 100 (비율(%%) 열) — 1인당·사업체당 같은 배수면 100 으로 나누거나 kosis ratio --scale 1", axis, num, den))
 	other := func(r api.DataRow) string {
 		var parts []string
 		for _, k := range keys {
@@ -1553,10 +1575,10 @@ func computeRatios(rows []api.DataRow, num, den string) (map[string]string, erro
 			lines = append(lines[:10], fmt.Sprintf("… 외 %d개 (코드별 %% 는 비율(%%) 열)", len(lines)-10))
 		}
 		for _, l := range lines {
-			fmt.Fprintf(os.Stderr, "ℹ --ratio 분자 %s 합계: %s\n", num, l)
+			notes = append(notes, fmt.Sprintf(" 분자 %s 합계: %s", num, l))
 		}
 	}
-	return out, nil
+	return out, notes, nil
 }
 
 // partialYear 연간(-p Y) 결과의 마지막 연도가 아직 안 끝난 해면 안내 — 월·분기 자료가 그해 중간까지면
@@ -2340,4 +2362,15 @@ func multiCodeAxes(rows []api.DataRow) []string {
 		}
 	}
 	return out
+}
+
+// printTableRules 이 표의 규칙(배포·로컬 rules 의 facts)을 stderr 로 — AI 가 rules 를 따로 찾지 않아도 결과와 함께 본다.
+func printTableRules(orgID, tblID string) {
+	n := tableRuleNotes(orgID, tblID)
+	for _, l := range n.Lines {
+		fmt.Fprintf(os.Stderr, "ℹ %s\n", l)
+	}
+	if n.More > 0 {
+		fmt.Fprintf(os.Stderr, "ℹ 규칙 %d줄 더: kosis rules list --id %s/%s -f json\n", n.More, orgID, tblID)
+	}
 }

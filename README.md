@@ -343,11 +343,17 @@ curl -sN -H 'Content-Type: application/json' -H 'Accept: application/json, text/
 | `kosis_search` | 통계표 검색 (`kosis s`) | `keyword`(필수), `limit`, `page`, `sort`(RANK/DATE), `org`, `stat`, `region` |
 | `kosis_meta` | 분류 축·항목·주기 (`kosis m`) — 요약, 코드 고르기(`data_params` 를 `kosis_data` 에 그대로), 원본 메타 | `org_id`·`tbl_id`(필수), `type`, `find`, `under`, `level`, `axis` |
 | `kosis_data` | 값 조회 (`kosis d`) — 조회 전 검사, 4만 셀·URL 길이 자동 분할, 결과 `notices`(조용한 오답 경고), 큰 결과는 저장·쪽 나누기 | `org_id`·`tbl_id`·`item`·`period`(필수), `class1`…`class8`, `start`+`end` \| `latest`(정수 N 또는 `true`) \| `periods`, `fields`, `format`, `save`, `filter`, `aggregate`, `pivot` |
+| `kosis_ratio` | 두 조회의 비율 (`kosis ratio`) — 다른 두 표(또는 같은 표의 두 코드·항목)를 이름·시점으로 맞춰 나눔. 결과 `rows`: `NAME`·`PRD_DE`·`NUM`·`DEN`·`RATIO`(+`RANK`) | `num`·`den`(필수, `kosis_data` 의 조회 인자 객체), `scale`(100=%, 1=배수), `no_total`, `sort`, `top` |
+| `kosis_rules` | 검증된 규칙·표·못 찾은 기록 (`kosis rules list`, **키 불필요**) — 바이너리에 내장돼 스킬 폴더 없이도 동작 | `query`, `id`(규칙 id·`ORG/TBL`), `kind`, `topic` 중 하나 이상 |
 | `kosis_list` | 통계목록 트리 (`kosis ls`) | `view`, `parent` |
 | `kosis_explain` | 조사 설명·주석·원표 링크 (`kosis ex`) | `org_id`·`tbl_id`(필수) |
 | `kosis_indicator` | 주요지표 (`kosis ind`) | `action`(search/data/info/list, 필수), `name`, `id`, `list_id`, `limit` |
 | `kosis_result_page` | 저장된 큰 결과의 다음 쪽 (다시 조회 안 함, **키 불필요**) | `cursor`(필수, 앞 응답의 `next_cursor`), `limit` |
-| `kosis_result_query` | 저장된 결과에 filter → latest → aggregate → pivot (**키 불필요**) | `result_id`(필수), `latest`, `filter`, `aggregate`, `pivot`, `format`, `save`, `limit` |
+| `kosis_result_query` | 저장된 결과에 filter → latest → aggregate → order·top → pivot (**키 불필요**) | `result_id`(필수), `latest`, `filter`, `aggregate`, `order`, `order_by`, `top`, `pivot`, `format`, `save`, `limit` |
+
+**계산은 도구가 합니다** — `kosis_data` 에 `sort`(desc·asc)·`top`·`no_total` 을 주면 순위(`RANK` 열, 동률은 같은 순위), `change`(yoy·prev)면 증감 `DT_CHG`·증감률 `DT_CHG_PCT`, `ratio`(`"분자/분모"`)면 같은 축 두 코드의 비율 `DT_RATIO_PCT` 가 붙습니다 (`kosis d --sort/--top/--no-total/--change/--ratio` 와 같은 계산, `sort_by` 로 정렬 기준). 계산은 `filter`·`aggregate`·`pivot` 보다 먼저 합니다. 저장된 결과는 `kosis_result_query` 의 `order`·`order_by`·`top` 으로 정렬합니다(aggregate 뒤, pivot 앞). 다른 두 표의 비율은 `kosis_ratio`.
+
+**규칙이 결과에 함께 옵니다** — `kosis_search` 의 `notices` 에 검색어에 맞는 검증된 표와 못 찾은 기록, `kosis_meta` 의 `rules` 와 `kosis_data` 의 `notices` 에 그 표의 규칙(`규칙(배포 2026-10-13): …`, 최대 8줄)이 붙습니다. 같은 말로 불리지만 표·정의가 다른 지표(자가보유율/점유율, 생산액/출하액, 산업용/제조업 전력 등)는 `규칙 혼동 주의(…): ① … / ② …` 줄로 각 지표의 표·코드·확인한 값을 함께 보여 줍니다(`kosis_rules kind=concept` 로 목록). 규칙은 바이너리에 내장돼 있고(`KOSIS_RULES_FILE` → 설치된 스킬 폴더 → 내장 순), `~/.kosis/rules.d` 의 로컬 규칙이 앞에 옵니다.
 
 결과는 JSON 텍스트입니다. 검색·메타·목록 등은 약 200KB 를 넘으면 앞부분만 담고 `truncated`("잘림: … 범위를 좁히세요")를 붙입니다(표 결과는 아래 "큰 결과"). `tools/call` 여러 개가 동시에 와도 따로 처리합니다. 대량 다운로드·차트·설정·업데이트·즐겨찾기·이력 명령은 MCP 도구에 없습니다.
 
@@ -374,7 +380,7 @@ curl -sN -H 'Content-Type: application/json' -H 'Accept: application/json, text/
 
 ### smoke (게이트웨이 자동 업그레이드용)
 
-1. 키 없이: `initialize` → `notifications/initialized` → `tools/list` 가 성공하고 도구 8개(`kosis_search`, `kosis_meta`, `kosis_data`, `kosis_result_page`, `kosis_result_query`, `kosis_list`, `kosis_explain`, `kosis_indicator`)가 나와야 합니다.
+1. 키 없이: `initialize` → `notifications/initialized` → `tools/list` 가 성공하고 도구 10개(`kosis_search`, `kosis_meta`, `kosis_data`, `kosis_result_page`, `kosis_result_query`, `kosis_ratio`, `kosis_rules`, `kosis_list`, `kosis_explain`, `kosis_indicator`)가 나와야 합니다.
 2. 키가 있으면: 도구 `kosis_search`, 인자 `{"keyword":"인구","limit":1}` → `isError: false`, `results` 1개.
 
 ```bash

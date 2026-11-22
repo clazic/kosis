@@ -84,16 +84,70 @@ type pivotSpec struct {
 	Value string
 }
 
-// transform 받아온 뒤 서버에서 줄이기. 순서: filter → latest → aggregate → pivot.
+type orderSpec struct {
+	By   string // 열 (API 키 또는 이름). 비면 DT, DT 가 없으면 마지막 열(aggregate 값 열)
+	Desc bool
+	Top  int
+}
+
+// transform 받아온 뒤 서버에서 줄이기. 순서: filter → latest → aggregate → order·top → pivot.
 type transform struct {
 	Filter map[string]filterCond
 	Latest bool
 	Agg    *aggSpec
+	Order  *orderSpec
 	Pivot  *pivotSpec
 }
 
 func (tr transform) empty() bool {
-	return len(tr.Filter) == 0 && !tr.Latest && tr.Agg == nil && tr.Pivot == nil
+	return len(tr.Filter) == 0 && !tr.Latest && tr.Agg == nil && tr.Order == nil && tr.Pivot == nil
+}
+
+// applyOrder 한 열의 숫자로 정렬 (숫자 아닌 값은 맨 뒤, 같은 값은 원래 순서). top 은 경계 동률을 함께 남긴다.
+func applyOrder(t *table, o orderSpec) (*table, []string, error) {
+	col := -1
+	if o.By != "" {
+		var err error
+		if col, err = t.mustIndex(o.By, "order_by"); err != nil {
+			return nil, nil, err
+		}
+	} else if col = t.index("DT"); col < 0 {
+		col = len(t.Columns) - 1
+	}
+	if col < 0 {
+		return nil, nil, fmt.Errorf("정렬할 열이 없습니다")
+	}
+	rows := append([][]string(nil), t.Rows...)
+	sort.SliceStable(rows, func(i, j int) bool {
+		a, aok := parseNum(rows[i][col])
+		b, bok := parseNum(rows[j][col])
+		if aok != bok {
+			return aok
+		}
+		if !aok {
+			return false
+		}
+		if o.Desc {
+			return a > b
+		}
+		return a < b
+	})
+	var notes []string
+	if o.Top > 0 && len(rows) > o.Top {
+		k := o.Top
+		edge, eok := parseNum(rows[o.Top-1][col])
+		for k < len(rows) && eok {
+			if v, ok := parseNum(rows[k][col]); !ok || v != edge {
+				break
+			}
+			k++
+		}
+		if k > o.Top {
+			notes = append(notes, fmt.Sprintf("top %d: %d위와 값이 같은 행까지 %d행을 남겼습니다 (동률)", o.Top, o.Top, k))
+		}
+		rows = rows[:k]
+	}
+	return &table{Columns: t.Columns, Rows: rows}, notes, nil
 }
 
 // apply 변환 결과 표와 안내 줄.
@@ -113,6 +167,13 @@ func (tr transform) apply(t *table) (*table, []string, error) {
 	if tr.Agg != nil {
 		var n []string
 		if t, n, err = applyAggregate(t, *tr.Agg); err != nil {
+			return nil, nil, err
+		}
+		notes = append(notes, n...)
+	}
+	if tr.Order != nil {
+		var n []string
+		if t, n, err = applyOrder(t, *tr.Order); err != nil {
 			return nil, nil, err
 		}
 		notes = append(notes, n...)

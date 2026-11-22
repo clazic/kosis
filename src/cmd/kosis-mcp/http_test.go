@@ -93,8 +93,8 @@ func TestHTTPSessionFlow(t *testing.T) {
 		t.Errorf("알림만 온 POST 는 202: %d", r.StatusCode)
 	}
 	list := readJSON(t, c.do("POST", `{"jsonrpc":"2.0","id":2,"method":"tools/list"}`, "MCP-Protocol-Version", "2025-06-18"))
-	if n := len(list["result"].(map[string]any)["tools"].([]any)); n != 8 {
-		t.Errorf("도구 8개: %d", n)
+	if n := len(list["result"].(map[string]any)["tools"].([]any)); n != 10 {
+		t.Errorf("도구 10개: %d", n)
 	}
 	call := readJSON(t, c.do("POST", `{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"kosis_search","arguments":{"keyword":"인구"}}}`))
 	if text, isErr := callResult(t, call); !isErr || !strings.Contains(text, "API 키가 없어요") {

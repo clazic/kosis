@@ -19,7 +19,8 @@ var rulesCmd = &cobra.Command{
 	Long: `kosis 를 쓰는 AI 에이전트가 s(검색) → m(메타) → d(데이터)로 판단할 때 쓰는 규칙을 다룹니다.
 
 규칙은 두 곳에 있습니다:
-  배포 규칙  스킬의 references/rules.yaml — 모든 사용자 공통, 검증된 것만 (저장소에서 관리)
+  배포 규칙  스킬의 references/rules.yaml — 모든 사용자 공통, 검증된 것만 (저장소에서 관리).
+             스킬 폴더가 없으면 kosis 바이너리에 내장된 사본을 씁니다
   로컬 규칙  ~/.kosis/rules.d/*.yaml   — 이 컴퓨터에서 AI 가 확인한 사실 (규칙 하나 = 파일 하나)
 
 로컬 규칙 파일 형식 (파일 이름은 YYYYMMDD-<8hex>.yaml, ASCII 만):
@@ -30,6 +31,8 @@ var rulesCmd = &cobra.Command{
   confidence: guess | tendency  (선택)
   status: wrong                 (선택, 틀린 것으로 판명 — 지우지 않음)
   … 종류별 필드 (배포 rules.yaml 의 해당 절 항목과 같음. table 은 table: "ORG/TBL")
+  concept (같은 말로 불리지만 표·정의가 다른 지표): id, terms(검색어에 이 말이 들면 경고),
+    sources(지표마다 name·table·code·value), tell(어떻게 답할지) — kosis s·m·d 가 '혼동 주의' 로 보여 줍니다
 
 하위 명령:
   list [찾을 말]   배포·로컬 규칙 목록 (-f json 이면 본문까지)
@@ -50,7 +53,8 @@ var rulesCmd = &cobra.Command{
   kosis rules validate
 
 참고:
-  - 배포 규칙 위치는 스킬 폴더에서 찾습니다. 다른 파일을 쓰려면 KOSIS_RULES_FILE 환경변수.
+  - 배포 규칙은 KOSIS_RULES_FILE 환경변수 → 설치된 스킬 폴더 → 바이너리 내장 사본 순으로 찾습니다.
+  - kosis m·d·s 는 그 표·검색어에 맞는 규칙을 결과와 함께 보여 줍니다 (stderr 'ℹ 규칙(…)', m 요약의 [규칙]).
   - 이전 형식 ~/.kosis/rules.local.yaml 은 처음 실행 때 rules.d 로 옮겨지고 .migrated 로 남습니다.`,
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
 		if n, err := rules.MigrateLegacy(rules.LegacyLocalFile(), rules.Dir(), time.Now()); err != nil {
@@ -86,6 +90,11 @@ func loadAllRules() (shipped, local []rules.Entry, shippedPath string, localProb
 		if shipped, err = rules.LoadShipped(shippedPath); err != nil {
 			return nil, nil, shippedPath, nil, err
 		}
+	} else { // 스킬 폴더가 없는 환경(kosis-mcp 서버 등): 바이너리에 내장된 배포 규칙
+		if shipped, err = rules.Embedded(); err != nil {
+			return nil, nil, "", nil, err
+		}
+		shippedPath = rules.EmbeddedName
 	}
 	local, localProbs = rules.LoadDir(rules.Dir())
 	return shipped, local, shippedPath, localProbs, nil
@@ -172,7 +181,7 @@ verified 날짜와 status 를 보고 판단한다. 규칙 파일을 읽지 못�
 			return enc.Encode(out)
 		}
 		if shippedPath == "" {
-			fmt.Println("⚠ 배포 규칙(references/rules.yaml)을 찾지 못했습니다. 스킬을 설치하거나 KOSIS_RULES_FILE 을 지정하세요.")
+			fmt.Println("⚠ 배포 규칙을 읽지 못했습니다.")
 		}
 		for _, e := range all {
 			src := "배포"
