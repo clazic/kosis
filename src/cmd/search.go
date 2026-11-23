@@ -179,8 +179,12 @@ func runSearch(cmd *cobra.Command, args []string) error {
 		results = filterSearch(results, "", statF, regionF)
 	}
 	filtered := len(results)
-	if len(results) > limit {
-		results = results[:limit]
+	// 로컬 카탈로그(있으면): KOSIS 검색에 없던 표를 앞에 — 항목·분류 이름으로만 걸리는 표를 찾는다
+	local, localNote := localSearch(keyword, page, clientFilter || orgF != "", results, limit)
+	var sources, matches []string
+	results, sources, matches = mergeLocal(local, results, limit)
+	if localNote != "" {
+		fmt.Fprintf(os.Stderr, "ℹ %s\n", localNote)
 	}
 
 	// 범위 진단 (stderr): 전체 결과 수 ≠ 받은 수 ≠ 거른 뒤 수
@@ -226,6 +230,9 @@ func runSearch(cmd *cobra.Command, args []string) error {
 			"STRT_PRD_DE": result.StrtPrdDe,
 			"END_PRD_DE":  result.EndPrdDe,
 		}
+		if len(local) > 0 { // 로컬 표가 섞였을 때만 열을 더한다
+			data[i]["SOURCE"], data[i]["MATCH"] = sources[i], matches[i]
+		}
 		if withItems {
 			data[i]["ITEMS"] = items[i]
 			if failed > 0 {
@@ -241,6 +248,9 @@ func runSearch(cmd *cobra.Command, args []string) error {
 	columns := []string{"ORG_ID", "ORG_NM", "TBL_ID", "TBL_NM", "STAT_NM", "STRT_PRD_DE", "END_PRD_DE"}
 	if format != "table" {
 		columns = []string{"ORG_ID", "ORG_NM", "TBL_ID", "TBL_NM", "STAT_ID", "STAT_NM", "PATH", "STRT_PRD_DE", "END_PRD_DE"}
+	}
+	if len(local) > 0 {
+		columns = append(columns, "SOURCE", "MATCH")
 	}
 	if withItems {
 		columns = append(columns, "ITEMS")

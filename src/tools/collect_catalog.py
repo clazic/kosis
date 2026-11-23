@@ -6,7 +6,10 @@
            시점(PRD)은 API 를 한 번 더 부르므로 나중에 따로 받는다
 
 끊겨도 다시 실행하면 이어서 한다 (이미 받은 노드·표는 건너뜀). 실패는 errors.jsonl.
-사용: python3 -I src/tools/collect_catalog.py [tree|meta|all] [--workers N]
+3단계 prd  : 통계표마다 kosis m --type PRD (API 1회) → periods.jsonl (주기별 시작·끝 시점)
+
+사용: python3 -I src/tools/collect_catalog.py [tree|meta|prd|all] [--workers N] [--roots I1,F,U]
+  --roots 를 주면 최상위 대신 그 목록 노드들에서 시작한다 (시범 수집). KOSIS_CATALOG_DIR 로 저장 폴더를 나눈다
 키는 ~/.kosis/config.yaml 의 api_keys 를 모두 쓴다 (키당 1분 180건). 키 3개면 --workers 24 로 한도를 다 쓴다.
 """
 import json, os, subprocess, sys, threading, time
@@ -90,13 +93,13 @@ def append(name, obj):
         f.write(json.dumps(obj, ensure_ascii=False) + "\n")
 
 
-def tree(workers):
+def tree(workers, roots=None):
     # visited.jsonl: 펼친 목록 노드. 이어하기 때 다시 펼치지 않는다.
     done = {v["id"] for v in load("visited.jsonl")}
     seen_tbl = {(t["org_id"], t["tbl_id"]) for t in load("tables.jsonl")}
     pending = [(k["id"], k["path"]) for v in load("visited.jsonl") for k in v["children"] if k["id"] not in done]
     if not done:
-        pending = [("", [])]
+        pending = [(r, [r]) for r in roots] if roots else [("", [])]
 
     def expand(node):
         nid, path = node
@@ -126,6 +129,28 @@ def tree(workers):
                 pending += [k for k in kids if k[0] not in done]
             done.update(b[0] for b in batch)
             print(f"tree: 노드 {len(done)} · 통계표 {len(seen_tbl)} · 대기 {len(pending)}", file=sys.stderr, flush=True)
+
+
+def prd(workers):
+    done = {(c["org_id"], c["tbl_id"]) for c in load("periods.jsonl")}
+    todo = [t for t in load("tables.jsonl") if (t["org_id"], t["tbl_id"]) not in done]
+    n = [0]
+
+    def one(t):
+        try:
+            rows = kosis("m", t["org_id"], t["tbl_id"], "--type", "PRD")
+            ps = [{"prd_se": r.get("PRD_SE", ""), "start": r.get("STRT_PRD_DE", ""), "end": r.get("END_PRD_DE", "")} for r in rows]
+            append("periods.jsonl", {"org_id": t["org_id"], "tbl_id": t["tbl_id"], "periods": ps})
+        except Exception as e:
+            append("errors.jsonl", {"stage": "prd", "org_id": t["org_id"], "tbl_id": t["tbl_id"], "err": str(e)})
+        with lock:
+            n[0] += 1
+            if n[0] % 100 == 0:
+                print(f"prd: {n[0]}/{len(todo)}", file=sys.stderr, flush=True)
+
+    with ThreadPoolExecutor(workers) as ex:
+        list(ex.map(one, todo))
+    print(f"prd: 끝 {n[0]}/{len(todo)}", file=sys.stderr)
 
 
 def summarize(t, rows):
@@ -166,7 +191,10 @@ def meta(workers):
 if __name__ == "__main__":
     stage = sys.argv[1] if len(sys.argv) > 1 else "all"
     workers = int(sys.argv[sys.argv.index("--workers") + 1]) if "--workers" in sys.argv else 4
+    roots = sys.argv[sys.argv.index("--roots") + 1].split(",") if "--roots" in sys.argv else None
     if stage in ("tree", "all"):
-        tree(workers)
+        tree(workers, roots)
     if stage in ("meta", "all"):
         meta(workers)
+    if stage in ("prd", "all"):
+        prd(workers)

@@ -70,14 +70,17 @@ func MCPSearch(client *api.Client, q SearchQuery) (*SearchAnswer, error) {
 		results = filterSearch(results, "", q.Stat, q.Region)
 	}
 	filtered := len(results)
-	if len(results) > q.Limit {
-		results = results[:q.Limit]
-	}
+	local, localNote := localSearch(q.Keyword, q.Page, clientFilter || q.Org != "", results, q.Limit)
+	var sources, matches []string
+	results, sources, matches = mergeLocal(local, results, q.Limit)
 	scope := fmt.Sprintf("검색 범위: 전체 %d개 중 %d쪽에서 %d개 받음", ans.Total, q.Page, fetched)
 	if clientFilter {
 		scope += fmt.Sprintf(" → stat/region 으로 거른 뒤 %d개", filtered)
 	}
 	ans.Notices = append(ans.Notices, scope)
+	if localNote != "" {
+		ans.Notices = append(ans.Notices, localNote)
+	}
 	ans.Notices = append(ans.Notices, MCPSearchRules(q.Keyword)...) // 예전에 못 찾은 기록·검증된 표
 	if len(results) == 0 {
 		ans.Notices = append(ans.Notices, fmt.Sprintf("'%s' 검색 결과가 없습니다", q.Keyword))
@@ -96,12 +99,19 @@ func MCPSearch(client *api.Client, q SearchQuery) (*SearchAnswer, error) {
 	if ans.Total > q.Page*fetch && !clientFilter && len(results) == q.Limit {
 		ans.Notices = append(ans.Notices, fmt.Sprintf("더 보기: page %d", q.Page+1))
 	}
-	for _, r := range results {
-		ans.Results = append(ans.Results, map[string]string{
+	for i, r := range results {
+		m := map[string]string{
 			"ORG_ID": r.OrgID, "ORG_NM": r.OrgNM, "TBL_ID": r.TblID, "TBL_NM": r.TblNM,
 			"STAT_ID": r.StatID, "STAT_NM": r.StatNM, "PATH": r.MTAtitle,
 			"STRT_PRD_DE": r.StrtPrdDe, "END_PRD_DE": r.EndPrdDe,
-		})
+		}
+		if len(local) > 0 {
+			m["SOURCE"] = sources[i]
+			if matches[i] != "" {
+				m["MATCH"] = matches[i]
+			}
+		}
+		ans.Results = append(ans.Results, m)
 	}
 	return ans, nil
 }

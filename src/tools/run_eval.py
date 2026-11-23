@@ -146,7 +146,8 @@ def period_match(got, want):
 class Sandbox:
     """임시 HOME(키만 복사)과, 호출을 기록하고 쓰기 명령을 막는 kosis 래퍼."""
 
-    def __init__(self, kosis_bin, skill_dir):
+    def __init__(self, kosis_bin, skill_dir, catalog=None):
+        self.catalog = os.path.abspath(catalog) if catalog else None
         self.real = os.path.abspath(kosis_bin)
         self.root = tempfile.mkdtemp(prefix="kosis-eval-")
         os.chmod(self.root, 0o700)
@@ -184,6 +185,9 @@ exit $rc
 
     def env(self, log=None):
         e = dict(os.environ)
+        e.pop("KOSIS_CATALOG_FILE", None)  # 로컬 카탈로그는 --catalog 로만 (A/B 비교가 섞이지 않게)
+        if self.catalog:
+            e["KOSIS_CATALOG_FILE"] = self.catalog
         e["PATH"] = self.bin + os.pathsep + e.get("PATH", "")
         if log:
             e["KOSIS_EVAL_LOG"] = log
@@ -480,8 +484,10 @@ def ask_ai(sb, q, a, outdir):
                       "--add-dir", sb.skill]
     else:
         prompt = PROMPT_MCP.format(question=q["question"], fmt=ANSWER_FORMAT)
-        conf = {"mcpServers": {"kosis": {"command": os.path.abspath(a.mcp_bin), "args": [],
-                                         "env": {"HOME": sb.home}}}}
+        menv = {"HOME": sb.home}
+        if sb.catalog:
+            menv["KOSIS_CATALOG_FILE"] = sb.catalog
+        conf = {"mcpServers": {"kosis": {"command": os.path.abspath(a.mcp_bin), "args": [], "env": menv}}}
         cmd = base + ["--tools", "", "--allowedTools", "mcp__kosis", "--mcp-config", json.dumps(conf)]
     t0 = time.time()
     timed_out = False
@@ -674,9 +680,9 @@ def cmd_run(a):
     started = datetime.datetime.now().strftime("%Y-%m-%d-%H%M%S")
     outdir = os.path.abspath(a.out) if a.out else os.path.join(RESULTS, f"{started}-{a.path}-{re.sub(r'[^A-Za-z0-9.-]', '_', a.model)}")
     os.makedirs(os.path.join(outdir, "transcripts"), exist_ok=True)
-    sb = Sandbox(a.kosis_bin, a.skill_dir)
+    sb = Sandbox(a.kosis_bin, a.skill_dir, getattr(a, "catalog", None))
     ver = subprocess.run([a.kosis_bin, "--version"], capture_output=True, text=True).stdout.strip()
-    meta = {"path": a.path, "model": a.model, "started": started, "kosis_version": ver, "kosis_bin": a.kosis_bin,
+    meta = {"path": a.path, "model": a.model, "catalog": getattr(a, "catalog", None), "started": started, "kosis_version": ver, "kosis_bin": a.kosis_bin,
             "skill_dir": a.skill_dir, "questions": len(qs), "mcp_bin": a.mcp_bin if a.path == "mcp" else None}
     by = {q["id"]: q for q in qs}
     recs = []
@@ -769,6 +775,7 @@ def main():
     r.add_argument("--timeout", type=int, default=900, help="문항당 제한 시간(초)")
     r.add_argument("--max-budget", type=float, default=2.0, help="문항당 비용 상한(USD), 0 이면 없음")
     r.add_argument("--out", help="결과 폴더")
+    r.add_argument("--catalog", help="로컬 카탈로그 파일 (KOSIS_CATALOG_FILE). 없으면 쓰지 않는다")
     r.set_defaults(fn=cmd_run)
     rp = sub.add_parser("report")
     rp.add_argument("dir")
