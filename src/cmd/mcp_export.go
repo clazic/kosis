@@ -78,6 +78,7 @@ func MCPSearch(client *api.Client, q SearchQuery) (*SearchAnswer, error) {
 		scope += fmt.Sprintf(" → stat/region 으로 거른 뒤 %d개", filtered)
 	}
 	ans.Notices = append(ans.Notices, scope)
+	ans.Notices = append(ans.Notices, MCPSearchRules(q.Keyword)...) // 예전에 못 찾은 기록·검증된 표
 	if len(results) == 0 {
 		ans.Notices = append(ans.Notices, fmt.Sprintf("'%s' 검색 결과가 없습니다", q.Keyword))
 		if clientFilter && ans.Total > q.Page*fetched {
@@ -172,6 +173,9 @@ func MCPMetaSummary(summary *api.MetaSummaryResult, orgID, tblID string) map[str
 		})
 	}
 	out := map[string]any{"org_id": orgID, "tbl_id": tblID, "axes": axes, "items": items, "periods": periods}
+	if r := MCPTableRules(orgID, tblID); len(r) > 0 { // 이 표에 대해 확인된 것 (함정·합계 코드·맞는 표 안내)
+		out["rules"] = r
+	}
 	if len(summary.Axes()) > 0 && !summary.HasAxis(1) {
 		out["note"] = "1번 축이 없는 표 — kosis_data 는 class1 을 ALL 로 채운다"
 	}
@@ -256,8 +260,9 @@ type DataQuery struct {
 	Period       string // 수록주기 (Y, M, Q, H, F 또는 년·월 …)
 	Start, End   string
 	Latest       int
-	Periods      string // 비연속 시점 "2020,2022"
-	Fields       string // 출력 열 (API 키 또는 한국어 열 이름, 쉼표)
+	Periods      string     // 비연속 시점 "2020,2022"
+	Fields       string     // 출력 열 (API 키 또는 한국어 열 이름, 쉼표)
+	Derive       DataDerive // 순위·증감·비율 (kosis d 의 --sort/--top/--change/--ratio/--no-total)
 
 	// Progress 분할 조회 조각을 받을 때마다 (n, 전체). nil 이면 부르지 않는다.
 	Progress func(done, total int)
@@ -329,6 +334,9 @@ func MCPData(client *api.Client, q DataQuery) (*DataAnswer, error) {
 	if hasLatest && hasRange {
 		return nil, fmt.Errorf("latest 와 start/end 는 함께 쓸 수 없습니다")
 	}
+	if err := q.Derive.validate(); err != nil {
+		return nil, err
+	}
 
 	// 조회 전 검사 (kosis d 와 같음)
 	if summary, merr := client.MetaSummary(q.OrgID, q.TblID); merr == nil {
@@ -362,7 +370,11 @@ func MCPData(client *api.Client, q DataQuery) (*DataAnswer, error) {
 			for _, p := range summary.Periods {
 				list = append(list, fmt.Sprintf("%s(%s %s~%s)", api.NormalizePrdSe(p.PrdSe), p.PrdSe, p.StrtPrdDe, p.EndPrdDe))
 			}
-			return nil, fmt.Errorf("이 표에는 period %s 주기가 없습니다. 있는 주기: %s — 다른 주기 값이 필요하면 그 주기가 있는 표를 찾으세요", api.NormalizePrdSe(q.Period), strings.Join(list, ", "))
+			msg := fmt.Sprintf("이 표에는 period %s 주기가 없습니다. 있는 주기: %s — 다른 주기 값이 필요하면 그 주기가 있는 표를 찾으세요", api.NormalizePrdSe(q.Period), strings.Join(list, ", "))
+			if r := MCPTableRules(q.OrgID, q.TblID); len(r) > 0 { // 규칙에 그 주기가 있는 표가 적혀 있을 수 있다
+				msg += "\n" + strings.Join(r, "\n")
+			}
+			return nil, fmt.Errorf("%s", msg)
 		}
 	}
 
@@ -395,6 +407,7 @@ func MCPData(client *api.Client, q DataQuery) (*DataAnswer, error) {
 		if strings.Contains(err.Error(), "[50]") {
 			lines = append(lines, "[50] 은 KOSIS 서버 오류입니다 — 잠시 뒤 다시 해 보고, 같은 조합만 계속 실패하면 ALL 대신 코드를 좁히거나 같은 주제의 다른 표를 쓰세요")
 		}
+		lines = append(lines, MCPTableRules(q.OrgID, q.TblID)...) // 이 표의 규칙이 원인을 알려 줄 수 있다
 		return nil, fmt.Errorf("%s", strings.Join(lines, "\n"))
 	}
 
@@ -450,11 +463,15 @@ func MCPData(client *api.Client, q DataQuery) (*DataAnswer, error) {
 			note("요청한 항목 중 이 시점 범위에 값이 하나도 없는 항목: %s — 항목마다 수록 시점이 다를 수 있습니다(표의 최신 시점 ≠ 그 항목의 최신 시점)%s", strings.Join(miss, ", "), span)
 		}
 	}
+	var cmmt []map[string]interface{}
 	if len(results) > 0 {
-		cmmt, _ := client.MetaRaw(q.OrgID, q.TblID, "CMMT")
+		cmmt, _ = client.MetaRaw(q.OrgID, q.TblID, "CMMT")
 		if notesSay(cmmt, "잠정") {
 			note("표 주석에 '잠정'이 있습니다 — 최근 값은 잠정치일 수 있으니 답에 밝히세요 (kosis_meta type=CMMT)")
 		}
+	}
+	for _, l := range MCPTableRules(q.OrgID, q.TblID) {
+		note("%s", l)
 	}
 	if f := futurePeriod(results, time.Now()); f != "" {
 		note("결과에 아직 오지 않은 시점(%s)이 있습니다 — 추계·전망치일 수 있습니다(학년도 표는 아님 — 표 이름·주석 확인). 실적이 필요하면 start/end 로 지난 시점까지 고르세요", f)
@@ -468,8 +485,17 @@ func MCPData(client *api.Client, q DataQuery) (*DataAnswer, error) {
 	if len(results) > 0 && unitsEmpty(results) && !namesCarryUnit(results) {
 		note("단위 칸이 비어 있습니다 — 항목 이름 괄호, kosis_meta 의 items unit, kosis_explain 에서 확인하고 짐작한 단위는 짐작이라고 밝히세요")
 	}
-	if len(sameNameCodes(results)) > 0 {
+	if q.Derive.Sort == "" && len(sameNameCodes(results)) > 0 {
 		sort.SliceStable(results, func(i, j int) bool { return results[i].PrdDe < results[j].PrdDe })
+	}
+	// 계산 (kosis d 와 같은 순서: 증감 → 비율 → 합계 빼기 → 정렬·top·순위)
+	var dv derived
+	if !q.Derive.empty() {
+		var derr error
+		if dv, derr = mcpDerive(client, q, results, cmmt, given(), note); derr != nil {
+			return nil, derr
+		}
+		results = dv.rows
 	}
 
 	// 열: 메타가 있으면 이 표의 열(코드 열 포함), 없으면 값이 있는 API 키
@@ -508,11 +534,14 @@ func MCPData(client *api.Client, q DataQuery) (*DataAnswer, error) {
 		}
 		ans.Columns = picked
 	}
+	base := ans.Columns
+	ans.Columns = append(ans.Columns, dv.columns()...) // 증감·비율·순위 열은 fields 와 상관없이 붙는다
 	for _, r := range results {
 		m := make(map[string]string, len(ans.Columns))
-		for _, c := range ans.Columns {
+		for _, c := range base {
 			m[c.Key] = r.GetField(c.Key)
 		}
+		dv.fill(r, m)
 		ans.Rows = append(ans.Rows, m)
 	}
 	if len(results) == 0 {

@@ -7,26 +7,21 @@ argument-hint: "<통계 키워드 또는 명령>"
 
 # KOSIS
 
-## 규칙 (AI 필독 — 작업 전 읽고, 알게 된 것은 적는다)
+## 규칙 (AI 필독 — 결과의 규칙 줄을 따르고, 알게 된 것은 적는다)
 
-> **모든 조회(`s`·`m`·`d`·`ex`) 전에 꼭 `references/rules.yaml`과 `LEARNINGS.md`를 참조한다.** 예외 없음 — 처음 쓰는 표든 익숙한 표든, 짧은 조회든 마찬가지다. 처음 한 번 두 파일을 읽고(rules.yaml 은 50KB가 넘어 한 번에 안 읽히면 나눠 끝까지 읽거나 아래 선택자로 필요한 부분만 본다), 이후 조회마다 **그 조회에 해당하는 항목만** 다시 찾는다 — 파일 전체를 매번 다시 읽지 않는다. 고르는 법: `kosis rules list --id <ORG/TBL 또는 규칙 id>`, `--kind table`, `--topic period`, `--status wrong`. 본문 검색(`kosis rules list 울산`)은 관련 없는 규칙도 많이 나오니 마지막에 (`workflow.rules-lookup`).
+kosis 는 판단하지 않는다. 판단은 kosis 를 쓰는 AI 가 `s`(검색) → `m`(메타) → `d`(데이터)로 한다. 그 판단에 쓸 검증된 지식(규칙)은 **조회 결과에 함께 나온다** — 조회 전에 규칙 파일을 통째로 읽지 않는다.
 
-kosis 는 판단하지 않는다. 판단은 kosis 를 쓰는 AI 가 `s`(검색) → `m`(메타) → `d`(데이터)로 한다.
-그 판단에 쓸 검증된 지식이 규칙 파일에 있다.
-
-1. **작업 전 READ** — 모든 조회 전에 아래를 참조한다.
-   - [references/rules.yaml](references/rules.yaml): 배포 규칙 (모든 사용자 공통, 검증된 것만). 작업 순서·검색 요령·시점 형식·오류 대응과 통계표별 검증 코드(`tables`)
-   - [LEARNINGS.md](LEARNINGS.md): 오답노트 — 오류코드 대응·테이블별 함정·성공 쿼리·성능 팁 (사람용 설명과 사례)
-   - `~/.kosis/rules.d/*.yaml`: 이 컴퓨터의 로컬 규칙 (있으면. 더 최신이다) — `kosis rules list [찾을 말]`로 배포·로컬을 함께 볼 수 있다 (`-f json`이면 본문까지)
-   - 원하는 표가 `tables`에 있으면 검색·메타를 건너뛰고 그 코드로 바로 조회해도 된다 (`verified`가 오래됐으면 `m`으로 재확인). 단 `axes`에 없는 축이 있으면(축 수가 맞지 않으면) `m`으로 먼저 확인한다 — kosis 도 빠진 `--classN`을 조회 전에 알려 준다
-2. **작업 후 WRITE** — s·m·d 를 하며 **새로 확인한 사실**은 `kosis rules add`로 한 항목씩 저장한다 (YAML을 표준입력으로. 파일 이름·형식 검사는 kosis가 한다. 형식이 틀리면 종료 코드 1). `kosis d`가 오류를 내면 원인을 확인한 뒤 꼭 기록한다.
-   - 내용: `kind`(rule|table|concept|breakdown|crosswalk|gap), `title`, `verified`, `evidence` + 종류별 필드 (형식은 `kosis rules --help`)
+1. **결과의 규칙 줄을 따른다**
+   - `kosis s`: 검색어에 맞는 검증된 표(`ℹ 규칙(검증된 표 …)`)와 예전에 못 찾은 기록(`ℹ 규칙(못 찾은 기록 …)`)
+   - `kosis m`·`kosis d`: 그 표에서 확인된 사실(`ℹ 규칙(배포|로컬 …)`, `m` 요약의 `[규칙]`) — 합계 코드·누계·맞는 표 안내 등. 이 줄이 다른 표를 가리키면 그 표를 쓴다
+   - `ℹ 규칙 혼동 주의(…)`: 같은 말로 불리는 다른 지표가 있다 (자가보유율/점유율, 생산액/출하액, 산업용/제조업 전력 …). ①②가 각 지표의 표·코드·값, ▶ 가 지금 조회한 표 — 질문이 어느 쪽인지 다시 보고, 요청한 지표가 없으면 다른 지표로 바꿔 답하지 않는다
+   - 결과에 규칙 줄이 없는데 오류가 나거나 막히면 그때 찾는다: `kosis rules list --id <ORG/TBL 또는 규칙 id>`, `--kind gap`, `--topic period|search|answer`. 사람용 설명·사례는 [LEARNINGS.md](LEARNINGS.md), 원본은 [references/rules.yaml](references/rules.yaml)
+2. **왕복을 줄인다** — 앞 결과에 기대지 않는 조회 여러 개(같은 지역의 인구·세대·화재, 여러 표의 값)는 `kosis batch "<d 인자>" "<d 인자>" …` 로 한 번에 받는다 (최대 10개, JSON 하나). 순위·증감·비율은 `d --sort/--top/--change/--ratio`, 두 표 비율은 `kosis ratio` 로 한 번에
+3. **작업 후 WRITE** — 새로 확인한 사실(특히 `d` 오류의 원인)은 `kosis rules add`로 한 항목씩 저장한다 (YAML 을 표준입력으로. 형식은 `kosis rules --help`, 틀리면 종료 코드 1)
    - 실제로 실행해 본 것만. `evidence`(무엇을 실행해 무엇을 봤는지)와 `verified`(날짜) 필수. 추측은 쓰지 않는다
-   - 기존 규칙이 틀렸으면 지우지 말고 `status: wrong`과 이유를 적는다. 잘못 고쳤으면 `kosis rules log`로 이력을 보고 `kosis rules revert <파일>`로 되돌린다
-   - 설치된 SKILL.md·references 는 직접 고치지 않는다 (`kosis update` 가 덮어쓴다. 고친 파일은 `~/.kosis/skill-backup/`에 백업은 된다)
-   - 저장한 뒤 `kosis rules sync`로 다른 컴퓨터와 합친다 (`rules.d`가 저장소와 연결된 경우. 처음 연결은 `kosis rules sync --init <비공개 저장소 URL>`)
-   - 여러 번 확인된 로컬 규칙은 저장소의 `references/rules.yaml`로 올린다 (PR → 릴리스 → 모든 사용자)
-3. [LEARNINGS.md](LEARNINGS.md)(오답노트)는 사람용 설명·사례, 규칙 파일은 같은 지식을 AI 가 바로 쓰도록 구조화한 것이다 — 둘 다 조회 전 참조 대상이다.
+   - 기존 규칙이 틀렸으면 지우지 말고 `status: wrong`과 이유를 적는다 (`kosis rules log`·`kosis rules revert <파일>`)
+   - 설치된 SKILL.md·references 는 직접 고치지 않는다 (`kosis update` 가 덮어쓴다)
+   - 저장한 뒤 `kosis rules sync`로 다른 컴퓨터와 합친다 (처음 연결은 `kosis rules sync --init <비공개 저장소 URL>`). 여러 번 확인된 로컬 규칙은 저장소의 `references/rules.yaml`로 올린다
 
 ---
 
@@ -195,6 +190,7 @@ kosis s "미분양" -n 10
 | `search <키워드>` | `s` | `kosis s "인구" -n 50`, `kosis s "출하액" --stat 광업제조업조사 --items` (거르기: `--org`(서버)·`--stat`·`--region`(받은 쪽 안), 다음 쪽: `--page N`, 정렬: `--sort DATE`, 항목·단위: `--items`. stderr `검색 범위`로 전체·받은·거른 뒤 수 확인) |
 | `meta <ORG> <TBL>` | `m` | `kosis m 101 DT_1IN1502`, `kosis m 101 DT_1FS1101 --under 26` (코드 고르기: `--find 이름`·`--under 상위코드`·`--level N`·`--axis item|class2|분류이름` → d 에 넣을 `"a+b"`. ITM 1회만 부름. 큰 표는 전체 출력 대신 이것으로) |
 | `data <ORG> <TBL>` | `d` | `kosis d 101 DT_1IN1502 -c1 00 -i T100 -p Y -l 5`, `... --pivot C1` (분류1 값을 열로 펼친 비교표). 요청 항목 중 결과가 없는 항목은 stderr 경고 — 항목마다 마지막 시점이 다를 수 있다. 순위는 `--sort desc --top N` (눈으로 정렬하지 않는다). 증감은 `--change yoy|prev` (직접 빼지 않는다, 비교 시점까지 받기: 월 yoy `-l 13`). 표에 없는 주기(`-p`)는 exit 1 |
+| `batch <d 인자>…` | | `kosis batch "101 DT_1B040A3 -c1 41590 -i T20 -p Y -l 1" "101 DT_1YL8601 -c1 31240 -i T10 -p Y -l 1"` (서로 독립인 d 조회 최대 10개를 동시에 → JSON 하나. 한 조회 실패는 그 항목 error, 하나라도 실패하면 exit 1) |
 | `list` | `ls` | `kosis ls --parent A_4` |
 | `explain <ORG> <TBL>` | `ex` | `kosis ex 101 DT_1IN1502` (조사 범위·주석·원표/조사설명 링크) |
 | `bulk <userStatsId>` | | `kosis bulk "myid/..." -o data.xls` |

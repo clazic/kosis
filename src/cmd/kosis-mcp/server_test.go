@@ -195,7 +195,7 @@ func TestInitializeAndToolsList(t *testing.T) {
 			t.Errorf("%s 설명 없음", m["name"])
 		}
 	}
-	if strings.Join(names, ",") != "kosis_search,kosis_meta,kosis_data,kosis_result_page,kosis_result_query,kosis_list,kosis_explain,kosis_indicator" {
+	if strings.Join(names, ",") != "kosis_search,kosis_meta,kosis_data,kosis_result_page,kosis_result_query,kosis_batch,kosis_ratio,kosis_rules,kosis_list,kosis_explain,kosis_indicator" {
 		t.Errorf("도구 목록: %v", names)
 	}
 	if got["4"]["error"] == nil {
@@ -227,6 +227,26 @@ func TestNoKeyIsError(t *testing.T) {
 	text, isErr := callResult(t, got["1"])
 	if !isErr || !strings.Contains(text, "API 키가 없어요") {
 		t.Errorf("키 없음: %v %q", isErr, text)
+	}
+}
+
+// kosis_rules 는 API 키도 스킬 폴더도 없이 바이너리에 내장된 규칙으로 답한다.
+func TestRulesToolWithoutKeysOrSkill(t *testing.T) {
+	t.Setenv("HOME", t.TempDir()) // 스킬 폴더·로컬 규칙 없음
+	t.Setenv("KOSIS_RULES_FILE", "")
+	got := runSession(t, newServer(nil, "dev", nil, nil),
+		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"kosis_rules","arguments":{"id":"116/DT_MLTM_2086"}}}`,
+		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"kosis_rules","arguments":{}}}`,
+		`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"kosis_rules","arguments":{"query":"전기차","kind":"gap"}}}`)
+	text, isErr := callResult(t, got["1"])
+	if isErr || !strings.Contains(text, "미분양주택현황") || !strings.Contains(text, "연간만 있다") {
+		t.Errorf("표 규칙: %v %q", isErr, text)
+	}
+	if text, isErr := callResult(t, got["2"]); !isErr || !strings.Contains(text, "하나는 주세요") {
+		t.Errorf("인자 없이: %v %q", isErr, text)
+	}
+	if text, isErr := callResult(t, got["3"]); isErr || !strings.Contains(text, "ev-registrations-by-region") {
+		t.Errorf("gap 찾기: %v %q", isErr, text)
 	}
 }
 

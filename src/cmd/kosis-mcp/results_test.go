@@ -291,6 +291,10 @@ func TestTransformsHandComputed(t *testing.T) {
 			"C1,C1_NM,DT_max", "11,서울,20;26,울산,1000;31,경기,", ""},
 		{"pivot", transform{Filter: map[string]filterCond{"ITM_ID": {In: map[string]bool{"T1": true}}}, Pivot: &pivotSpec{Rows: []string{"C1"}, Cols: "PRD_DE", Value: "DT"}},
 			"C1,C1_NM,2022,2023,2024", "11,서울,10,20,-;26,울산,1,000,3,;31,경기,,X,", ""},
+		{"aggregate then order top (동률 없음)", transform{Agg: &aggSpec{GroupBy: []string{"C1"}, Op: "sum", Value: "DT"}, Order: &orderSpec{Desc: true, Top: 1}},
+			"C1,C1_NM,DT_sum", "26,울산,1008", ""},
+		{"order asc by name column, 숫자 아닌 값은 뒤", transform{Filter: map[string]filterCond{"PRD_DE": {In: map[string]bool{"2023": true}}}, Order: &orderSpec{By: "DT"}},
+			"C1,C1_NM,ITM_ID,PRD_DE,DT", "26,울산,T1,2023,3;11,서울,T1,2023,20;31,경기,T1,2023,X", ""},
 		{"aggregate then pivot", transform{Agg: &aggSpec{GroupBy: []string{"C1", "PRD_DE"}, Op: "sum", Value: "DT"}, Pivot: &pivotSpec{Rows: []string{"C1"}, Cols: "PRD_DE", Value: "DT_sum"}},
 			"C1,C1_NM,2022,2023,2024", "11,서울,10,20,;26,울산,1005,3,;31,경기,,,", ""},
 	}

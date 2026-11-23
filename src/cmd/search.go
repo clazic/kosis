@@ -73,6 +73,12 @@ var searchCmd = &cobra.Command{
   - stderr '검색 범위' = 전체 결과 수, 받은 수(이 쪽), --stat/--region 으로 거른 뒤 수.
     --stat/--region 은 받은 쪽 안에서만 거르므로 빈 결과면 --page 로 다음 쪽도 보세요
   - 검색에서 못 찾은 것이 KOSIS 에 없다는 뜻은 아닙니다
+  - stderr 'ℹ 규칙(검증된 표 …)' = 검색어의 낱말(2글자 이상)이 모두 든 rules 의 표 (이름·facts·코드 이름 어디든,
+    최대 5개 — 표 이름에 검색어가 없어 검색에 안 걸리는 표를 알려 준다). 'ℹ 규칙(못 찾은 기록 …)' = 예전에
+    찾아보고 못 찾은 주제(gaps). 낱말을 글자로만 맞추므로 관련 없는 표가 섞일 수 있다 (환율 ↔ 전환율)
+  - stderr 'ℹ 규칙 혼동 주의(…)' = 검색어에 같은 말로 불리는 다른 지표가 있는 말이 들었을 때 (자가보유율/점유율,
+    생산액/출하액, 물가 지수/상승률, 소상공인 전수/표본 …). ①②… 가 각 지표의 표·코드·확인한 값이다 —
+    질문이 어느 쪽인지 보고 그 표를 쓰고, 답에 정의를 밝힌다 (목록: kosis rules list --kind concept)
   - 인자·형식이 틀리거나 조회가 실패하면 stderr 에 오류, 종료 코드 1 (stdout 비움)
 
 출력 컬럼:
@@ -185,6 +191,7 @@ func runSearch(cmd *cobra.Command, args []string) error {
 	if len(results) == 0 {
 		fmt.Fprintf(os.Stderr, "'%s' 검색 결과가 없습니다. %s\n", keyword, scope)
 		printSearchNextSteps(keyword, total, fetched, page, clientFilter, orgF, regionF)
+		printSearchRules(keyword)
 		if format == "json" {
 			fmt.Println("[]")
 		}
@@ -192,6 +199,7 @@ func runSearch(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
+	printSearchRules(keyword)
 	var items, itemErrs []string
 	if withItems {
 		items, itemErrs = searchItems(func(org, tbl string) ([]api.MetaResult, error) {
@@ -305,6 +313,13 @@ const maxOrgMatches = 5
 func isDigits(s string) bool {
 	_, err := strconv.Atoi(s)
 	return err == nil && !strings.HasPrefix(s, "-")
+}
+
+// printSearchRules 검색어에 맞는 규칙(예전에 못 찾은 기록, 검증된 표)을 stderr 로 — 검색 순위에 안 걸리는 표를 알려 준다.
+func printSearchRules(keyword string) {
+	for _, l := range searchRuleNotes(keyword) {
+		fmt.Fprintf(os.Stderr, "ℹ %s\n", l)
+	}
 }
 
 // printSearchNextSteps 빈 결과일 때 다음에 해 볼 것 (stderr).

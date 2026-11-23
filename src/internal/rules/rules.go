@@ -248,6 +248,11 @@ func LoadShipped(path string) ([]Entry, error) {
 	if err != nil {
 		return nil, err
 	}
+	return parseShipped(data, path)
+}
+
+// parseShipped 배포 rules.yaml 내용(절 형식)을 항목 목록으로.
+func parseShipped(data []byte, path string) ([]Entry, error) {
 	var doc map[string]any
 	if err := yaml.Unmarshal(data, &doc); err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)

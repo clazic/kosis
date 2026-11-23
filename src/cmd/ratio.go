@@ -95,101 +95,16 @@ func runRatio(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	joinPeriod := num.multi || den.multi
-	if !joinPeriod {
-		if pn, pd := num.rows[0]["PRD_DE"], den.rows[0]["PRD_DE"]; pn != pd {
-			fmt.Fprintf(os.Stderr, "ℹ 분자 시점 %s, 분모 시점 %s — 시점이 하나씩이라 시점은 무시하고 맞췄습니다 (같은 해로 맞추려면 -s/-e)\n", pn, pd)
-		}
+	out, notes, err := ratioJoin(num, den, ratioScale, ratioNoTotal, ratioSort, ratioTop)
+	for _, n := range notes {
+		fmt.Fprintln(os.Stderr, n)
 	}
-	keyOf := func(s ratioSide, r map[string]string) string { return ratioKey(s, r, joinPeriod) }
-	for _, side := range []ratioSide{num, den} { // 이름이 겹치면(여러 시도의 '중구', 편입 전후 같은 이름) 짝이 틀린다 — 막는다
-		seen := map[string]bool{}
-		var dup []string
-		for _, r := range side.rows {
-			k := keyOf(side, r)
-			if seen[k] {
-				dup = append(dup, r[side.key])
-			}
-			seen[k] = true
-		}
-		if len(dup) > 0 {
-			return fmt.Errorf("이름이 겹치는 행이 있어 짝을 맞출 수 없습니다: %s — 코드를 좁히거나(시도 하나의 시군구 등) d 로 따로 조회하세요", capList(dup, 5))
-		}
-	}
-	denBy := map[string]map[string]string{}
-	for _, r := range den.rows {
-		denBy[keyOf(den, r)] = r
-	}
-	used := map[string]bool{}
-	type outRow struct {
-		name, period, n, d, ratio string
-		v                         float64
-		ok                        bool
-	}
-	var out []outRow
-	var unmatched []string
-	for _, r := range num.rows {
-		d, ok := denBy[keyOf(num, r)] // 분자 행은 분자 쪽 이름 열로 (두 표의 축 번호가 달라도)
-		if ok {
-			used[keyOf(num, r)] = true
-		}
-		name := r[num.key]
-		if num.key == "" {
-			name = r["ITM_NM"]
-		}
-		if ratioNoTotal && totalName.MatchString(strings.TrimSpace(name)) {
-			continue
-		}
-		if !ok {
-			unmatched = append(unmatched, name)
-			continue
-		}
-		nv, e1 := strconv.ParseFloat(strings.ReplaceAll(r["DT"], ",", ""), 64)
-		dv, e2 := strconv.ParseFloat(strings.ReplaceAll(d["DT"], ",", ""), 64)
-		o := outRow{name: name, period: r["PRD_DE"], n: r["DT"], d: d["DT"]}
-		if e1 == nil && e2 == nil && dv != 0 {
-			o.v, o.ok = nv/dv*ratioScale, true
-			o.ratio = strconv.FormatFloat(o.v, 'f', 4, 64)
-		}
-		out = append(out, o)
-	}
-	if len(unmatched) > 0 {
-		fmt.Fprintf(os.Stderr, "⚠ 분모에서 짝을 못 찾은 분자 행: %s — 이름·시점이 맞는지 확인하세요\n", capList(unmatched, 10))
-	}
-	var denOnly []string
-	for _, r := range den.rows {
-		if !used[keyOf(den, r)] && !(ratioNoTotal && totalName.MatchString(strings.TrimSpace(r[den.key]))) {
-			denOnly = append(denOnly, r[den.key])
-		}
-	}
-	if len(denOnly) > 0 && den.key != "" {
-		fmt.Fprintf(os.Stderr, "⚠ 분자에서 짝을 못 찾은 분모 행: %s\n", capList(denOnly, 10))
-	}
-	if len(out) == 0 {
-		return fmt.Errorf("맞춘 행이 없습니다 — 두 쪽의 이름 축·시점을 확인하세요")
-	}
-	fmt.Fprintf(os.Stderr, "ℹ 비율 = 분자(%s) ÷ 분모(%s) × %s\n", num.rows[0]["UNIT_NM"], den.rows[0]["UNIT_NM"], strconv.FormatFloat(ratioScale, 'f', -1, 64))
-	if ratioSort != "" {
-		sort.SliceStable(out, func(i, j int) bool {
-			if out[i].ok != out[j].ok {
-				return out[i].ok
-			}
-			if ratioSort == "desc" {
-				return out[i].v > out[j].v
-			}
-			return out[i].v < out[j].v
-		})
-		if ratioTop > 0 && len(out) > ratioTop {
-			k := ratioTop
-			for k < len(out) && out[k].ok && out[ratioTop-1].ok && out[k].v == out[ratioTop-1].v {
-				k++
-			}
-			out = out[:k]
-		}
+	if err != nil {
+		return err
 	}
 	data := make([]map[string]interface{}, len(out))
 	for i, o := range out {
-		data[i] = map[string]interface{}{"이름": o.name, "시점": o.period, "분자": o.n, "분모": o.d, "비율": o.ratio}
+		data[i] = map[string]interface{}{"이름": o.Name, "시점": o.Period, "분자": o.Num, "분모": o.Den, "비율": o.Ratio}
 	}
 	f, err := output.NewFormatter(ratioFormat)
 	if err != nil {
@@ -233,13 +148,26 @@ func ratioQuery(label, argLine string) (ratioSide, error) {
 	if err := json.Unmarshal(stdout.Bytes(), &raw); err != nil || len(raw) == 0 {
 		return ratioSide{}, fmt.Errorf("%s 쪽 결과가 없습니다", label)
 	}
+	rows := make([]map[string]string, len(raw))
+	for i, m := range raw {
+		rows[i] = map[string]string{}
+		for k, v := range m {
+			rows[i][k] = fmt.Sprint(v)
+		}
+	}
+	return ratioSideFromRows(label, rows)
+}
+
+// ratioSideFromRows 한쪽(분자·분모) 조회 행(API 키)에서 맞출 이름 축을 정한다. 항목이 둘 이상이거나 여러 값인 축이 둘 이상이면 오류.
+func ratioSideFromRows(label string, in []map[string]string) (ratioSide, error) {
+	if len(in) == 0 {
+		return ratioSide{}, fmt.Errorf("%s 쪽 결과가 없습니다", label)
+	}
 	s := ratioSide{}
 	periods := map[string]bool{}
 	distinct := map[string]map[string]bool{}
-	for _, m := range raw {
-		r := map[string]string{}
-		for k, v := range m {
-			r[k] = fmt.Sprint(v)
+	for _, r := range in {
+		for k := range r {
 			if strings.HasSuffix(k, "_NM") && k != "ITM_NM" && k != "UNIT_NM" {
 				if distinct[k] == nil {
 					distinct[k] = map[string]bool{}
@@ -326,4 +254,104 @@ func nameKey(name string) string {
 		return string(r[:2])
 	}
 	return n
+}
+
+// RatioRow 두 표 비율의 한 줄.
+type RatioRow struct {
+	Name, Period, Num, Den, Ratio string
+	v                             float64
+	ok                            bool
+}
+
+// ratioJoin 분자·분모 행을 이름(줄임말)·시점으로 맞춰 나눈다. notes 는 안내·경고 줄(ℹ·⚠ 포함).
+func ratioJoin(num, den ratioSide, scale float64, noTotal bool, sortDir string, top int) ([]RatioRow, []string, error) {
+	var notes []string
+	joinPeriod := num.multi || den.multi
+	if !joinPeriod {
+		if pn, pd := num.rows[0]["PRD_DE"], den.rows[0]["PRD_DE"]; pn != pd {
+			notes = append(notes, fmt.Sprintf("ℹ 분자 시점 %s, 분모 시점 %s — 시점이 하나씩이라 시점은 무시하고 맞췄습니다 (같은 해로 맞추려면 -s/-e)", pn, pd))
+		}
+	}
+	keyOf := func(s ratioSide, r map[string]string) string { return ratioKey(s, r, joinPeriod) }
+	for _, side := range []ratioSide{num, den} { // 이름이 겹치면(여러 시도의 '중구', 편입 전후 같은 이름) 짝이 틀린다 — 막는다
+		seen := map[string]bool{}
+		var dup []string
+		for _, r := range side.rows {
+			k := keyOf(side, r)
+			if seen[k] {
+				dup = append(dup, r[side.key])
+			}
+			seen[k] = true
+		}
+		if len(dup) > 0 {
+			return nil, notes, fmt.Errorf("이름이 겹치는 행이 있어 짝을 맞출 수 없습니다: %s — 코드를 좁히거나(시도 하나의 시군구 등) d 로 따로 조회하세요", capList(dup, 5))
+		}
+	}
+	denBy := map[string]map[string]string{}
+	for _, r := range den.rows {
+		denBy[keyOf(den, r)] = r
+	}
+	used := map[string]bool{}
+	var out []RatioRow
+	var unmatched []string
+	for _, r := range num.rows {
+		d, ok := denBy[keyOf(num, r)] // 분자 행은 분자 쪽 이름 열로 (두 표의 축 번호가 달라도)
+		if ok {
+			used[keyOf(num, r)] = true
+		}
+		name := r[num.key]
+		if num.key == "" {
+			name = r["ITM_NM"]
+		}
+		if noTotal && totalName.MatchString(strings.TrimSpace(name)) {
+			continue
+		}
+		if !ok {
+			unmatched = append(unmatched, name)
+			continue
+		}
+		nv, e1 := strconv.ParseFloat(strings.ReplaceAll(r["DT"], ",", ""), 64)
+		dv, e2 := strconv.ParseFloat(strings.ReplaceAll(d["DT"], ",", ""), 64)
+		o := RatioRow{Name: name, Period: r["PRD_DE"], Num: r["DT"], Den: d["DT"]}
+		if e1 == nil && e2 == nil && dv != 0 {
+			o.v, o.ok = nv/dv*scale, true
+			o.Ratio = strconv.FormatFloat(o.v, 'f', 4, 64)
+		}
+		out = append(out, o)
+	}
+	if len(unmatched) > 0 {
+		notes = append(notes, fmt.Sprintf("⚠ 분모에서 짝을 못 찾은 분자 행: %s — 이름·시점이 맞는지 확인하세요", capList(unmatched, 10)))
+	}
+	var denOnly []string
+	for _, r := range den.rows {
+		if !used[keyOf(den, r)] && !(noTotal && totalName.MatchString(strings.TrimSpace(r[den.key]))) {
+			denOnly = append(denOnly, r[den.key])
+		}
+	}
+	if len(denOnly) > 0 && den.key != "" {
+		notes = append(notes, fmt.Sprintf("⚠ 분자에서 짝을 못 찾은 분모 행: %s", capList(denOnly, 10)))
+	}
+	if len(out) == 0 {
+		return nil, notes, fmt.Errorf("맞춘 행이 없습니다 — 두 쪽의 이름 축·시점을 확인하세요")
+	}
+	notes = append(notes, fmt.Sprintf("ℹ 비율 = 분자(%s) ÷ 분모(%s) × %s", num.rows[0]["UNIT_NM"], den.rows[0]["UNIT_NM"], strconv.FormatFloat(scale, 'f', -1, 64)))
+	if sortDir != "" {
+		sort.SliceStable(out, func(i, j int) bool {
+			if out[i].ok != out[j].ok {
+				return out[i].ok
+			}
+			if sortDir == "desc" {
+				return out[i].v > out[j].v
+			}
+			return out[i].v < out[j].v
+		})
+		if top > 0 && len(out) > top {
+			k := top
+			for k < len(out) && out[k].ok && out[top-1].ok && out[k].v == out[top-1].v {
+				k++
+			}
+			out = out[:k]
+		}
+	}
+	return out, notes, nil
 }

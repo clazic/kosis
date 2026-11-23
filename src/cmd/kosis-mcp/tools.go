@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"unicode/utf8"
 
 	"github.com/clazic/kosis/cmd"
@@ -117,6 +118,7 @@ var tools = []*tool{
 			"시점은 하나만 고른다: latest(최근 N개) | start+end(연속) | periods(\"2020,2022\") — 없으면 최근 1개. 4만 셀을 넘으면 자동 분할 조회한다. " +
 			"결과 notices 는 조용한 오답 경고(결과에 없는 코드·일찍 끊긴 코드·잠정치·전망 시점·모두 0·단위 없음)다 — 답에 반영한다. 안내 문구의 -cN=classN, -i=item, -p=period, kosis m=kosis_meta. " +
 			"rows 는 API 키(C1·C1_NM … ITM_ID·ITM_NM·PRD_DE·DT·UNIT_NM), labels 는 이 표의 열 이름. X(비공개)·빈 값은 그대로 두고 추정하지 않는다. " +
+			"계산은 도구에 맡긴다(눈으로 정렬하거나 손으로 빼고 나누지 않는다): 순위 sort=desc|asc + top=N (RANK 열, 합계 행은 no_total=true), 증감 change=yoy|prev (DT_CHG·DT_CHG_PCT 열, 비교 시점까지 받는다 — 월 yoy 는 latest 13), 같은 축 두 코드 비율 ratio=\"분자/분모\" (DT_RATIO_PCT, ×100). 다른 두 표의 비율은 kosis_ratio. 계산은 filter·aggregate·pivot 보다 먼저 한다. " +
 			"큰 표(약 200KB 초과)는 저장되어 첫 쪽(format=columns)·next_cursor(kosis_result_page)·result_id(kosis_result_query)·CSV download 를 준다 — 큰 표는 먼저 latest/filter/aggregate/pivot 으로 줄이고, 전체가 필요하면 download 를 쓴다.",
 		Params: append([]*param{
 			{Name: "org_id", Type: "string", Required: true, Pattern: patOrgID, Desc: "기관 코드 (예: 101)"},
@@ -137,6 +139,12 @@ var tools = []*tool{
 				Desc: "정수 N: 표의 최근 N개 시점을 받는다. true: 받은 뒤 계열(코드 조합)마다 가장 최근 시점 행만 남긴다 (start/end 와 함께 — 코드마다 끝 시점이 달라도)"},
 			{Name: "periods", Type: "string", MaxLen: 2000, Pattern: patPeriods, Desc: "비연속 시점 (쉼표, 예: 2020,2022,2025)"},
 			{Name: "fields", Type: "string", MaxLen: 500, Pattern: patText, Desc: "남길 열 (쉼표, API 키 또는 열 이름. 예: C1_NM,PRD_DE,DT) — 임의로 줄이지 않는다"},
+			{Name: "sort", Type: "string", Enum: []string{"desc", "asc"}, Desc: "수치값으로 정렬하고 RANK(순위) 열을 붙인다 (항목·시점 묶음마다 따로, 동률은 같은 순위). change 와 함께면 증감 기준"},
+			{Name: "top", Type: "integer", Min: 1, Max: 100000, Desc: "정렬 뒤 앞 N행 (sort 와 함께, 경계 동률은 함께)"},
+			{Name: "sort_by", Type: "string", Enum: []string{"value", "change", "pct", "ratio"}, Desc: "sort 기준: value=수치값, change=증감, pct=증감률(%), ratio=비율(%)"},
+			{Name: "change", Type: "string", Enum: []string{"yoy", "prev"}, Desc: "같은 계열의 비교 시점 대비 증감 DT_CHG·증감률 DT_CHG_PCT 열: yoy=1년 전 같은 달·분기·해, prev=직전 시점. 비교 기준으로만 쓴 앞 시점 행은 빠진다"},
+			{Name: "ratio", Type: "string", MaxLen: 500, Pattern: `^[A-Za-z0-9_.+*,\-]+/[A-Za-z0-9_.*\-]+$`, Desc: "같은 축 두 코드의 비율 DT_RATIO_PCT(분자÷분모×100): \"T2/T1\", \"ALL/00\"(그 축 모든 행의 합계 대비), \"Y70+Y75/000\"(구간 합 — 합계 % 는 notices). 분모 코드도 조회에 넣는다"},
+			{Name: "no_total", Type: "boolean", Desc: "true: 여러 코드를 준 축에서 이름이 전국·계·합계·총계·소계·전체인 행을 뺀다 (순위에서 합계 빼기)"},
 		}, bigResultParams()...),
 		run: runData,
 	},
@@ -155,15 +163,61 @@ var tools = []*tool{
 	{
 		Name:  "kosis_result_query",
 		Title: "저장된 결과 줄이기·집계",
-		Description: "저장된 결과(result_id)에 다시 조회 없이 filter → latest → aggregate → pivot 을 건다. 큰 표는 이것으로 먼저 줄여서 본다. API 키가 필요 없다. " +
+		Description: "저장된 결과(result_id)에 다시 조회 없이 filter → latest → aggregate → order·top → pivot 을 건다. 큰 표는 이것으로 먼저 줄여서 본다. API 키가 필요 없다. " +
 			"결과가 크면 다시 저장해 새 result_id·next_cursor·CSV 를 준다.",
 		NoKeys: true,
 		Params: append([]*param{
 			{Name: "result_id", Type: "string", Required: true, Pattern: `^[A-Za-z0-9_-]{22,64}$`, Desc: "앞 응답의 result_id"},
 			{Name: "latest", Schema: map[string]any{"type": "boolean"}, Check: checkLatestBool, Desc: "true: 계열(코드 조합)마다 가장 최근 시점(PRD_DE) 행만"},
 			{Name: "limit", Type: "integer", Min: 1, Max: 100000, Desc: "첫 쪽 최대 행 수"},
+			{Name: "order", Type: "string", Enum: []string{"desc", "asc"}, Desc: "aggregate 뒤(pivot 앞)에 order_by 열의 숫자로 정렬 (숫자 아닌 값은 맨 뒤)"},
+			{Name: "order_by", Type: "string", MaxLen: 80, Pattern: patText, Desc: "정렬할 열 (API 키 또는 열 이름, 기본 DT — aggregate 뒤에는 그 결과 값 열)"},
+			{Name: "top", Type: "integer", Min: 1, Max: 100000, Desc: "정렬 뒤 앞 N행 (order 와 함께, 경계 동률은 함께)"},
 		}, bigResultParams()...),
 		run: runResultQuery,
+	},
+	{
+		Name:  "kosis_batch",
+		Title: "KOSIS 여러 조회를 한 번에",
+		Description: "서로 독립인 kosis_data 조회 여러 개(최대 10)를 한 번에 보내 동시에 받는다 — 연쇄 질문에서 다음 단계가 앞 결과에 기대지 않는 조회(같은 지역의 인구·화재·출생아, 여러 시도의 값 등)는 한 호출로 묶어 왕복을 줄인다. " +
+			"queries 의 각 항목은 kosis_data 와 같은 조회 인자(org_id·tbl_id·class1…·item·period·시점)와 계산 인자(sort·top·no_total·change·ratio·sort_by·fields). " +
+			"results 는 순서대로 {index, org_id, tbl_id, rows(API 키), notices} 또는 {index, error} — 한 조회가 실패해도 나머지는 온다. 조회마다 행이 많으면 앞 200행만 (그 이상은 kosis_data). 앞 결과로 다음 조회가 정해지면 묶지 말고 차례로 부른다.",
+		Params: []*param{
+			{Name: "queries", Required: true, Schema: batchSchema(), Check: checkBatch, Desc: "조회 목록 (1~10개, 각 항목은 kosis_data 인자)"},
+		},
+		run: runBatch,
+	},
+	{
+		Name:  "kosis_ratio",
+		Title: "KOSIS 두 조회의 비율",
+		Description: "두 조회(다른 두 표, 또는 같은 표의 두 코드·항목)의 값을 이름·시점으로 맞춰 나눈다 (kosis ratio) — 농가인구÷총인구, 종사자÷사업체, 미분양÷세대수처럼 손으로 나누지 않는다. " +
+			"num·den 은 kosis_data 와 같은 조회 인자(org_id·tbl_id·class1…·item·period·시점). 각 쪽 item 은 하나, 여러 코드를 주는 축도 하나만(그 축 이름으로 짝을 맞춘다 — 시도 이름이 표마다 달라도 줄임말로 맞춤). " +
+			"scale: 100=%(기본), 1=배수·1인당, 1000=천명당, 10000=만명당. sort·top 으로 순위(RANK). 짝을 못 찾은 행·이름이 겹쳐 못 맞추는 경우는 notices·오류로 알린다. " +
+			"rows: NAME·PRD_DE·NUM·DEN·RATIO.",
+		Params: []*param{
+			{Name: "num", Required: true, Schema: querySchema(), Check: checkQuery, Desc: "분자 조회 (kosis_data 의 조회 인자)"},
+			{Name: "den", Required: true, Schema: querySchema(), Check: checkQuery, Desc: "분모 조회 (kosis_data 의 조회 인자)"},
+			{Name: "scale", Schema: map[string]any{"type": "number"}, Check: checkScale, Desc: "곱할 수: 100=%(기본), 1=배수, 1000=천명당"},
+			{Name: "no_total", Type: "boolean", Desc: "true: 이름이 전국·계·합계인 행을 뺀다"},
+			{Name: "sort", Type: "string", Enum: []string{"desc", "asc"}, Desc: "비율로 정렬하고 RANK 를 붙인다"},
+			{Name: "top", Type: "integer", Min: 1, Max: 100000, Desc: "정렬 뒤 앞 N행 (sort 와 함께)"},
+		},
+		run: runRatio,
+	},
+	{
+		Name:  "kosis_rules",
+		Title: "KOSIS 검증된 규칙·표",
+		Description: "kosis 로 조회하며 확인해 둔 지식을 찾는다 (kosis rules list): 통계표별 검증 코드·함정(kind=table), 작업·검색·시점·답변 규칙(kind=rule), 예전에 못 찾은 것(kind=gap). " +
+			"kosis_search·kosis_meta·kosis_data 결과의 rules·notices 에 관련 규칙이 함께 오지만, 표를 고르기 전이나 지표 정의가 헷갈릴 때(보유율/점유율, 생산액/출하액, 상승률/등락률) 직접 찾아본다. " +
+			"query 는 제목·본문 어디든 든 말, id 는 규칙 id 또는 표 ID(ORG/TBL) 와 정확히 같은 것. API 키가 필요 없다.",
+		NoKeys: true,
+		Params: []*param{
+			{Name: "query", Type: "string", MaxLen: 100, Pattern: patText, Desc: "찾을 말 (예: 소상공인, 환율, 인허가)"},
+			{Name: "id", Type: "string", MaxLen: 80, Pattern: `^[A-Za-z0-9_./\-]+$`, Desc: "규칙 id 또는 표 ID (예: 116/DT_MLTM_2086, meta.merged-region)"},
+			{Name: "kind", Type: "string", Enum: []string{"rule", "table", "concept", "breakdown", "crosswalk", "gap"}, Desc: "종류"},
+			{Name: "topic", Type: "string", MaxLen: 30, Pattern: `^[a-z]+$`, Desc: "rule 의 주제: workflow, search, meta, data, period, answer, output, error"},
+		},
+		run: runRules,
 	},
 	{
 		Name:        "kosis_list",
@@ -201,7 +255,114 @@ var tools = []*tool{
 	},
 }
 
+// queryParams kosis_ratio 의 num·den 안에 들어가는 조회 인자 (kosis_data 의 조회 부분과 같다).
+var queryParams = []*param{
+	{Name: "org_id", Type: "string", Required: true, Pattern: patOrgID, Desc: "기관 코드"},
+	{Name: "tbl_id", Type: "string", Required: true, Pattern: patTblID, Desc: "통계표 ID"},
+	{Name: "class1", Type: "string", MaxLen: 4000, Pattern: patCodes, Desc: "분류1 코드"},
+	{Name: "class2", Type: "string", MaxLen: 4000, Pattern: patCodes, Desc: "분류2 코드"},
+	{Name: "class3", Type: "string", MaxLen: 4000, Pattern: patCodes, Desc: "분류3 코드"},
+	{Name: "class4", Type: "string", MaxLen: 4000, Pattern: patCodes, Desc: "분류4 코드"},
+	{Name: "class5", Type: "string", MaxLen: 4000, Pattern: patCodes, Desc: "분류5 코드"},
+	{Name: "class6", Type: "string", MaxLen: 4000, Pattern: patCodes, Desc: "분류6 코드"},
+	{Name: "class7", Type: "string", MaxLen: 4000, Pattern: patCodes, Desc: "분류7 코드"},
+	{Name: "class8", Type: "string", MaxLen: 4000, Pattern: patCodes, Desc: "분류8 코드"},
+	{Name: "item", Type: "string", Required: true, MaxLen: 200, Pattern: patCodes, Desc: "항목 코드 (하나)"},
+	{Name: "period", Type: "string", Required: true, Pattern: patPeriod, Desc: "수록주기 Y·M·Q·H·F"},
+	{Name: "start", Type: "string", Pattern: patPrdDe, Desc: "시작 시점 (end 와 함께)"},
+	{Name: "end", Type: "string", Pattern: patPrdDe, Desc: "종료 시점"},
+	{Name: "latest", Type: "integer", Min: 1, Max: 1000, Desc: "표의 최근 N개 시점"},
+	{Name: "periods", Type: "string", MaxLen: 2000, Pattern: patPeriods, Desc: "비연속 시점 (쉼표)"},
+}
+
+// querySchema num·den 의 JSON Schema.
+func querySchema() map[string]any {
+	props, required := paramSchemas(queryParams)
+	return map[string]any{"type": "object", "properties": props, "required": required, "additionalProperties": false}
+}
+
+// checkQuery num·den 객체를 queryParams 로 검사한다.
+func checkQuery(v any) (any, error) {
+	if _, ok := v.(map[string]any); !ok {
+		return nil, fmt.Errorf("조회 인자 객체여야 합니다 (org_id, tbl_id, class1…, item, period, 시점)")
+	}
+	raw, err := json.Marshal(v)
+	if err != nil {
+		return nil, err
+	}
+	return validateArgs(&tool{Params: queryParams}, raw)
+}
+
+// batchParams kosis_batch 의 한 조회 = 조회 인자 + 계산 인자.
+var batchParams = append(append([]*param{}, queryParams...),
+	&param{Name: "fields", Type: "string", MaxLen: 500, Pattern: patText, Desc: "남길 열 (쉼표)"},
+	&param{Name: "sort", Type: "string", Enum: []string{"desc", "asc"}, Desc: "정렬·RANK"},
+	&param{Name: "top", Type: "integer", Min: 1, Max: 100000, Desc: "정렬 뒤 앞 N행"},
+	&param{Name: "sort_by", Type: "string", Enum: []string{"value", "change", "pct", "ratio"}, Desc: "정렬 기준"},
+	&param{Name: "change", Type: "string", Enum: []string{"yoy", "prev"}, Desc: "증감"},
+	&param{Name: "ratio", Type: "string", MaxLen: 500, Pattern: `^[A-Za-z0-9_.+*,\-]+/[A-Za-z0-9_.*\-]+$`, Desc: "같은 축 두 코드 비율"},
+	&param{Name: "no_total", Type: "boolean", Desc: "합계 행 빼기"},
+)
+
+const maxBatchQueries, batchRowCap = 10, 200
+
+func batchSchema() map[string]any {
+	props, required := paramSchemas(batchParams)
+	return map[string]any{"type": "array", "minItems": 1, "maxItems": maxBatchQueries,
+		"items": map[string]any{"type": "object", "properties": props, "required": required, "additionalProperties": false}}
+}
+
+// checkBatch queries 배열을 항목마다 batchParams 로 검사한다.
+func checkBatch(v any) (any, error) {
+	arr, ok := v.([]any)
+	if !ok || len(arr) == 0 || len(arr) > maxBatchQueries {
+		return nil, fmt.Errorf("1~%d개의 조회 객체 배열이어야 합니다", maxBatchQueries)
+	}
+	out := make([]args, len(arr))
+	for i, x := range arr {
+		if _, ok := x.(map[string]any); !ok {
+			return nil, fmt.Errorf("%d번째: 조회 인자 객체여야 합니다", i+1)
+		}
+		raw, err := json.Marshal(x)
+		if err != nil {
+			return nil, err
+		}
+		a, err := validateArgs(&tool{Params: batchParams}, raw)
+		if err != nil {
+			return nil, fmt.Errorf("%d번째: %v", i+1, err)
+		}
+		out[i] = a
+	}
+	return out, nil
+}
+
+func checkScale(v any) (any, error) {
+	n, ok := v.(json.Number)
+	if !ok {
+		return nil, fmt.Errorf("숫자여야 합니다 (100=%%, 1=배수, 1000=천명당)")
+	}
+	f, err := n.Float64()
+	if err != nil || f == 0 || math.IsInf(f, 0) || math.IsNaN(f) {
+		return nil, fmt.Errorf("0 이 아닌 수여야 합니다 (받은 값: %s)", n)
+	}
+	return f, nil
+}
+
+func queryOf(in args) cmd.DataQuery {
+	q := cmd.DataQuery{OrgID: in.str("org_id"), TblID: in.str("tbl_id"), Item: in.str("item"), Period: in.str("period"),
+		Start: in.str("start"), End: in.str("end"), Latest: in.num("latest"), Periods: in.str("periods")}
+	for i := range q.Classes {
+		q.Classes[i] = in.str(fmt.Sprintf("class%d", i+1))
+	}
+	return q
+}
+
 func init() {
+	for _, p := range batchParams { // queryParams 를 포함한다
+		if p.Pattern != "" {
+			p.re = regexp.MustCompile(p.Pattern)
+		}
+	}
 	for _, t := range tools {
 		for _, p := range t.Params {
 			if p.Pattern != "" {
@@ -224,36 +385,7 @@ func (s *server) toolByName(name string) (*tool, bool) {
 func (s *server) toolList() []map[string]any {
 	var out []map[string]any
 	for _, t := range s.tools {
-		props := map[string]any{}
-		required := []string{}
-		for _, p := range t.Params {
-			s := map[string]any{"type": p.Type, "description": p.Desc}
-			if p.Schema != nil {
-				s = map[string]any{"description": p.Desc}
-				for k, v := range p.Schema {
-					s[k] = v
-				}
-			}
-			if p.Pattern != "" {
-				s["pattern"] = p.Pattern
-			}
-			if p.MaxLen > 0 {
-				s["maxLength"] = p.MaxLen
-			}
-			if p.Type == "integer" && (p.Min != 0 || p.Max != 0) {
-				s["minimum"], s["maximum"] = p.Min, p.Max
-			}
-			if len(p.Enum) > 0 {
-				s["enum"] = p.Enum
-			}
-			if p.Default != nil {
-				s["default"] = p.Default
-			}
-			props[p.Name] = s
-			if p.Required {
-				required = append(required, p.Name)
-			}
-		}
+		props, required := paramSchemas(t.Params)
 		out = append(out, map[string]any{
 			"name":        t.Name,
 			"title":       t.Title,
@@ -265,6 +397,41 @@ func (s *server) toolList() []map[string]any {
 		})
 	}
 	return out
+}
+
+// paramSchemas 인자 정의 → JSON Schema properties 와 required.
+func paramSchemas(ps []*param) (map[string]any, []string) {
+	props := map[string]any{}
+	required := []string{}
+	for _, p := range ps {
+		s := map[string]any{"type": p.Type, "description": p.Desc}
+		if p.Schema != nil {
+			s = map[string]any{"description": p.Desc}
+			for k, v := range p.Schema {
+				s[k] = v
+			}
+		}
+		if p.Pattern != "" {
+			s["pattern"] = p.Pattern
+		}
+		if p.MaxLen > 0 {
+			s["maxLength"] = p.MaxLen
+		}
+		if p.Type == "integer" && (p.Min != 0 || p.Max != 0) {
+			s["minimum"], s["maximum"] = p.Min, p.Max
+		}
+		if len(p.Enum) > 0 {
+			s["enum"] = p.Enum
+		}
+		if p.Default != nil {
+			s["default"] = p.Default
+		}
+		props[p.Name] = s
+		if p.Required {
+			required = append(required, p.Name)
+		}
+	}
+	return props, required
 }
 
 // validateArgs JSON Schema 와 같은 규칙으로 인자를 검사하고 기본값을 채운다.
@@ -506,6 +673,8 @@ func runData(rc *runCtx, in args) (*toolResult, error) {
 		Item: in.str("item"), Period: in.str("period"),
 		Start: in.str("start"), End: in.str("end"), Latest: in.num("latest"),
 		Periods: in.str("periods"), Fields: in.str("fields"),
+		Derive: cmd.DataDerive{Sort: in.str("sort"), Top: in.num("top"), SortBy: in.str("sort_by"),
+			Change: in.str("change"), Ratio: in.str("ratio"), NoTotal: in.flag("no_total")},
 	}
 	for i := range q.Classes {
 		q.Classes[i] = in.str(fmt.Sprintf("class%d", i+1))
@@ -547,6 +716,85 @@ func runData(rc *runCtx, in args) (*toolResult, error) {
 		head = append(head, kv{"notices", notices})
 	}
 	return rc.respondTable(t, in.str("format"), in.flag("save"), 0, head)
+}
+
+func runBatch(rc *runCtx, in args) (*toolResult, error) {
+	qs, _ := in["queries"].([]args)
+	results := make([]map[string]any, len(qs))
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, 4) // KOSIS 에 한꺼번에 몰리지 않게
+	for i, a := range qs {
+		wg.Add(1)
+		go func(i int, a args) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			q := queryOf(a)
+			q.Fields = a.str("fields")
+			q.Derive = cmd.DataDerive{Sort: a.str("sort"), Top: a.num("top"), SortBy: a.str("sort_by"),
+				Change: a.str("change"), Ratio: a.str("ratio"), NoTotal: a.flag("no_total")}
+			res := map[string]any{"index": i + 1, "org_id": q.OrgID, "tbl_id": q.TblID}
+			ans, err := cmd.MCPData(rc.client, q)
+			if err != nil {
+				res["error"] = err.Error()
+				results[i] = res
+				return
+			}
+			rows := ans.Rows
+			if len(rows) > batchRowCap {
+				res["truncated"] = fmt.Sprintf("행 %d개 중 앞 %d개만 — 전부는 kosis_data 로", len(rows), batchRowCap)
+				rows = rows[:batchRowCap]
+			}
+			res["rows"] = rows
+			if len(ans.Notices) > 0 {
+				res["notices"] = ans.Notices
+			}
+			results[i] = res
+		}(i, a)
+	}
+	wg.Wait()
+	failed := 0
+	for _, r := range results {
+		if _, ok := r["error"]; ok {
+			failed++
+		}
+	}
+	obj := map[string]any{"count": len(results), "failed": failed}
+	return textResult(fitResult(obj, "results", toAny(results), "조회를 나누거나 fields·top 으로 줄이세요")), nil
+}
+
+func runRatio(rc *runCtx, in args) (*toolResult, error) {
+	num, _ := in["num"].(args)
+	den, _ := in["den"].(args)
+	scale := 100.0
+	if f, ok := in["scale"].(float64); ok {
+		scale = f
+	}
+	ans, err := cmd.MCPRatio(rc.client, queryOf(num), queryOf(den), scale, in.flag("no_total"), in.str("sort"), in.num("top"))
+	if err != nil {
+		return nil, err
+	}
+	obj := map[string]any{"count": len(ans.Rows), "scale": scale}
+	if len(ans.Notices) > 0 {
+		obj["notices"] = ans.Notices
+	}
+	return textResult(fitResult(obj, "rows", toAny(ans.Rows), "코드를 좁히거나 top 을 쓰세요")), nil
+}
+
+func runRules(rc *runCtx, in args) (*toolResult, error) {
+	query, id, kind, topic := in.str("query"), in.str("id"), in.str("kind"), in.str("topic")
+	if query == "" && id == "" && kind == "" && topic == "" {
+		return nil, fmt.Errorf("query·id·kind·topic 중 하나는 주세요 (규칙 전체는 너무 깁니다)")
+	}
+	rows, err := cmd.MCPRules(query, id, kind, topic, "")
+	if err != nil {
+		return nil, err
+	}
+	obj := map[string]any{"count": len(rows)}
+	if len(rows) == 0 {
+		obj["notice"] = "맞는 규칙이 없습니다 — 그 표·주제의 규칙이 아직 없다는 뜻입니다. kosis_search·kosis_meta 로 확인하세요"
+	}
+	return textResult(fitResult(obj, "rules", toAny(rows), "id·kind·topic 으로 더 좁히세요")), nil
 }
 
 func runList(rc *runCtx, in args) (*toolResult, error) {

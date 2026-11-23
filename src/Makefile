@@ -10,9 +10,13 @@
 BIN  := bin
 APPS := ../apps
 
-.PHONY: build native mcp clean test
+.PHONY: build native mcp clean test sync-rules
 
-build:
+# 배포 규칙(../references/rules.yaml)을 바이너리 내장용 사본으로 복사 — Go embed 는 모듈 밖 파일을 못 읽는다
+sync-rules:
+	@cp ../references/rules.yaml internal/rules/embedded_rules.yaml
+
+build: sync-rules
 	@echo "▶ 멀티플랫폼 빌드 시작..."
 	@mkdir -p $(BIN) $(APPS)
 	CGO_ENABLED=1 GOOS=darwin  GOARCH=arm64 go build -o $(BIN)/kosis-darwin-arm64     .
@@ -24,14 +28,14 @@ build:
 	@echo "✅ 빌드 완료 — src/bin/ 과 ../apps/ 에 배치됨"
 	@ls -lh $(BIN)/kosis-*
 
-native:
+native: sync-rules
 	@mkdir -p $(BIN) $(APPS)
 	CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 go build -o $(BIN)/kosis-darwin-arm64 .
 	@cp $(BIN)/kosis-darwin-arm64 $(APPS)/
 	@echo "✅ 네이티브 빌드 완료"
 
 # MCP 서버 (stdio) — 현재 플랫폼만. 릴리스 자산 kosis-mcp-<os>-<arch> 는 CI 가 만든다
-mcp:
+mcp: sync-rules
 	@mkdir -p $(BIN)
 	go build -o $(BIN)/kosis-mcp-$$(go env GOOS)-$$(go env GOARCH) ./cmd/kosis-mcp
 	@echo "✅ MCP 서버 빌드 완료 — $(BIN)/kosis-mcp-$$(go env GOOS)-$$(go env GOARCH)"
@@ -40,6 +44,6 @@ clean:
 	rm -f $(BIN)/kosis-* $(APPS)/kosis-*
 	@echo "✅ 산출물 삭제 완료"
 
-test:
+test: sync-rules
 	go test -count=1 ./...  # rules.yaml(모듈 밖) 변경을 캐시가 못 봄
 

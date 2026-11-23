@@ -95,6 +95,9 @@ var metaCmd = &cobra.Command{
   - 분류/항목에 한글 이름을 사용하면 에러 21 발생 → 반드시 코드 사용
   - prdSe=2년·3년·5년 등 여러 해 주기 통계표에 -p Y를 쓰면 에러 30 발생 → -p F 사용
   - 인자·형식·플래그 조합이 틀리거나 조회가 실패하면 stderr 에 오류, 종료 코드 1 (stdout 비움)
+  - 요약 끝의 [규칙] 은 이 표에 대해 확인해 둔 사실(rules 의 tables facts, 로컬 먼저 최대 8줄)입니다.
+    '규칙 혼동 주의' 는 같은 말로 불리는 다른 지표가 있다는 뜻입니다 (▶ 가 이 표의 지표).
+    -f json 이면 stdout 은 JSON 만, 규칙은 stderr 'ℹ 규칙(…)' 줄로 나옵니다
   - 검색·메타 응답은 캐시에 둡니다 (config cache_ttl_hours, 기본 24시간). 새로 받으려면 kosis config cache-clear
 
 관련 명령어:
@@ -203,9 +206,20 @@ func runMeta(cmd *cobra.Command, args []string) error {
 			if err := formatter.Format(data, output.FormatOptions{}); err != nil {
 				return fmt.Errorf("출력 실패: %w", err)
 			}
+			printTableRules(orgID, tblID) // stdout 은 JSON 만 — 규칙은 stderr
 			return nil
 		}
 		displayMetaSummary(summary, orgID, tblID)
+		// 이 표의 검증된 규칙(함정·합계 코드·맞는 표 안내)을 요약과 함께 보여 준다
+		if n := tableRuleNotes(orgID, tblID); len(n.Lines) > 0 {
+			fmt.Printf("\n[규칙] 이 표에 대해 확인된 것 (kosis rules list --id %s/%s)\n", orgID, tblID)
+			for _, l := range n.Lines {
+				fmt.Printf("    %s\n", l)
+			}
+			if n.More > 0 {
+				fmt.Printf("    … %d줄 더: kosis rules list --id %s/%s -f json\n", n.More, orgID, tblID)
+			}
+		}
 		// 주석에 조사 대상·정의(만 3세 이상, 내국인 출원만 …)가 있으면 알린다 — 요약만 보고 지나치기 쉽다
 		if cm, cerr := client.MetaRaw(orgID, tblID, "CMMT"); cerr == nil && len(cm) > 0 {
 			fmt.Printf("\n[주석] %d개 — 조사 대상·정의·잠정 여부: kosis m %s %s --type CMMT\n", len(cm), orgID, tblID)

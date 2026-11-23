@@ -1,4 +1,4 @@
-// kosis-mcp 는 KOSIS 조회 도구(kosis_search·kosis_meta·kosis_data·kosis_list·kosis_explain·kosis_indicator)를
+// kosis-mcp 는 KOSIS 조회 도구(kosis_search·kosis_meta·kosis_data·kosis_batch·kosis_ratio·kosis_rules·kosis_list·kosis_explain·kosis_indicator)를
 // MCP(stdio, 줄 단위 JSON-RPC 2.0)로 내보내는 서버다. CLI(kosis)와 같은 API 클라이언트·키 풀·분할 조회·캐시·검사 코드를
 // 함수로 직접 쓴다. stdout 에는 JSON-RPC 만, 진단은 stderr 로 (키 없이).
 //
@@ -44,8 +44,13 @@ HTTP:
   KOSIS_MCP_TOKEN            있으면 Authorization: Bearer <토큰> 필수. loopback 이 아닌 주소는 토큰 없이 시작 거부
   KOSIS_MCP_ALLOWED_ORIGINS  허용할 Origin (쉼표). loopback 출처는 늘 허용
 
-도구: kosis_search, kosis_meta, kosis_data, kosis_list, kosis_explain, kosis_indicator,
+도구: kosis_search, kosis_meta, kosis_data, kosis_batch, kosis_ratio, kosis_rules, kosis_list, kosis_explain, kosis_indicator,
       kosis_result_page, kosis_result_query (읽기 전용)
+계산: kosis_data 의 sort·top·no_total(순위), change(증감), ratio(같은 축 두 코드 비율) — kosis d 와 같은 계산.
+      다른 두 표의 비율은 kosis_ratio, 저장된 결과 정렬은 kosis_result_query 의 order·order_by·top
+규칙: 검증된 표·함정·못 찾은 기록(rules)은 바이너리에 내장돼 있어 스킬 폴더가 없어도 됩니다.
+      kosis_search·kosis_data 의 notices 와 kosis_meta 의 rules 에 관련 규칙이 함께 나옵니다.
+      다른 파일을 쓰려면 KOSIS_RULES_FILE, 이 컴퓨터의 로컬 규칙은 ~/.kosis/rules.d
 `
 
 func main() {
