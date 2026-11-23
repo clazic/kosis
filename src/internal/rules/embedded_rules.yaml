@@ -4,9 +4,9 @@
 # 사람용 설명은 LEARNINGS.md, 명령 문법은 references/13-reference.md.
 #
 # ── 읽는 법 ──
-# 1. 모든 조회(s·m·d·ex) 전에 이 파일, LEARNINGS.md(오답노트), 로컬 규칙 ~/.kosis/rules.d/*.yaml(있으면)을 참조한다.
-#    예외 없음 — 익숙한 표·짧은 조회도 마찬가지. 로컬이 더 최신이다.
-#    kosis rules list [찾을 말] 로 둘을 함께 볼 수 있다 (-f json 이면 본문까지).
+# 1. 표별 사실(tables)·못 찾은 기록(gaps)·헷갈리는 지표(concepts)는 kosis s·m·d 결과에 함께 나온다 (stderr 'ℹ 규칙(…)').
+#    조회 전에 이 파일을 통째로 읽지 않는다. 결과에 규칙 줄이 없는데 막히면 kosis rules list --id/--kind/--topic 으로 찾는다.
+#    로컬 규칙 ~/.kosis/rules.d/*.yaml 이 더 최신이고 결과에도 먼저 나온다.
 # 2. tables 에 원하는 통계표가 있으면 검색·메타를 건너뛰고 바로 써도 된다 (verified 날짜가 오래됐으면 m 으로 재확인).
 #    단 axes 가 표의 분류 축 전부가 아니면 m 으로 먼저 확인한다 (kosis d 도 빠진 --classN 을 조회 전에 알려 준다).
 #
@@ -90,11 +90,11 @@ rules:
 
   - id: workflow.rules-lookup
     topic: workflow
-    when: 조회 전에 rules.yaml·LEARNINGS.md 를 참조할 때 (모든 조회 전 필수)
-    do: "처음 한 번은 두 파일을 읽고, 이후 조회마다 그 조회에 해당하는 항목만 다시 찾는다 — kosis rules list --id <ORG/TBL 또는 규칙 id>, --kind table, --topic period 처럼 선택자로. 본문 검색(rules list 울산)은 관련 없는 규칙도 많이 나오니 마지막에. 같은 대화에서 파일 전체를 매번 다시 읽지 않는다"
-    why: 매 조회마다 전체를 읽으면 왕복·컨텍스트만 늘고 필요한 항목은 놓치기 쉽다. 사용자 지시(모든 조회 전 참조)는 '해당 항목 확인'으로 지킨다
-    evidence: "2026-10-12 rules list 울산 → 미분양·출생·물가 규칙까지 본문 일치로 나옴. --id 101/DT_1FS1101 → 그 표 항목만"
-    verified: "2026-10-12"
+    when: 규칙이 필요할 때
+    do: "먼저 kosis s·m·d 결과의 규칙 줄(ℹ 규칙(…), 규칙 혼동 주의, m 의 [규칙])을 따른다 — 그 표·검색어의 규칙은 결과에 함께 나온다. 조회 전에 rules.yaml·LEARNINGS.md 를 통째로 읽지 않는다. 결과에 규칙 줄이 없는데 오류가 나거나 막히면 그때 kosis rules list --id <ORG/TBL 또는 규칙 id>, --kind gap, --topic period 처럼 선택자로 찾는다. 본문 검색(rules list 울산)은 관련 없는 규칙도 많이 나오니 마지막에"
+    why: 매 조회 전에 규칙 파일을 읽으면 문항마다 2~4번 왕복이 늘어난다 (2026-11-23 측정 — 5단계 질문 시간의 2/3 가 모델 왕복). 표별 규칙은 이제 결과에 붙어 나온다
+    evidence: "2026-10-12 rules list 울산 → 미분양·출생·물가 규칙까지 본문 일치로 나옴. 2026-11-23 sonnet 5단계 질문 cli 경로: 문항당 SKILL.md·rules 읽기 3~4번, 턴 11 · 54초 중 모델 33초. 예전 '모든 조회 전 두 파일 참조' 지시는 결과 규칙 첨부(rules_attach)로 바꿈"
+    verified: "2026-11-23"
 
   - id: workflow.rules-source
     topic: workflow

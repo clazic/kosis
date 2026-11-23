@@ -192,7 +192,8 @@ func (s *server) initialize(params json.RawMessage) map[string]any {
 		"serverInfo":      map[string]any{"name": "kosis-mcp", "version": s.version},
 		"instructions": "KOSIS(국가통계포털) 읽기 전용 조회. 순서: kosis_search(표 찾기) → kosis_meta(분류·항목 코드와 주기 확인) → kosis_data(값 조회). " +
 			"코드는 짐작하지 말고 kosis_meta 결과를 그대로 쓴다. kosis_data 의 notices(결과에 없는 코드·잠정치·전망 시점·단위)는 답에 반영한다. " +
-			"결과의 '규칙' 줄(kosis_search·kosis_data 의 notices, kosis_meta 의 rules)은 그 표·검색어에 대해 실제로 확인해 둔 사실이다 — 다른 표가 맞다고 하면 그 표를 쓰고, 정의가 다르다고 하면 답에 밝힌다. 더 찾으려면 kosis_rules.",
+			"결과의 '규칙' 줄(kosis_search·kosis_data 의 notices, kosis_meta 의 rules)은 그 표·검색어에 대해 실제로 확인해 둔 사실이다 — 다른 표가 맞다고 하면 그 표를 쓰고, 정의가 다르다고 하면 답에 밝힌다. 더 찾으려면 kosis_rules. " +
+			"서로 독립인 조회 여러 개(같은 지역의 여러 지표 등)는 kosis_batch 로 한 번에 보내 왕복을 줄인다.",
 	}
 }
 

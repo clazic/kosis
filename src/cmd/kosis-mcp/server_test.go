@@ -195,7 +195,7 @@ func TestInitializeAndToolsList(t *testing.T) {
 			t.Errorf("%s 설명 없음", m["name"])
 		}
 	}
-	if strings.Join(names, ",") != "kosis_search,kosis_meta,kosis_data,kosis_result_page,kosis_result_query,kosis_ratio,kosis_rules,kosis_list,kosis_explain,kosis_indicator" {
+	if strings.Join(names, ",") != "kosis_search,kosis_meta,kosis_data,kosis_result_page,kosis_result_query,kosis_batch,kosis_ratio,kosis_rules,kosis_list,kosis_explain,kosis_indicator" {
 		t.Errorf("도구 목록: %v", names)
 	}
 	if got["4"]["error"] == nil {

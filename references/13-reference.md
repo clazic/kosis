@@ -27,6 +27,7 @@
 | `d -cN level:N` | (조회 전) | 그 축 N단계 코드 전부로 바꿔 조회 (`m --level N` 의 `-c1` 줄과 같음). `00+level:2` 처럼 섞어도 되고 `!코드` 로 뺀다(`level:1+!03`). 바뀐 코드 이름은 stderr 로. 없는 단계면 exit 1 + 있는 단계 목록 (v0.5.27+) | `-c1 level:1 --no-total --sort desc --top 3` |
 | `d` stderr 안내 | (클라이언트 처리) | 조회한 코드 이름, 결과에 없는 코드(+ 값이 하위에만 있으면 아래 코드), 일찍 끊긴 코드, 빈 마지막 시점, 부분 연도, 미래 시점(추계·전망), 값이 모두 0 인 항목, 주석 '잠정', 빈·이은 단위 칸. 표에 없는 축 번호(-c6 등)는 조회 전 exit 1. 같은 `-cN`·`-i` 를 거듭 주면 `+` 로 합침 (v0.5.27+) | `-c1 11 -c1 26` = `-c1 "11+26"` |
 | `d --sort-by` | (클라이언트 처리) | `--sort` 기준: value(수치값, 기본)·change(증감)·pct(증감률)·ratio(비율). `--change` 와 함께면 기본이 증감이고, 비교 기준으로만 받은 앞 시점 행(증감 빈 칸)은 빠진다 (v0.5.27+). `--sort` 는 항목·시점 묶음마다 따로 정렬·`--top` 하고 `순위` 열(API 키 RANK, 동률 같은 순위)을 붙인다 | `-l 13 --change yoy --sort desc --top 3` |
+| `batch` | (클라이언트 처리, d 여러 번 동시) | 서로 독립인 `d` 조회 최대 10개를 동시에(4개씩) 돌려 JSON 배열 하나로: `{index, args, ok, rows(API 키), notices(stderr 안내), error}`. `-f`·`-o`·`--chart`·`--pivot`·`--fields` 는 못 넣음. 하나라도 실패하면 exit 1 (나머지 결과는 그대로) | `kosis batch "101 DT_1B040A3 -c1 41590 -i T20 -p Y -l 1" "101 DT_1B040B3 -c1 41590 -i T1 -p Y -l 1"` |
 | `ratio` | (클라이언트 처리, d 두 번) | 다른 두 표의 값을 이름·시점으로 맞춰 나눔. `--num`·`--den` 에 d 인자 그대로, `--scale`(100=%, 1=배수, 1000=천명당), `--sort desc|asc --top N`. 시도 이름이 표마다 달라도(강원도/강원특별자치도) 줄임말로 맞춤. 맞지 않은 행은 양쪽 모두 stderr. 이름이 겹치거나(여러 시도의 '중구') 항목이 둘 이상이면 exit 1. `--no-total` 로 전국 행 빼기. `--pivot`·`--fields`·`-o` 등은 --num/--den 에 못 넣음. 각 쪽 d 의 안내는 `[분자]`/`[분모]` 를 붙여 stderr 로 (v0.5.27+) | `kosis ratio --num "101 DT_1AG25203 -c1 … -c2 000 -i T00 -p F -l 1" --den "101 DT_1IN1502 -c1 … -i T100 -p Y -l 1" --sort desc --top 3` |
 | `d --ratio` | (클라이언트 처리) | 같은 축 두 코드의 비율 `비율(%)` 열 (분자/분모 ×100, `--api-keys` 면 DT_RATIO_PCT). 축은 결과에서 찾고, 다른 축·시점이 같은 행끼리 나눈다. 분모 코드도 조회에 넣어야 한다. 분자 `ALL` 이면 그 축 모든 행을 분모 대비 %로. 분자 여러 코드(`Y70+Y75`)면 코드별 % 를 채우고 합계 % 는 stderr 로(구간을 더한 비율, 예 65세 이상). 고른 축은 stderr 에 알림. parquet 저장과 함께 쓰면 exit 1 | `-i T1+T2 --ratio T2/T1`, `-c1 ALL --ratio ALL/<합계코드>`, `--ratio Y70+Y75+Y80/000` |
 | `s`·`m`·`d` 의 규칙 줄 | (로컬 처리) | 결과와 함께 그 표·검색어의 규칙을 보여 준다. `d`·`s` 는 stderr `ℹ 규칙(…)`, `m` 요약은 stdout `[규칙]`(`-f json` 이면 stderr). `m`·`d` = 그 표의 `tables` facts(로컬 먼저, 최대 8줄, 틀림 표시 항목은 정정 안내 한 줄, 조회 실패·없는 주기 오류에도 나옴). `s` = 검색어 낱말(2글자 이상)이 모두 든 검증된 표 최대 5개(이름에 있는 표 먼저)와 못 찾은 기록(gaps) 최대 3개. `규칙 혼동 주의(…)` = 같은 말로 불리는 다른 지표(rules 의 `concepts`): `s` 는 검색어에 그 말(`terms`)이 들면, `m`·`d` 는 그 지표의 표를 조회하면 나온다(▶ 가 조회한 표, 검색어·표당 최대 2개, facts 8줄과 따로). 규칙은 `KOSIS_RULES_FILE` → 스킬 폴더 → 바이너리 내장 순 | `kosis d 116 DT_MLTM_1948 …` → `ℹ 규칙(배포 2026-10-12): 월 값은 연초부터의 누계 …` |
@@ -148,6 +149,7 @@ kosis config add-key <API_KEY_3>
 | `kosis rules log [찾을 말]` | `-n`, `-f json` | rules.d 변경 이력 (최근 순, 맨 위 미동기화 변경) |
 | `kosis rules revert <파일>` | `--to <커밋>` | 규칙 파일 하나를 이전 내용으로 (sync 전 변경 → 마지막 sync 상태, 아니면 직전 버전, 지운 파일은 살림) |
 | `kosis rules validate` | - | 규칙 형식 점검 (문제 있으면 종료 코드 1) |
+| `kosis batch <d 인자>…` | - | 서로 독립인 d 조회 여러 개(최대 10)를 동시에 → JSON 하나 |
 | `kosis bulk <userStatsId>` | - | 대용량 다운로드 (SDMX/XLS) |
 | `kosis indicator search` | `ind s` | 주요지표 검색 |
 | `kosis indicator info <ID>` | `ind info` | 지표 상세 정보 |

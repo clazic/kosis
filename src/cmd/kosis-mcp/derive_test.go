@@ -264,3 +264,43 @@ func TestRatioTool(t *testing.T) {
 		t.Errorf("scale 0: %v %s", isErr, text)
 	}
 }
+
+// 여러 조회를 한 번에: 순서대로, 한 조회의 오류가 나머지를 막지 않는다.
+func TestBatchTool(t *testing.T) {
+	s := calcServer(t)
+	obj, text, isErr := calcCall(t, s, "kosis_batch", `{"queries":[`+ // stdio 는 한 줄에 한 요청
+		`{`+dtT+`,"class1":"11","item":"T1","latest":1},`+
+		`{"org_id":"101","tbl_id":"DT_U","class1":"26","item":"U1","period":"Y","latest":1},`+
+		`{`+dtT+`,"class1":"ALL","item":"T1","latest":1,"sort":"desc","top":1,"no_total":true},`+
+		`{`+dtT+`,"class1":"11","item":"T1","latest":1,"ratio":"T2/T1"}]}`)
+	if isErr {
+		t.Fatal(text)
+	}
+	res, _ := obj["results"].([]any)
+	if len(res) != 4 || obj["failed"] != float64(1) {
+		t.Fatalf("결과 수·실패 수: %v", obj)
+	}
+	get := func(i int) map[string]any { m, _ := res[i].(map[string]any); return m }
+	rows := func(i int) []map[string]any { return calcRows(t, get(i)) }
+	if r := rows(0); len(r) != 1 || r[0]["DT"] != "44" || get(0)["index"] != float64(1) {
+		t.Errorf("1번: %v", get(0))
+	}
+	if r := rows(1); len(r) != 1 || r[0]["DT"] != "3" {
+		t.Errorf("2번(다른 표): %v", get(1))
+	}
+	if r := rows(2); len(r) != 1 || r[0]["C1_NM"] != "경기도" || r[0]["RANK"] != "1" {
+		t.Errorf("3번(순위): %v", get(2))
+	}
+	if e, _ := get(3)["error"].(string); !strings.Contains(e, "같은 축에 함께 있지 않습니다") {
+		t.Errorf("4번은 오류여야: %v", get(3))
+	}
+	for _, c := range []struct{ args, want string }{
+		{`{"queries":[]}`, "1~10개"},
+		{`{"queries":[{"org_id":"101"}]}`, "1번째: tbl_id 는 필수"},
+		{`{"queries":[{` + dtT + `,"class1":"11","item":"T1","latest":1,"bogus":1}]}`, "모르는 인자: bogus"},
+	} {
+		if _, text, isErr := calcCall(t, s, "kosis_batch", c.args); !isErr || !strings.Contains(text, c.want) {
+			t.Errorf("%s: %v %q", c.args, isErr, text)
+		}
+	}
+}

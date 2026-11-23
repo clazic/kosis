@@ -343,6 +343,7 @@ curl -sN -H 'Content-Type: application/json' -H 'Accept: application/json, text/
 | `kosis_search` | 통계표 검색 (`kosis s`) | `keyword`(필수), `limit`, `page`, `sort`(RANK/DATE), `org`, `stat`, `region` |
 | `kosis_meta` | 분류 축·항목·주기 (`kosis m`) — 요약, 코드 고르기(`data_params` 를 `kosis_data` 에 그대로), 원본 메타 | `org_id`·`tbl_id`(필수), `type`, `find`, `under`, `level`, `axis` |
 | `kosis_data` | 값 조회 (`kosis d`) — 조회 전 검사, 4만 셀·URL 길이 자동 분할, 결과 `notices`(조용한 오답 경고), 큰 결과는 저장·쪽 나누기 | `org_id`·`tbl_id`·`item`·`period`(필수), `class1`…`class8`, `start`+`end` \| `latest`(정수 N 또는 `true`) \| `periods`, `fields`, `format`, `save`, `filter`, `aggregate`, `pivot` |
+| `kosis_batch` | 서로 독립인 `kosis_data` 조회 여러 개(최대 10)를 한 번에 — 동시에 받아 `results`(조회마다 `rows`·`notices` 또는 `error`) 하나로. 왕복을 줄인다 | `queries`(필수, `kosis_data` 인자 객체 배열) |
 | `kosis_ratio` | 두 조회의 비율 (`kosis ratio`) — 다른 두 표(또는 같은 표의 두 코드·항목)를 이름·시점으로 맞춰 나눔. 결과 `rows`: `NAME`·`PRD_DE`·`NUM`·`DEN`·`RATIO`(+`RANK`) | `num`·`den`(필수, `kosis_data` 의 조회 인자 객체), `scale`(100=%, 1=배수), `no_total`, `sort`, `top` |
 | `kosis_rules` | 검증된 규칙·표·못 찾은 기록 (`kosis rules list`, **키 불필요**) — 바이너리에 내장돼 스킬 폴더 없이도 동작 | `query`, `id`(규칙 id·`ORG/TBL`), `kind`, `topic` 중 하나 이상 |
 | `kosis_list` | 통계목록 트리 (`kosis ls`) | `view`, `parent` |
@@ -380,7 +381,7 @@ curl -sN -H 'Content-Type: application/json' -H 'Accept: application/json, text/
 
 ### smoke (게이트웨이 자동 업그레이드용)
 
-1. 키 없이: `initialize` → `notifications/initialized` → `tools/list` 가 성공하고 도구 10개(`kosis_search`, `kosis_meta`, `kosis_data`, `kosis_result_page`, `kosis_result_query`, `kosis_ratio`, `kosis_rules`, `kosis_list`, `kosis_explain`, `kosis_indicator`)가 나와야 합니다.
+1. 키 없이: `initialize` → `notifications/initialized` → `tools/list` 가 성공하고 도구 11개(`kosis_search`, `kosis_meta`, `kosis_data`, `kosis_result_page`, `kosis_result_query`, `kosis_batch`, `kosis_ratio`, `kosis_rules`, `kosis_list`, `kosis_explain`, `kosis_indicator`)가 나와야 합니다.
 2. 키가 있으면: 도구 `kosis_search`, 인자 `{"keyword":"인구","limit":1}` → `isError: false`, `results` 1개.
 
 ```bash

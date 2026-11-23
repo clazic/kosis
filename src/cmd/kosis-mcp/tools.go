@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"unicode/utf8"
 
 	"github.com/clazic/kosis/cmd"
@@ -176,6 +177,17 @@ var tools = []*tool{
 		run: runResultQuery,
 	},
 	{
+		Name:  "kosis_batch",
+		Title: "KOSIS 여러 조회를 한 번에",
+		Description: "서로 독립인 kosis_data 조회 여러 개(최대 10)를 한 번에 보내 동시에 받는다 — 연쇄 질문에서 다음 단계가 앞 결과에 기대지 않는 조회(같은 지역의 인구·화재·출생아, 여러 시도의 값 등)는 한 호출로 묶어 왕복을 줄인다. " +
+			"queries 의 각 항목은 kosis_data 와 같은 조회 인자(org_id·tbl_id·class1…·item·period·시점)와 계산 인자(sort·top·no_total·change·ratio·sort_by·fields). " +
+			"results 는 순서대로 {index, org_id, tbl_id, rows(API 키), notices} 또는 {index, error} — 한 조회가 실패해도 나머지는 온다. 조회마다 행이 많으면 앞 200행만 (그 이상은 kosis_data). 앞 결과로 다음 조회가 정해지면 묶지 말고 차례로 부른다.",
+		Params: []*param{
+			{Name: "queries", Required: true, Schema: batchSchema(), Check: checkBatch, Desc: "조회 목록 (1~10개, 각 항목은 kosis_data 인자)"},
+		},
+		run: runBatch,
+	},
+	{
 		Name:  "kosis_ratio",
 		Title: "KOSIS 두 조회의 비율",
 		Description: "두 조회(다른 두 표, 또는 같은 표의 두 코드·항목)의 값을 이름·시점으로 맞춰 나눈다 (kosis ratio) — 농가인구÷총인구, 종사자÷사업체, 미분양÷세대수처럼 손으로 나누지 않는다. " +
@@ -281,6 +293,49 @@ func checkQuery(v any) (any, error) {
 	return validateArgs(&tool{Params: queryParams}, raw)
 }
 
+// batchParams kosis_batch 의 한 조회 = 조회 인자 + 계산 인자.
+var batchParams = append(append([]*param{}, queryParams...),
+	&param{Name: "fields", Type: "string", MaxLen: 500, Pattern: patText, Desc: "남길 열 (쉼표)"},
+	&param{Name: "sort", Type: "string", Enum: []string{"desc", "asc"}, Desc: "정렬·RANK"},
+	&param{Name: "top", Type: "integer", Min: 1, Max: 100000, Desc: "정렬 뒤 앞 N행"},
+	&param{Name: "sort_by", Type: "string", Enum: []string{"value", "change", "pct", "ratio"}, Desc: "정렬 기준"},
+	&param{Name: "change", Type: "string", Enum: []string{"yoy", "prev"}, Desc: "증감"},
+	&param{Name: "ratio", Type: "string", MaxLen: 500, Pattern: `^[A-Za-z0-9_.+*,\-]+/[A-Za-z0-9_.*\-]+$`, Desc: "같은 축 두 코드 비율"},
+	&param{Name: "no_total", Type: "boolean", Desc: "합계 행 빼기"},
+)
+
+const maxBatchQueries, batchRowCap = 10, 200
+
+func batchSchema() map[string]any {
+	props, required := paramSchemas(batchParams)
+	return map[string]any{"type": "array", "minItems": 1, "maxItems": maxBatchQueries,
+		"items": map[string]any{"type": "object", "properties": props, "required": required, "additionalProperties": false}}
+}
+
+// checkBatch queries 배열을 항목마다 batchParams 로 검사한다.
+func checkBatch(v any) (any, error) {
+	arr, ok := v.([]any)
+	if !ok || len(arr) == 0 || len(arr) > maxBatchQueries {
+		return nil, fmt.Errorf("1~%d개의 조회 객체 배열이어야 합니다", maxBatchQueries)
+	}
+	out := make([]args, len(arr))
+	for i, x := range arr {
+		if _, ok := x.(map[string]any); !ok {
+			return nil, fmt.Errorf("%d번째: 조회 인자 객체여야 합니다", i+1)
+		}
+		raw, err := json.Marshal(x)
+		if err != nil {
+			return nil, err
+		}
+		a, err := validateArgs(&tool{Params: batchParams}, raw)
+		if err != nil {
+			return nil, fmt.Errorf("%d번째: %v", i+1, err)
+		}
+		out[i] = a
+	}
+	return out, nil
+}
+
 func checkScale(v any) (any, error) {
 	n, ok := v.(json.Number)
 	if !ok {
@@ -303,8 +358,10 @@ func queryOf(in args) cmd.DataQuery {
 }
 
 func init() {
-	for _, p := range queryParams {
-		p.re = regexp.MustCompile(p.Pattern)
+	for _, p := range batchParams { // queryParams 를 포함한다
+		if p.Pattern != "" {
+			p.re = regexp.MustCompile(p.Pattern)
+		}
 	}
 	for _, t := range tools {
 		for _, p := range t.Params {
@@ -659,6 +716,51 @@ func runData(rc *runCtx, in args) (*toolResult, error) {
 		head = append(head, kv{"notices", notices})
 	}
 	return rc.respondTable(t, in.str("format"), in.flag("save"), 0, head)
+}
+
+func runBatch(rc *runCtx, in args) (*toolResult, error) {
+	qs, _ := in["queries"].([]args)
+	results := make([]map[string]any, len(qs))
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, 4) // KOSIS 에 한꺼번에 몰리지 않게
+	for i, a := range qs {
+		wg.Add(1)
+		go func(i int, a args) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			q := queryOf(a)
+			q.Fields = a.str("fields")
+			q.Derive = cmd.DataDerive{Sort: a.str("sort"), Top: a.num("top"), SortBy: a.str("sort_by"),
+				Change: a.str("change"), Ratio: a.str("ratio"), NoTotal: a.flag("no_total")}
+			res := map[string]any{"index": i + 1, "org_id": q.OrgID, "tbl_id": q.TblID}
+			ans, err := cmd.MCPData(rc.client, q)
+			if err != nil {
+				res["error"] = err.Error()
+				results[i] = res
+				return
+			}
+			rows := ans.Rows
+			if len(rows) > batchRowCap {
+				res["truncated"] = fmt.Sprintf("행 %d개 중 앞 %d개만 — 전부는 kosis_data 로", len(rows), batchRowCap)
+				rows = rows[:batchRowCap]
+			}
+			res["rows"] = rows
+			if len(ans.Notices) > 0 {
+				res["notices"] = ans.Notices
+			}
+			results[i] = res
+		}(i, a)
+	}
+	wg.Wait()
+	failed := 0
+	for _, r := range results {
+		if _, ok := r["error"]; ok {
+			failed++
+		}
+	}
+	obj := map[string]any{"count": len(results), "failed": failed}
+	return textResult(fitResult(obj, "results", toAny(results), "조회를 나누거나 fields·top 으로 줄이세요")), nil
 }
 
 func runRatio(rc *runCtx, in args) (*toolResult, error) {
