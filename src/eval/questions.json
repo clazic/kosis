@@ -3079,6 +3079,1003 @@
      "tol": 0.005
     }
    ]
+  },
+  {
+   "id": "c5-cpi-jobs-births-fire",
+   "type": "chain",
+   "set": "chain5",
+   "steps": 5,
+   "question": "최근 10년 중 물가가 가장 많이 오른 해에 일자리 사정이 제일 나빴던 곳은 어디였나요? 그곳에서 그 해 아기가 가장 많이 태어난 동네는 요즘 사람 수에 비해 불이 얼마나 자주 나나요?",
+   "source": "5단계 연쇄 · 일상어 질문 (2026-11-23) — 단계와 표 이름을 밝히지 않는다",
+   "chain": [
+    {
+     "value": "2022"
+    },
+    {
+     "value": "서울특별시",
+     "aliases": [
+      "서울"
+     ]
+    },
+    {
+     "value": "송파구",
+     "aliases": [
+      "송파"
+     ]
+    }
+   ],
+   "answers": [
+    {
+     "table": "101/DT_1YL8601",
+     "value": 6.979093805859952,
+     "truth": {
+      "steps": [
+       {
+        "cmd": "d 101 DT_1J22041 -c1 0 -i T -p Y -s 2015 -e 2025 --sort desc --top 1",
+        "show": "PRD_DE",
+        "save": {
+         "yr": "PRD_DE"
+        }
+       },
+       {
+        "cmd": "d 101 DT_1DA7004S -c1 level:1 -i T80 -p Y -s {yr} -e {yr} --no-total --sort desc --top 1",
+        "show": "C1_NM",
+        "save": {
+         "sido": "C1"
+        }
+       },
+       {
+        "cmd": "d 101 DT_1B81A23 -c1 {sido}* -i T1 -p Y -s {yr} -e {yr} --sort desc --top 2",
+        "where": {
+         "RANK": "2"
+        },
+        "show": "C1_NM",
+        "save": {
+         "sgg": "C1"
+        },
+        "map": {
+         "sgg2": {
+          "from": "sgg",
+          "table": {
+           "11240": "11710",
+           "11160": "11500",
+           "11250": "11740"
+          }
+         }
+        }
+       },
+       {
+        "cmd": "d 101 DT_1YL8601 -c1 {sgg} -i T10 -p Y -s 2025 -e 2025"
+       },
+       {
+        "cmd": "d 101 DT_1B040A3 -c1 {sgg2} -i T20 -p Y -s 2025 -e 2025"
+       },
+       {
+        "calc": "{v4}/{v5}*10000"
+       }
+      ]
+     },
+     "scale_free": true,
+     "tol": 0.01,
+     "unit": "건(인구 1만 명당)"
+    },
+    {
+     "table": "101/DT_1YL8601",
+     "value": 6.360640250775622,
+     "unit": "건(인구 1만 명당)",
+     "scale_free": true,
+     "tol": 0.01,
+     "note": "다른 해석: 일자리 사정 = 고용률 최저 → 부산 → 해운대구",
+     "truth": {
+      "steps": [
+       {
+        "cmd": "d 101 DT_1J22041 -c1 0 -i T -p Y -s 2015 -e 2025 --sort desc --top 1",
+        "save": {
+         "yr": "PRD_DE"
+        }
+       },
+       {
+        "cmd": "d 101 DT_1DA7004S -c1 level:1 -i T90 -p Y -s {yr} -e {yr} --no-total --sort asc --top 1",
+        "save": {
+         "sido": "C1"
+        }
+       },
+       {
+        "cmd": "d 101 DT_1B81A23 -c1 {sido}* -i T1 -p Y -s {yr} -e {yr} --sort desc --top 2",
+        "where": {
+         "RANK": "2"
+        },
+        "save": {
+         "sgg": "C1"
+        },
+        "map": {
+         "sgg2": {
+          "from": "sgg",
+          "table": {
+           "21090": "26350"
+          }
+         }
+        }
+       },
+       {
+        "cmd": "d 101 DT_1YL8601 -c1 {sgg} -i T10 -p Y -s 2025 -e 2025"
+       },
+       {
+        "cmd": "d 101 DT_1B040A3 -c1 {sgg2} -i T20 -p Y -s 2025 -e 2025"
+       },
+       {
+        "calc": "{v4}/{v5}*10000"
+       }
+      ]
+     }
+    }
+   ],
+   "chain_alt": [
+    [
+     "2022",
+     "부산광역시",
+     "해운대구"
+    ]
+   ]
+  },
+  {
+   "id": "c5-grdp-factory-fire",
+   "type": "chain",
+   "set": "chain5",
+   "steps": 5,
+   "question": "1인당 경제 규모가 제일 큰 지역에서 공장이 가장 활발한 동네는 사람 수에 비해 불이 얼마나 나나요?",
+   "source": "5단계 연쇄 · 일상어 질문 (2026-11-23) — 단계와 표 이름을 밝히지 않는다",
+   "chain": [
+    {
+     "value": "울산광역시",
+     "aliases": [
+      "울산"
+     ]
+    },
+    {
+     "value": "남구",
+     "aliases": [
+      "울산 남구",
+      "울산광역시 남구"
+     ]
+    }
+   ],
+   "answers": [
+    {
+     "table": "101/DT_1YL8601",
+     "value": 7.562605218855219,
+     "truth": {
+      "steps": [
+       {
+        "cmd": "d 101 DT_1C96 -c1 level:1 -i T1 -p Y -s 2024 -e 2024 --no-total --sort desc --top 1",
+        "show": "C1_NM",
+        "save": {
+         "sido": "C1"
+        }
+       },
+       {
+        "cmd": "d 101 DT_1FS1101 -c1 {sido}* -c2 C -i T04 -p Y -s 2024 -e 2024 --sort desc --top 2",
+        "where": {
+         "RANK": "2"
+        },
+        "show": "C1_NM",
+        "save": {
+         "sgg": "C1"
+        },
+        "map": {
+         "sgg2": {
+          "from": "sgg",
+          "table": {
+           "26020": "31140",
+           "26510": "31710",
+           "26040": "31200"
+          }
+         }
+        }
+       },
+       {
+        "cmd": "d 101 DT_1YL8601 -c1 {sgg} -i T10 -p Y -s 2025 -e 2025"
+       },
+       {
+        "cmd": "d 101 DT_1B040A3 -c1 {sgg2} -i T20 -p Y -s 2025 -e 2025"
+       },
+       {
+        "calc": "{v3}/{v4}*10000"
+       }
+      ]
+     },
+     "scale_free": true,
+     "tol": 0.01,
+     "unit": "건(인구 1만 명당)"
+    },
+    {
+     "table": "101/DT_1YL8601",
+     "value": 11.953972642740471,
+     "unit": "건(인구 1만 명당)",
+     "scale_free": true,
+     "tol": 0.01,
+     "note": "다른 해석: 공장이 활발 = 제조업 사업체 수 → 울주군",
+     "truth": {
+      "steps": [
+       {
+        "cmd": "d 101 DT_1YL8601 -c1 26310 -i T10 -p Y -s 2025 -e 2025"
+       },
+       {
+        "cmd": "d 101 DT_1B040A3 -c1 31710 -i T20 -p Y -s 2025 -e 2025"
+       },
+       {
+        "calc": "{v1}/{v2}*10000"
+       }
+      ]
+     }
+    }
+   ],
+   "chain_alt": [
+    [
+     "울산광역시",
+     "울주군"
+    ]
+   ]
+  },
+  {
+   "id": "c5-fire-city-births",
+   "type": "chain",
+   "set": "chain5",
+   "steps": 5,
+   "question": "작년에 불이 제일 많이 난 지역에서도 불이 가장 잦았던 도시는 인구에 비해 아기가 얼마나 태어났나요?",
+   "source": "5단계 연쇄 · 일상어 질문 (2026-11-23) — 단계와 표 이름을 밝히지 않는다",
+   "chain": [
+    {
+     "value": "경기도",
+     "aliases": [
+      "경기"
+     ]
+    },
+    {
+     "value": "화성시",
+     "aliases": [
+      "화성"
+     ]
+    }
+   ],
+   "answers": [
+    {
+     "table": "101/DT_1B81A23",
+     "value": 8.093182715822415,
+     "truth": {
+      "steps": [
+       {
+        "cmd": "d 101 DT_1YL8601 -c1 level:1 -i T10 -p Y -s 2025 -e 2025 --no-total --sort desc --top 1",
+        "show": "C1_NM",
+        "save": {
+         "sido": "C1"
+        }
+       },
+       {
+        "cmd": "d 101 DT_1YL8601 -c1 {sido}* -i T10 -p Y -s 2025 -e 2025 --sort desc --top 2",
+        "where": {
+         "RANK": "2"
+        },
+        "show": "C1_NM",
+        "save": {
+         "sgg": "C1"
+        },
+        "map": {
+         "sgg2": {
+          "from": "sgg",
+          "table": {
+           "31240": "41590",
+           "31190": "41460"
+          }
+         }
+        }
+       },
+       {
+        "cmd": "d 101 DT_1B81A23 -c1 {sgg} -i T1 -p Y -s 2025 -e 2025"
+       },
+       {
+        "cmd": "d 101 DT_1B040A3 -c1 {sgg2} -i T20 -p Y -s 2025 -e 2025"
+       },
+       {
+        "calc": "{v3}/{v4}*1000"
+       }
+      ]
+     },
+     "scale_free": true,
+     "tol": 0.01,
+     "unit": "명(인구 1천 명당)",
+     "aliases": [
+      8.2
+     ],
+     "note": "8.2 = KOSIS 공식 조출생률(인구동향조사, 연앙인구 기준). 8.09 는 연말 주민등록인구로 나눈 값 — 둘 다 정답"
+    }
+   ]
+  },
+  {
+   "id": "c5-oldest-county-births",
+   "type": "chain",
+   "set": "chain5",
+   "steps": 5,
+   "question": "우리나라에서 가장 늙은 지역 안에서도 제일 고령화가 심한 군은 인구에 비해 아기가 얼마나 태어나나요?",
+   "source": "5단계 연쇄 · 일상어 질문 (2026-11-23) — 단계와 표 이름을 밝히지 않는다",
+   "chain": [
+    {
+     "value": "전라남도",
+     "aliases": [
+      "전남"
+     ]
+    },
+    {
+     "value": "고흥군",
+     "aliases": [
+      "고흥"
+     ]
+    }
+   ],
+   "answers": [
+    {
+     "table": "101/DT_1B81A23",
+     "value": 3.094777562862669,
+     "truth": {
+      "steps": [
+       {
+        "cmd": "d 101 DT_1YL20631 -c1 11+21+22+23+25+26+29+31+32+33+34+35+37+38+39+1224+1236 -i T10 -p Y -s 2025 -e 2025 --sort desc --top 1",
+        "show": "C1_NM",
+        "save": {
+         "sido": "C1"
+        }
+       },
+       {
+        "cmd": "d 101 DT_1YL20631 -c1 {sido}* -i T10 -p Y -s 2025 -e 2025 --sort desc --top 1",
+        "show": "C1_NM",
+        "save": {
+         "sgg": "C1"
+        },
+        "map": {
+         "sgg2": {
+          "from": "sgg",
+          "table": {
+           "1236350": "36550"
+          }
+         },
+         "sgg3": {
+          "from": "sgg",
+          "table": {
+           "1236350": "46770"
+          }
+         }
+        }
+       },
+       {
+        "cmd": "d 101 DT_1B81A23 -c1 {sgg2} -i T1 -p Y -s 2025 -e 2025"
+       },
+       {
+        "cmd": "d 101 DT_1B040A3 -c1 {sgg3} -i T20 -p Y -s 2025 -e 2025"
+       },
+       {
+        "calc": "{v3}/{v4}*1000"
+       }
+      ]
+     },
+     "scale_free": true,
+     "tol": 0.01,
+     "unit": "명(인구 1천 명당)"
+    }
+   ]
+  },
+  {
+   "id": "c5-inflow-births-fire",
+   "type": "chain",
+   "set": "chain5",
+   "steps": 5,
+   "question": "작년에 사람이 가장 많이 몰려든 지역에서 아기가 제일 많이 태어난 도시는 인구에 비해 불이 얼마나 나나요?",
+   "source": "5단계 연쇄 · 일상어 질문 (2026-11-23) — 단계와 표 이름을 밝히지 않는다",
+   "chain": [
+    {
+     "value": "경기도",
+     "aliases": [
+      "경기"
+     ]
+    },
+    {
+     "value": "화성시",
+     "aliases": [
+      "화성"
+     ]
+    }
+   ],
+   "answers": [
+    {
+     "table": "101/DT_1YL8601",
+     "value": 6.505254204929649,
+     "truth": {
+      "steps": [
+       {
+        "cmd": "d 101 INH_1B26001_A021 -c1 level:1 -c2 0 -i T25 -p Y -s 2025 -e 2025 --no-total --sort desc --top 1",
+        "show": "C1_NM",
+        "save": {
+         "sidom": "C1"
+        },
+        "map": {
+         "sido": {
+          "from": "sidom",
+          "table": {
+           "11": "11",
+           "26": "21",
+           "27": "22",
+           "28": "23",
+           "29": "24",
+           "30": "25",
+           "31": "26",
+           "36": "29",
+           "41": "31",
+           "51": "32",
+           "43": "33",
+           "44": "34",
+           "52": "35",
+           "46": "36",
+           "47": "37",
+           "48": "38",
+           "50": "39"
+          }
+         }
+        }
+       },
+       {
+        "cmd": "d 101 DT_1B81A23 -c1 {sido}* -i T1 -p Y -s 2025 -e 2025 --sort desc --top 2",
+        "where": {
+         "RANK": "2"
+        },
+        "show": "C1_NM",
+        "save": {
+         "sgg": "C1"
+        },
+        "map": {
+         "sgg2": {
+          "from": "sgg",
+          "table": {
+           "31240": "41590",
+           "31010": "41110"
+          }
+         }
+        }
+       },
+       {
+        "cmd": "d 101 DT_1YL8601 -c1 {sgg} -i T10 -p Y -s 2025 -e 2025"
+       },
+       {
+        "cmd": "d 101 DT_1B040A3 -c1 {sgg2} -i T20 -p Y -s 2025 -e 2025"
+       },
+       {
+        "calc": "{v3}/{v4}*10000"
+       }
+      ]
+     },
+     "scale_free": true,
+     "tol": 0.01,
+     "unit": "건(인구 1만 명당)"
+    }
+   ]
+  },
+  {
+   "id": "c5-fertile-county-aging",
+   "type": "chain",
+   "set": "chain5",
+   "steps": 5,
+   "question": "아이를 가장 많이 낳는 지역에서도 제일 많이 낳는 군은 전국 평균보다 얼마나 더 늙었나요?",
+   "source": "5단계 연쇄 · 일상어 질문 (2026-11-23) — 단계와 표 이름을 밝히지 않는다",
+   "chain": [
+    {
+     "value": "전라남도",
+     "aliases": [
+      "전남"
+     ]
+    },
+    {
+     "value": "영광군",
+     "aliases": [
+      "영광"
+     ]
+    }
+   ],
+   "answers": [
+    {
+     "table": "101/DT_1YL20631",
+     "value": 1.5283018867924527,
+     "truth": {
+      "steps": [
+       {
+        "cmd": "d 101 DT_1B81A21 -c1 level:1 -i T1 -p Y -s 2025 -e 2025 --no-total --sort desc --top 1",
+        "show": "C1_NM",
+        "save": {
+         "sido": "C1"
+        }
+       },
+       {
+        "cmd": "d 101 DT_1B81A23 -c1 {sido}* -i T2 -p Y -s 2025 -e 2025 --sort desc --top 1",
+        "show": "C1_NM",
+        "save": {
+         "sgg": "C1"
+        },
+        "map": {
+         "sgg2": {
+          "from": "sgg",
+          "table": {
+           "36640": "1236440",
+           "36650": "1236450"
+          }
+         }
+        }
+       },
+       {
+        "cmd": "d 101 DT_1YL20631 -c1 {sgg2} -i T10 -p Y -s 2025 -e 2025"
+       },
+       {
+        "cmd": "d 101 DT_1YL20631 -c1 00 -i T10 -p Y -s 2025 -e 2025"
+       },
+       {
+        "calc": "{v3}/{v4}"
+       }
+      ]
+     },
+     "scale_free": true,
+     "tol": 0.01,
+     "unit": "배 (고령인구비율)"
+    },
+    {
+     "table": "101/DT_1YL20631",
+     "value": 11.2,
+     "unit": "%p (고령인구비율 차이)",
+     "tol": 0.01,
+     "truth": {
+      "steps": [
+       {
+        "cmd": "d 101 DT_1B81A21 -c1 level:1 -i T1 -p Y -s 2025 -e 2025 --no-total --sort desc --top 1",
+        "save": {
+         "sido": "C1"
+        },
+        "show": "C1_NM"
+       },
+       {
+        "cmd": "d 101 DT_1B81A23 -c1 {sido}* -i T2 -p Y -s 2025 -e 2025 --sort desc --top 1",
+        "save": {
+         "sgg": "C1"
+        },
+        "map": {
+         "sgg2": {
+          "from": "sgg",
+          "table": {
+           "36640": "1236440",
+           "36650": "1236450"
+          }
+         }
+        },
+        "show": "C1_NM"
+       },
+       {
+        "cmd": "d 101 DT_1YL20631 -c1 {sgg2} -i T10 -p Y -s 2025 -e 2025"
+       },
+       {
+        "cmd": "d 101 DT_1YL20631 -c1 00 -i T10 -p Y -s 2025 -e 2025"
+       },
+       {
+        "calc": "{v3}-{v4}"
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "id": "c5-apple-oldest-births",
+   "type": "chain",
+   "set": "chain5",
+   "steps": 5,
+   "question": "사과를 가장 많이 키우는 지역에서 가장 늙은 군은 인구에 비해 아기가 얼마나 태어나나요?",
+   "source": "5단계 연쇄 · 일상어 질문 (2026-11-23) — 단계와 표 이름을 밝히지 않는다",
+   "chain": [
+    {
+     "value": "경상북도",
+     "aliases": [
+      "경북"
+     ]
+    },
+    {
+     "value": "의성군",
+     "aliases": [
+      "의성"
+     ]
+    }
+   ],
+   "answers": [
+    {
+     "table": "101/DT_1B81A23",
+     "value": 2.6094943843680847,
+     "truth": {
+      "steps": [
+       {
+        "cmd": "d 101 DT_1ET0292 -c1 level:1 -i T10 -p Y -s 2025 -e 2025 --no-total --sort desc --top 1",
+        "show": "C1_NM",
+        "save": {
+         "sido": "C1"
+        },
+        "map": {
+         "sido2": {
+          "from": "sido",
+          "table": {
+           "11": "11",
+           "21": "21",
+           "22": "22",
+           "23": "23",
+           "25": "25",
+           "26": "26",
+           "29": "29",
+           "31": "31",
+           "32": "32",
+           "33": "33",
+           "34": "34",
+           "35": "35",
+           "37": "37",
+           "38": "38",
+           "39": "39",
+           "24": "1224",
+           "36": "1236"
+          }
+         }
+        }
+       },
+       {
+        "cmd": "d 101 DT_1YL20631 -c1 {sido2}* -i T10 -p Y -s 2025 -e 2025 --sort desc --top 1",
+        "show": "C1_NM",
+        "save": {
+         "sgg": "C1"
+        },
+        "map": {
+         "sgg2": {
+          "from": "sgg",
+          "table": {
+           "37320": "37520"
+          }
+         },
+         "sgg3": {
+          "from": "sgg",
+          "table": {
+           "37320": "47730"
+          }
+         }
+        }
+       },
+       {
+        "cmd": "d 101 DT_1B81A23 -c1 {sgg2} -i T1 -p Y -s 2025 -e 2025"
+       },
+       {
+        "cmd": "d 101 DT_1B040A3 -c1 {sgg3} -i T20 -p Y -s 2025 -e 2025"
+       },
+       {
+        "calc": "{v3}/{v4}*1000"
+       }
+      ]
+     },
+     "scale_free": true,
+     "tol": 0.01,
+     "unit": "명(인구 1천 명당)"
+    }
+   ]
+  },
+  {
+   "id": "c5-nonregular-fire",
+   "type": "chain",
+   "set": "chain5",
+   "steps": 5,
+   "question": "비정규직이 가장 많은 지역에서 불이 제일 잦은 곳은 인구에 비해 불이 얼마나 자주 나나요?",
+   "source": "5단계 연쇄 · 일상어 질문 (2026-11-23) — 단계와 표 이름을 밝히지 않는다",
+   "chain": [
+    {
+     "value": "강원특별자치도",
+     "aliases": [
+      "강원",
+      "강원도"
+     ]
+    },
+    {
+     "value": "원주시",
+     "aliases": [
+      "원주"
+     ]
+    }
+   ],
+   "answers": [
+    {
+     "table": "101/DT_1YL8601",
+     "value": 7.103641579982048,
+     "truth": {
+      "steps": [
+       {
+        "cmd": "d 101 DT_1YL15002 -c1 level:1 -i T001 -p Y -s 2026 -e 2026 --no-total --sort desc --top 1",
+        "show": "C1_NM",
+        "save": {
+         "sido": "C1"
+        }
+       },
+       {
+        "cmd": "d 101 DT_1YL8601 -c1 {sido}* -i T10 -p Y -s 2025 -e 2025 --sort desc --top 2",
+        "where": {
+         "RANK": "2"
+        },
+        "show": "C1_NM",
+        "save": {
+         "sgg": "C1"
+        },
+        "map": {
+         "sgg2": {
+          "from": "sgg",
+          "table": {
+           "32020": "51130",
+           "32030": "51150",
+           "32010": "51110"
+          }
+         }
+        }
+       },
+       {
+        "cmd": "d 101 DT_1YL8601 -c1 {sgg} -i T10 -p Y -s 2025 -e 2025"
+       },
+       {
+        "cmd": "d 101 DT_1B040A3 -c1 {sgg2} -i T20 -p Y -s 2025 -e 2025"
+       },
+       {
+        "calc": "{v3}/{v4}*10000"
+       }
+      ]
+     },
+     "scale_free": true,
+     "tol": 0.01,
+     "unit": "건(인구 1만 명당)"
+    },
+    {
+     "table": "101/DT_1YL8601",
+     "value": 6.505254204929649,
+     "unit": "건(인구 1만 명당)",
+     "scale_free": true,
+     "tol": 0.01,
+     "note": "다른 해석: 비정규직이 가장 많은 = 수 → 경기 → 화재 건수 최다 화성시",
+     "truth": {
+      "steps": [
+       {
+        "cmd": "d 101 DT_1YL8601 -c1 31240 -i T10 -p Y -s 2025 -e 2025"
+       },
+       {
+        "cmd": "d 101 DT_1B040A3 -c1 41590 -i T20 -p Y -s 2025 -e 2025"
+       },
+       {
+        "calc": "{v1}/{v2}*10000"
+       }
+      ]
+     }
+    },
+    {
+     "table": "101/DT_1YL21081",
+     "value": 20.1,
+     "unit": "건(주민 1만 명당)",
+     "scale_free": true,
+     "tol": 0.01,
+     "note": "다른 해석: 비정규직 수 → 경기, 불이 잦은 = 주민 1만 명당 화재 최다 → 연천군",
+     "truth": {
+      "cmd": "d 101 DT_1YL21081 -c1 31350 -i T10 -p Y -s 2025 -e 2025"
+     }
+    }
+   ],
+   "chain_alt": [
+    [
+     "경기도",
+     "화성시"
+    ],
+    [
+     "경기도",
+     "연천군"
+    ]
+   ]
+  },
+  {
+   "id": "c5-power-factory-household",
+   "type": "chain",
+   "set": "chain5",
+   "steps": 5,
+   "question": "전기를 제일 많이 쓰는 지역에서 공장이 가장 활발한 도시는 한 집에 몇 명꼴로 사나요?",
+   "source": "5단계 연쇄 · 일상어 질문 (2026-11-23) — 단계와 표 이름을 밝히지 않는다",
+   "chain": [
+    {
+     "value": "경기도",
+     "aliases": [
+      "경기"
+     ]
+    },
+    {
+     "value": "화성시",
+     "aliases": [
+      "화성"
+     ]
+    }
+   ],
+   "answers": [
+    {
+     "table": "101/DT_1B040B3",
+     "value": 2.3115642541586108,
+     "truth": {
+      "steps": [
+       {
+        "cmd": "d 101 DT_1YL4801E -c1 ALL -i 16310T2008_0117 -p Y -s 2025 -e 2025 --no-total --sort desc --top 1",
+        "show": "C1_NM",
+        "save": {
+         "sidoe": "C1"
+        },
+        "map": {
+         "sido": {
+          "from": "sidoe",
+          "table": {
+           "15310HJG0O": "31"
+          }
+         }
+        }
+       },
+       {
+        "cmd": "d 101 DT_1FS1101 -c1 {sido}* -c2 C -i T04 -p Y -s 2024 -e 2024 --sort desc --top 2",
+        "where": {
+         "RANK": "2"
+        },
+        "show": "C1_NM",
+        "save": {
+         "sgg": "C1"
+        },
+        "map": {
+         "sgg2": {
+          "from": "sgg",
+          "table": {
+           "31240": "41590",
+           "31070": "41220"
+          }
+         }
+        }
+       },
+       {
+        "cmd": "d 101 DT_1B040A3 -c1 {sgg2} -i T20 -p Y -s 2025 -e 2025"
+       },
+       {
+        "cmd": "d 101 DT_1B040B3 -c1 {sgg2} -i T1 -p Y -s 2025 -e 2025"
+       },
+       {
+        "calc": "{v3}/{v4}"
+       }
+      ]
+     },
+     "scale_free": false,
+     "tol": 0.02,
+     "unit": "명(세대당)"
+    },
+    {
+     "table": "101/DT_1JC1516",
+     "value": 2.4,
+     "unit": "명(평균 가구원 수, 인구총조사)",
+     "abs_tol": 0.05,
+     "note": "다른 해석: 한 집 = 가구(인구총조사 평균 가구원 수). 세대(주민등록)와 다른 단위",
+     "truth": {
+      "cmd": "d 101 DT_1JC1516 -c1 31240 -c2 00 -i T30 -p Y -s 2025 -e 2025"
+     }
+    }
+   ]
+  },
+  {
+   "id": "c5-unsold-household",
+   "type": "chain",
+   "set": "chain5",
+   "steps": 5,
+   "question": "요즘 집이 가장 안 팔리는 지역에서 미분양이 제일 많은 동네는 세대 수에 비해 안 팔린 집이 얼마나 되나요?",
+   "source": "5단계 연쇄 · 일상어 질문 (2026-11-23) — 단계와 표 이름을 밝히지 않는다",
+   "chain": [
+    {
+     "value": "경기도",
+     "aliases": [
+      "경기"
+     ]
+    },
+    {
+     "value": "평택시",
+     "aliases": [
+      "평택"
+     ]
+    }
+   ],
+   "answers": [
+    {
+     "table": "116/DT_MLTM_2082",
+     "value": 11.981018984336345,
+     "truth": {
+      "steps": [
+       {
+        "cmd": "d 116 DT_MLTM_2082 -c1 ALL -c2 13102871087B.0001 -i 13103871087T1 -p M -s 202608 -e 202608 --sort desc --top 1",
+        "show": "C1_NM",
+        "save": {
+         "sido": "C1"
+        }
+       },
+       {
+        "cmd": "d 116 DT_MLTM_2082 -c1 {sido} -c2 ALL -i 13103871087T1 -p M -s 202608 -e 202608 --sort desc --top 2",
+        "where": {
+         "RANK": "2"
+        },
+        "show": "C2_NM",
+        "save": {
+         "sgg": "C2"
+        },
+        "map": {
+         "sgg2": {
+          "from": "sgg",
+          "table": {
+           "13102871087B.0094": "41220"
+          }
+         }
+        }
+       },
+       {
+        "cmd": "d 116 DT_MLTM_2082 -c1 {sido} -c2 {sgg} -i 13103871087T1 -p M -s 202608 -e 202608"
+       },
+       {
+        "cmd": "d 101 DT_1B040B3 -c1 {sgg2} -i T1 -p M -s 202608 -e 202608"
+       },
+       {
+        "calc": "{v3}/{v4}*1000"
+       }
+      ]
+     },
+     "scale_free": true,
+     "tol": 0.01,
+     "unit": "호(1천 세대당)"
+    },
+    {
+     "table": "116/DT_MLTM_2082",
+     "value": 11.11633419183125,
+     "truth": {
+      "steps": [
+       {
+        "cmd": "d 116 DT_MLTM_2082 -c1 ALL -c2 13102871087B.0001 -i 13103871087T1 -p M -s 202609 -e 202609 --sort desc --top 1",
+        "save": {
+         "sido": "C1"
+        }
+       },
+       {
+        "cmd": "d 116 DT_MLTM_2082 -c1 {sido} -c2 ALL -i 13103871087T1 -p M -s 202609 -e 202609 --sort desc --top 2",
+        "where": {
+         "RANK": "2"
+        },
+        "save": {
+         "sgg": "C2"
+        },
+        "map": {
+         "sgg2": {
+          "from": "sgg",
+          "table": {
+           "13102871087B.0094": "41220"
+          }
+         }
+        }
+       },
+       {
+        "cmd": "d 116 DT_MLTM_2082 -c1 {sido} -c2 {sgg} -i 13103871087T1 -p M -s 202609 -e 202609"
+       },
+       {
+        "cmd": "d 101 DT_1B040B3 -c1 {sgg2} -i T1 -p M -s 202609 -e 202609"
+       },
+       {
+        "calc": "{v3}/{v4}*1000"
+       }
+      ]
+     },
+     "scale_free": true,
+     "tol": 0.01,
+     "unit": "호(1천 세대당)",
+     "note": "'요즘' = 가장 최근 달. 측정 중 2026.09 가 공표돼 AI 는 2026.09 로 답했다 — 두 달 모두 정답"
+    }
+   ]
   }
  ]
 }

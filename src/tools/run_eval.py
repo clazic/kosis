@@ -88,7 +88,7 @@ def validate(qs):
                     if not st.get("cmd") and not st.get("calc"):
                         say(f"{tag}.truth.steps 의 단계에는 cmd 또는 calc 가 필요")
                 shows = sum(1 for st in truths["steps"] if st.get("show"))
-                if shows != len(q.get("chain") or []):
+                if shows and shows != len(q.get("chain") or []):  # show 없는 단계 정답은 다른 해석 경로 (chain_alt)
                     say(f"chain {len(q.get('chain') or [])}개와 show 단계 {shows}개가 다름")
                 continue
             truths = truths if isinstance(truths, list) else [truths]
@@ -330,7 +330,7 @@ def cmd_verify(a):
             if isinstance(ans["truth"], dict) and "steps" in ans["truth"]:
                 got, err, shown = run_steps(sb, ans["truth"]["steps"])
                 chain = q.get("chain") or []
-                if err is None and not (len(shown) == len(chain) and all(
+                if err is None and shown and not (len(shown) == len(chain) and all(
                         any(value_match(g, w) for w in [c["value"]] + list(c.get("aliases") or [])) for g, c in zip(shown, chain))):
                     err = f"단계에서 고른 것이 다름: 조회 {shown} / 문항 {[c['value'] for c in chain]}"
                     return q["id"], i, ans, got, err, False
@@ -439,6 +439,8 @@ def read_stream(path):
                         errs[c.get("tool_use_id")] = bool(c.get("is_error"))
             elif ev.get("type") == "result":
                 out["text"] = ev.get("result") or ""
+                if ev.get("api_error") or ev.get("api_error_status"):  # 사용 한도·API 오류 — AI 가 답한 것이 아니다
+                    out["api_error"] = f"{ev.get('api_error_status')} {ev.get('api_error') or ''} {out['text'][:120]}".strip()
                 out["cost_usd"] = ev.get("total_cost_usd")
                 out["turns"] = ev.get("num_turns")
                 if ev.get("is_error"):
@@ -493,7 +495,9 @@ def ask_ai(sb, q, a, outdir):
     s = read_stream(stream)
     rec = {"id": qid, "type": q["type"], "seconds": round(time.time() - t0, 1), "cost_usd": s["cost_usd"],
            "turns": s["turns"], "answer": parse_answer(s["text"]), "final_text": s["text"][-2000:]}
-    if timed_out:
+    if s.get("api_error"):
+        rec["error"], rec["aborted"] = "API 오류로 실행 못 함: " + s["api_error"], True
+    elif timed_out:
         rec["error"] = f"시간 초과 ({a.timeout}초)"
     elif s["error"] or (not s["text"] and stderr):
         rec["error"] = (s["error"] or stderr.strip()[-300:])
@@ -518,6 +522,9 @@ def grade(q, rec):
     """rec 에 outcome·table_match 를 채운다.
     correct / silent_wrong(답으로 냈는데 틀림) / miss(있는데 못 찾음) / no_answer(형식에 맞는 답 없음)
     / review(없다고 알려진 문항에 답을 냄 — 사람이 확인)"""
+    if rec.get("aborted") or "hit your" in str(rec.get("final_text", "")).lower():  # 옛 기록: 사용 한도 문구
+        rec["aborted"], rec["outcome"] = True, "aborted"
+        return rec
     rec["steps_n"] = q.get("steps")
     rec["set"] = q.get("set", "known")  # known: 규칙에 있는 표에서 만든 문항, unseen: 규칙·문서에 없는 표
     ans = rec.get("answer")
@@ -537,6 +544,8 @@ def grade(q, rec):
     hit = None
     for x in q["answers"]:
         wants = [x["value"]] + list(x.get("aliases") or [])
+        if x.get("scale_free") and to_num(x["value"]):  # '인구에 비해' — 1천 명당·1만 명당·% 어느 단위든 같은 비율이면 정답
+            wants += [to_num(x["value"]) * 10 ** k for k in range(-6, 7) if k]
         if not any(value_match(ans.get("value"), w, x.get("tol"), x.get("abs_tol")) for w in wants):
             continue
         if x.get("check_period") and not period_match(ans.get("period"), x.get("period")):
@@ -553,12 +562,18 @@ def grade(q, rec):
             blob = squash(str(ans.get("note", "")) + json.dumps(ans.get("steps", ""), ensure_ascii=False))
             rec["name_in_note"] = any(squash(w) in blob for w in names)
     chain = q.get("chain")
-    if chain:  # 연쇄 문항: 어느 단계에서 처음 틀렸는지
+    if chain:  # 연쇄 문항: 어느 단계에서 처음 틀렸는지 (chain_alt 는 다른 해석으로 고른 단계 — 맞는 쪽을 쓴다)
         steps = ans.get("steps") if isinstance(ans.get("steps"), list) else []
-        oks = []
-        for k, c in enumerate(chain):
-            g = steps[k] if k < len(steps) else None
-            oks.append(g is not None and any(value_match(g, w, c.get("tol"), c.get("abs_tol")) for w in [c["value"]] + list(c.get("aliases") or [])))
+
+        def step_oks(ch):
+            out = []
+            for k, c in enumerate(ch):
+                c = c if isinstance(c, dict) else {"value": c}
+                g = steps[k] if k < len(steps) else None
+                out.append(g is not None and any(value_match(g, w, c.get("tol"), c.get("abs_tol")) for w in [c["value"]] + list(c.get("aliases") or [])))
+            return out
+        oks = max([step_oks(chain)] + [step_oks(alt) for alt in q.get("chain_alt") or []], key=sum)
+        rec["alt_path"] = oks != step_oks(chain)
         rec["chain_ok"] = oks
         rec["first_wrong_step"] = next((k + 1 for k, o in enumerate(oks) if not o), None)
         if rec["first_wrong_step"] is None and rec["outcome"] != "correct":
@@ -571,6 +586,8 @@ def grade(q, rec):
 
 
 def summarize(recs, meta):
+    aborted = [r for r in recs if r.get("outcome") == "aborted"]
+    recs = [r for r in recs if r.get("outcome") != "aborted"]
     lines = [f"# 평가 결과 — {meta.get('path')} · {meta.get('model')}", "",
              f"- 실행: {meta.get('started')} · kosis {meta.get('kosis_version')} · 문항 {len(recs)}개",
              f"- {meta['note']}" if meta.get("note") else None, ""]
@@ -613,6 +630,8 @@ def summarize(recs, meta):
     tm = [r for r in recs if "table_match" in r]
     cost = sum(r.get("cost_usd") or 0 for r in recs)
     secs = sum(r.get("seconds") or 0 for r in recs)
+    if aborted:
+        lines += ["", f"- **API 오류(사용 한도 등)로 실행하지 못한 {len(aborted)}건은 위 집계에서 뺐다**: {', '.join(r['id'] for r in aborted[:20])}"]
     lines += ["", f"- 정답 표와 같은 표를 쓴 비율: {sum(r['table_match'] for r in tm)}/{len(tm)}" if tm else "",
               f"- 비용 ${cost:.2f} · AI 실행 시간 합 {secs / 60:.1f}분", "",
               "## 틀린 문항", ""]
@@ -694,7 +713,7 @@ def cmd_report(a):
                 rec["kosis_calls"], rec["kosis_errors"] = cli_calls_from_stream(stream)
                 rec["calls_estimated"] = True
             if rec["id"] in by:  # 문항이 고쳐졌으면 다시 채점
-                for k in ("outcome", "table_match", "matched", "mentioned", "chain_ok", "first_wrong_step", "name_in_note"):
+                for k in ("outcome", "table_match", "matched", "mentioned", "chain_ok", "first_wrong_step", "name_in_note", "alt_path"):
                     rec.pop(k, None)
                 grade(by[rec["id"]], rec)
             recs.append(rec)
